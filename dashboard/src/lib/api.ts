@@ -143,6 +143,16 @@ function errorMessage(detail: unknown) {
       })
       .join(', ')
   }
+  if (detail && typeof detail === 'object') {
+    const message =
+      ('message' in detail && typeof detail.message === 'string' && detail.message) ||
+      ('error' in detail && typeof detail.error === 'string' && detail.error)
+
+    if (message) return message
+
+    const serialized = JSON.stringify(detail)
+    if (serialized !== '{}' && serialized !== '[]') return serialized
+  }
   return 'API request failed'
 }
 
@@ -160,6 +170,49 @@ function apiConnectionMessage(reason: 'timeout' | 'network' | 'html') {
   }
 
   return `Could not reach the API at ${API_URL}. Make sure the backend is running and CORS allows this dashboard URL.`
+}
+
+async function parseErrorResponse(response: Response) {
+  const contentType = response.headers.get('content-type') || ''
+
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json().catch(() => null)) as
+      | { detail?: unknown; message?: unknown; error?: unknown }
+      | null
+
+    if (payload) {
+      if ('detail' in payload && payload.detail !== undefined) {
+        return errorMessage(payload.detail)
+      }
+      if ('message' in payload && payload.message !== undefined) {
+        return errorMessage(payload.message)
+      }
+      if ('error' in payload && payload.error !== undefined) {
+        return errorMessage(payload.error)
+      }
+
+      const serialized = JSON.stringify(payload)
+      if (serialized !== '{}' && serialized !== '[]') {
+        return serialized
+      }
+    }
+  }
+
+  const text = (await response.text().catch(() => '')).trim()
+
+  if (contentType.includes('text/html') || /^<!doctype html/i.test(text) || /^<html/i.test(text)) {
+    return apiConnectionMessage('html')
+  }
+
+  if (text) {
+    return text
+  }
+
+  if (response.status === 404 && needsProductionApiUrl) {
+    return apiConnectionMessage('network')
+  }
+
+  return `${response.status} ${response.statusText || 'API request failed'}`
 }
 
 export const auth = {
@@ -220,8 +273,7 @@ export const api = {
     }
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}))
-      throw new ApiError(errorMessage(payload.detail), response.status)
+      throw new ApiError(await parseErrorResponse(response), response.status)
     }
 
     if (response.status === 204) return null as T
