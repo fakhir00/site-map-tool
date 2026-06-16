@@ -1,9 +1,12 @@
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
+const isBrowser = typeof window !== 'undefined'
+const isLocalHost =
+  isBrowser && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 const DEFAULT_API_URL =
-  typeof window === 'undefined'
-    ? 'http://localhost:8000/api'
-    : `${window.location.protocol}//${window.location.hostname}:8000/api`
-
-const API_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/$/, '')
+  !isBrowser || isLocalHost ? 'http://localhost:8000/api' : '/api'
+const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, '')
+const REQUEST_TIMEOUT_MS = 20_000
+const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
 
 export type User = {
   id: string
@@ -143,6 +146,22 @@ function errorMessage(detail: unknown) {
   return 'API request failed'
 }
 
+function apiConnectionMessage(reason: 'timeout' | 'network' | 'html') {
+  if (needsProductionApiUrl) {
+    return 'Could not reach the API. Add VITE_API_URL in Vercel with your deployed backend URL ending in /api, then redeploy the dashboard.'
+  }
+
+  if (reason === 'timeout') {
+    return `The API request timed out. Make sure the backend is reachable at ${API_URL}.`
+  }
+
+  if (reason === 'html') {
+    return `Expected an API response but received the frontend app. Check that ${API_URL} points to the deployed backend.`
+  }
+
+  return `Could not reach the API at ${API_URL}. Make sure the backend is running and CORS allows this dashboard URL.`
+}
+
 export const auth = {
   hasToken() {
     return Boolean(token())
@@ -159,16 +178,39 @@ export const api = {
   async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers)
     const accessToken = token()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        controller.abort()
+      } else {
+        options.signal.addEventListener('abort', () => controller.abort(), { once: true })
+      }
+    }
 
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
     if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json')
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    })
+    let response: Response
+
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      })
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new ApiError(apiConnectionMessage('timeout'), 0)
+      }
+
+      throw new ApiError(apiConnectionMessage('network'), 0)
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (response.status === 401) {
       auth.clear()
@@ -189,7 +231,11 @@ export const api = {
       return response.blob() as Promise<T>
     }
 
-    return response.json() as Promise<T>
+    if (contentType.includes('application/json')) {
+      return response.json() as Promise<T>
+    }
+
+    throw new ApiError(apiConnectionMessage('html'), response.status)
   },
 
   get<T>(endpoint: string) {
