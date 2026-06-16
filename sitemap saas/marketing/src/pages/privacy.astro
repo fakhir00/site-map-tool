@@ -1,0 +1,137 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+
+const lastUpdated = 'June 1, 2026';
+---
+
+<BaseLayout
+  title="Privacy Policy — SiteMapSEO"
+  description="SiteMapSEO's Privacy Policy explains how we collect, use, and protect your data when you use our SEO intelligence platform."
+>
+  <Header />
+  <main class="page-main">
+    <section class="legal-section">
+      <div class="container">
+        <div class="legal-header">
+          <p class="section-label">Legal</p>
+          <h1 class="page-title">Privacy Policy</h1>
+          <p class="legal-meta">Last updated: {lastUpdated}</p>
+        </div>
+
+        <div class="legal-body">
+          <div class="legal-toc glass-card">
+            <h2 class="toc-title">Table of Contents</h2>
+            <ol class="toc-list">
+              <li><a href="#overview">Overview</a></li>
+              <li><a href="#data-collected">Data We Collect</a></li>
+              <li><a href="#data-use">How We Use Data</a></li>
+              <li><a href="#scraped-data">Scraped Content Policy</a></li>
+              <li><a href="#sharing">Data Sharing</a></li>
+              <li><a href="#retention">Data Retention</a></li>
+              <li><a href="#security">Security</a></li>
+              <li><a href="#rights">Your Rights</a></li>
+              <li><a href="#cookies">Cookies</a></li>
+              <li><a href="#contact">Contact</a></li>
+            </ol>
+          </div>
+
+          <div class="legal-content">
+            <section id="overview" class="legal-section-block">
+              <h2>1. Overview</h2>
+              <p>SiteMapSEO Inc. ("we", "us", "our") is committed to protecting your privacy. This policy explains what data we collect, how we use it, and your rights as a user of sitemapseo.io.</p>
+            </section>
+
+            <section id="data-collected" class="legal-section-block">
+              <h2>2. Data We Collect</h2>
+              <p><strong>Account data:</strong> Email address, name, and hashed password (if using email authentication). Google profile data (if using Google OAuth).</p>
+              <p><strong>Usage data:</strong> Pages visited, features used, scan configurations, and project settings — used to improve the product.</p>
+              <p><strong>Payment data:</strong> Processed securely by Stripe. We store only your subscription tier and billing status — never full card numbers.</p>
+            </section>
+
+            <section id="data-use" class="legal-section-block">
+              <h2>3. How We Use Data</h2>
+              <ul>
+                <li>To provide, maintain, and improve the Service</li>
+                <li>To process payments and manage subscriptions</li>
+                <li>To send transactional emails (scan completions, alerts)</li>
+                <li>To communicate product updates (can be unsubscribed)</li>
+                <li>To comply with legal obligations</li>
+              </ul>
+              <p>We never sell your data to third parties.</p>
+            </section>
+
+            <section id="scraped-data" class="legal-section-block">
+              <h2>4. Scraped Content Policy</h2>
+              <p>When you initiate a competitor scan, we temporarily store scraped HTML and extracted text solely to perform keyword analysis. This data:</p>
+              <ul>
+                <li>Is <strong>automatically deleted after 30 days</strong></li>
+                <li>Is never used to train models or shared with third parties</li>
+                <li>Is filtered to remove personal data (emails, phone numbers)</li>
+                <li>Belongs to the target website's owner — not SiteMapSEO</li>
+              </ul>
+            </section>
+
+            <section id="sharing" class="legal-section-block">
+              <h2>5. Data Sharing</h2>
+              <p>We share data only with trusted sub-processors necessary to operate the Service: cloud hosting (AWS), payment processing (Stripe), error monitoring (Sentry), and email delivery (Postmark). All sub-processors are GDPR-compliant.</p>
+            </section>
+
+            <section id="retention" class="legal-section-block">
+              <h2>6. Data Retention</h2>
+              <p>Account data is retained for the duration of your account and up to 90 days after deletion for legal and backup purposes. Scraped content is deleted after 30 days. Analytics data is retained for 24 months.</p>
+            </section>
+
+            <section id="security" class="legal-section-block">
+              <h2>7. Security</h2>
+              <p>We use industry-standard security practices: TLS encryption in transit, AES-256 encryption at rest, regular security audits, and strict access controls. Despite our efforts, no system is 100% secure — please use a strong password and enable 2FA.</p>
+            </section>
+
+            <section id="rights" class="legal-section-block">
+              <h2>8. Your Rights</h2>
+              <p>Depending on your jurisdiction (GDPR, CCPA, etc.), you may have the right to: access your data, correct inaccurate data, delete your account, export your data, and opt out of marketing. To exercise these rights, email <a href="mailto:privacy@sitemapseo.io">privacy@sitemapseo.io</a>.</p>
+            </section>
+
+            <section id="cookies" class="legal-section-block">
+              <h2>9. Cookies</h2>
+              <p>We use essential cookies for authentication and session management, and optional analytics cookies (PostHog). You can disable non-essential cookies in your account settings or browser. We do not use third-party advertising cookies.</p>
+            </section>
+
+            <section id="contact" class="legal-section-block">
+              <h2>10. Contact</h2>
+              <p>For privacy concerns: <a href="mailto:privacy@sitemapseo.io">privacy@sitemapseo.io</a></p>
+              <p>SiteMapSEO Inc., 123 Innovation Drive, San Francisco, CA 94105, USA</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .page-main { padding-top: 72px; }
+  .legal-section { padding: clamp(4rem, 6vw, 6rem) 0; }
+  .legal-header { max-width: 700px; margin-bottom: 3rem; }
+  .page-title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; letter-spacing: -0.03em; margin: 1rem 0 0.5rem; color: var(--color-text); }
+  .legal-meta { font-size: 0.9rem; color: var(--color-text-faint); }
+  .legal-body { display: grid; grid-template-columns: 260px 1fr; gap: 3rem; align-items: start; }
+  @media (max-width: 900px) { .legal-body { grid-template-columns: 1fr; } }
+  .legal-toc { padding: 1.5rem; position: sticky; top: 96px; }
+  @media (max-width: 900px) { .legal-toc { position: static; } }
+  .toc-title { font-size: 0.875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-muted); margin-bottom: 1rem; }
+  .toc-list { list-style: decimal; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.625rem; }
+  .toc-list a { font-size: 0.875rem; color: var(--color-text-muted); transition: color 0.2s; }
+  .toc-list a:hover { color: var(--color-teal); }
+  .legal-content { max-width: 800px; }
+  .legal-section-block { margin-bottom: 3rem; padding-bottom: 3rem; border-bottom: 1px solid var(--color-border); }
+  .legal-section-block:last-child { border-bottom: none; margin-bottom: 0; }
+  .legal-section-block h2 { font-size: 1.375rem; font-weight: 700; color: var(--color-text); margin-bottom: 1rem; scroll-margin-top: 96px; }
+  .legal-section-block p { font-size: 0.9375rem; color: var(--color-text-muted); line-height: 1.8; margin-bottom: 1rem; }
+  .legal-section-block strong { color: var(--color-text); }
+  .legal-section-block ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+  .legal-section-block li { font-size: 0.9375rem; color: var(--color-text-muted); line-height: 1.75; margin-bottom: 0.375rem; }
+  .legal-section-block a { color: var(--color-teal); text-decoration: underline; }
+</style>

@@ -1,0 +1,436 @@
+MASTER PROMPT FOR CLAUDE OPUS (DETAILED)
+
+You are Claude Opus acting as a principal Astro/Tailwind theme engineer.
+
+Objective:
+Build a personalized production-ready website theme from a provided HTML/CSS mockup while preserving full feature parity with the baseline theme specification below.
+
+You must satisfy BOTH goals at once:
+1) Visual and UX alignment with the mockup.
+2) 100% functional parity with the required theme feature set.
+
+========================================================================
+INPUT CONTRACT
+========================================================================
+
+You will receive:
+
+1) MOCKUP_HTML
+The target visual/layout blueprint.
+
+2) MOCKUP_CSS
+The styling language to preserve (tokens, spacing rhythm, component look).
+
+3) BRAND_PROFILE
+Includes:
+- brand/site name
+- niche/domain
+- visual tone
+- primary/secondary/neutral colors
+- type preferences
+- logo paths
+- social URLs
+- contact email
+- optional legal/policy tone
+
+4) CONTENT_PROFILE
+Includes:
+- homepage content blocks
+- FAQ entries
+- About/Terms/Privacy content
+- contact text
+- optional blog data
+
+If any input field is missing, infer reasonable defaults and continue. Do not stop unless blocked by a hard technical ambiguity.
+
+========================================================================
+NON-NEGOTIABLE BUILD RULES
+========================================================================
+
+- No TODO placeholders.
+- No broken routes.
+- No missing required features.
+- No regression from baseline behavior.
+- All code must be complete and runnable.
+- Keep accessibility semantics (labels, headings, alt text, keyboard navigation).
+- Keep performance best practices (non-critical lazy loading, avoid unnecessary blocking JS).
+- Keep implementation clean and maintainable.
+
+========================================================================
+STACK, CONFIG, AND ARCHITECTURE REQUIREMENTS
+========================================================================
+
+- Framework: Astro.
+- Styling: Tailwind CSS v4 style import.
+- Content: Astro content collections + MDX.
+- Integrations:
+  - sitemap integration
+  - Vercel adapter
+- Trailing slash behavior: equivalent to `trailingSlash: "always"`.
+- Preserve alias-based architecture concept:
+  - `src/*` for project pages/config/content
+  - `theme/*` for reusable layouts/components/i18n utilities
+- Keep strict TypeScript-compatible setup.
+- Keep custom breakpoint behavior equivalent to:
+  - 2xl = 1440px
+
+========================================================================
+MANDATORY ROUTES (MUST EXIST)
+========================================================================
+
+Core pages:
+- /
+- /about-us/
+- /contact-us/
+- /terms/
+- /privacy/
+- /sitemap/
+- /404
+
+Localized home route pattern:
+- default locale home without prefix
+- localized homes with `/<locale>/`
+
+Blog:
+- paginated blog listing route
+- single blog route by id/slug
+
+Machine-readable:
+- /robots.txt
+- /llms.txt
+
+========================================================================
+I18N REQUIREMENTS (FULL)
+========================================================================
+
+Locales supported:
+en, hi, es, ru, fr, de, it, pt, bn, ja, ko, ms, pl, id, ar, bg, tr, sv
+
+Behavior:
+- default locale = en
+- en has no prefix
+- non-default locales use prefix
+- locale detected from URL segment
+- helper function to generate localized URLs
+- helper for locale extraction from params
+- helper for locale-based static path generation
+- merge translations from multiple JSON sources:
+  - primary UI/content keys
+  - FAQ keys
+  - shared common labels
+- fallback to English if locale key missing
+- language switcher UI linking to localized home routes
+- `<html lang>` set per locale
+- `<html dir="rtl">` for Arabic locale, otherwise `ltr`
+
+Translation data model requirements:
+- i18n files should include site title/description and FAQ structures
+- shared labels must include nav/footer/common terms
+- keep split translation files for maintainability
+
+========================================================================
+GLOBAL LAYOUT + SEO + SCHEMA REQUIREMENTS
+========================================================================
+
+Create one reusable base layout that includes:
+- Header component
+- Footer component
+- global stylesheet import
+- centered responsive `<main>` container
+
+Meta and SEO in layout (required):
+- title
+- meta description
+- canonical URL
+- robots meta
+- googlebot meta
+- favicon
+
+Verification meta (optional based on config values):
+- Google site verification
+- Bing verification
+- Yandex verification
+
+Open Graph (required):
+- og:title
+- og:description
+- og:url
+- og:site_name
+- og:locale (mapped correctly from locale)
+- og:image
+- og:image:width
+- og:image:height
+- og:image:alt
+- og:type
+
+Twitter meta (required):
+- twitter:title
+- twitter:description
+- twitter:image
+- twitter:card = summary_large_image
+
+Schema JSON-LD in base layout:
+- Organization schema:
+  - name
+  - url
+  - legalName
+  - logo object
+  - description
+  - sameAs from social links
+- SiteNavigationElement graph from header navigation
+- Conditional AboutPage schema on about page
+- Conditional ContactPage schema on contact page
+
+========================================================================
+HEADER REQUIREMENTS
+========================================================================
+
+- Brand logo + localized site title.
+- Desktop nav from config JSON.
+- Mobile menu with overlay/panel behavior and client-side toggle logic:
+  - open/close button
+  - icon swap on toggle
+  - `aria-expanded` updates
+  - `aria-hidden` updates
+  - body scroll lock when open
+  - closes via close button
+  - closes when any mobile nav/home link clicked
+- Keep nav links locale-aware for home link behavior.
+
+========================================================================
+FOOTER REQUIREMENTS
+========================================================================
+
+- Logo and localized site title.
+- Localized footer description text.
+- Footer nav links from config JSON.
+- Social icon block rendered only when URLs exist.
+- Supported icons:
+  - Facebook
+  - Twitter
+  - LinkedIn
+  - Pinterest
+- Include locale switcher.
+- Dynamic current year copyright.
+
+========================================================================
+HOME PAGE REQUIREMENTS
+========================================================================
+
+Home must include:
+- localized page title/description
+- homepage schema component injection in `<head>`
+- "How it works" reusable section component with slot support
+- reusable chart/table section component
+- FAQ component with collapsible detail rows
+
+Structure target (must be preserved even if content varies):
+- H1
+- intro paragraph
+- tool area
+- "How [Site Title] works"
+- table/chart section
+- FAQ section
+
+FAQ behavior:
+- allow FAQ items with `display: false` to be hidden
+
+Homepage schema:
+- WebSite JSON-LD
+- FAQPage JSON-LD if FAQs exist
+
+========================================================================
+CONTACT PAGE + FORM REQUIREMENTS
+========================================================================
+
+Contact page:
+- page title
+- short helper paragraph
+- reusable contact form component
+
+Form requirements:
+- fields:
+  - name
+  - email
+  - message
+- submit button
+- fallback direct email link
+- status text element for user feedback
+- async POST submission to form endpoint (Web3Forms-compatible flow acceptable)
+- handle states:
+  - sending
+  - success
+  - API error
+  - network error
+
+Security preference:
+- Use environment variable for access key when possible; if static key used, keep implementation consistent with baseline behavior.
+
+========================================================================
+BLOG SYSTEM REQUIREMENTS
+========================================================================
+
+Content collection:
+- define blog collection with schema requiring:
+  - title
+  - description
+  - image
+  - date
+  - author
+  - category
+- load posts from `src/blog` with md/mdx support
+
+Blog listing:
+- sort newest to oldest by date
+- pagination page size = 12
+- show cards:
+  - featured image
+  - title
+  - description
+  - read CTA
+- show results meta text (range + total)
+- pagination UI:
+  - previous
+  - next
+  - numbered pages
+  - disabled state when unavailable
+- include Blog schema JSON-LD
+- include ItemList schema JSON-LD with item positions
+
+Single blog page:
+- generate route from post id/slug
+- render MDX body content
+- hero area with title, description, featured image
+- canonical URL handling
+- missing post -> redirect/resolve to 404 behavior
+- include Article JSON-LD
+- include BreadcrumbList JSON-LD
+
+========================================================================
+SITEMAP / ROBOTS / LLMS REQUIREMENTS
+========================================================================
+
+Human sitemap page (`/sitemap/`):
+- list static pages
+- list locale home links
+- list blog post links
+- list blog pagination links
+- generate static page links by scanning page files while excluding dynamic and 404 routes
+
+robots route (`/robots.txt`):
+- allow all user agents
+- include `sitemap-index.xml` absolute URL
+
+llms route (`/llms.txt`):
+- include:
+  - site URL
+  - contact
+  - sitemap URL
+  - policy statement about AI usage
+  - allow directive
+
+========================================================================
+CONFIG + DATA REQUIREMENTS
+========================================================================
+
+Use JSON-driven config structure for:
+- site/base URL
+- webmaster verification values
+- social links
+- header/footer navigation
+- optional metadata fields (author/meta image equivalents)
+
+Maintain modular component/layout structure:
+- theme layouts
+- theme components
+- page-level route wrappers in src/pages
+- content collection exports via src/content config
+
+========================================================================
+VISUAL PERSONALIZATION RULES (MOCKUP-DRIVEN)
+========================================================================
+
+The mockup controls visual language.
+
+You must extract and apply:
+- color system
+- typography system
+- spacing rhythm
+- card/border/radius/shadow style
+- button/input behavior
+- nav/footer styling
+- responsive breakpoints and layout behavior
+
+While preserving full functionality above, adapt every component visually so it feels native to the provided mockup and brand profile.
+
+========================================================================
+DELIVERY FORMAT (STRICT)
+========================================================================
+
+Respond in exactly this structure:
+
+1) Feature Mapping
+- Map every mandatory feature to concrete file(s)/component(s).
+- Use concise bullets with file paths.
+
+2) File Tree
+- Show full created/updated tree.
+
+3) Code
+- Provide complete code for every created/updated file.
+- Use clear per-file headers, for example:
+  `### FILE: src/pages/contact-us.astro`
+
+4) Validation Checklist
+- Enumerate each requirement category with Pass/Fail.
+- Include short notes for how each pass condition is satisfied.
+
+5) Run + Verify Commands
+- install command
+- dev command
+- build command
+- type/content check command
+- any extra verification command if needed
+
+6) Assumptions
+- List assumptions made due to missing inputs.
+
+========================================================================
+FINAL ACCEPTANCE GATE (SELF-CHECK BEFORE YOU FINISH)
+========================================================================
+
+Before finalizing, verify:
+- all required routes exist
+- locale routing works (default unprefixed, others prefixed)
+- Arabic renders RTL
+- header mobile menu behavior works
+- footer social block is conditional
+- language switcher links are valid
+- blog listing pagination works at 12/page
+- blog post pages render MDX
+- required JSON-LD blocks are present
+- sitemap page includes pages/posts/pagination/locales
+- robots and llms endpoints return valid text
+- no placeholder TODO text remains
+
+If any item fails, fix it before responding.
+
+========================================================================
+EXECUTION START
+========================================================================
+
+Use the following injected values:
+
+MOCKUP_HTML:
+{{MOCKUP_HTML}}
+
+MOCKUP_CSS:
+{{MOCKUP_CSS}}
+
+BRAND_PROFILE:
+{{BRAND_PROFILE}}
+
+CONTENT_PROFILE:
+{{CONTENT_PROFILE}}
+
+Now implement the full theme with complete parity and personalized mockup styling.

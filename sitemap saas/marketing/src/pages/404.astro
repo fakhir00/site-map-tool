@@ -1,0 +1,85 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<BaseLayout title="Page Not Found — SiteMapSEO" noIndex={true}>
+  <Header />
+  <main class="notfound-main">
+    <div class="notfound-bg" aria-hidden="true">
+      <div class="glow-orb glow-teal" style="width:400px;height:400px;top:-100px;left:50%;transform:translateX(-50%);"></div>
+    </div>
+    <div class="container notfound-inner">
+      <div class="notfound-code" aria-hidden="true">404</div>
+      <h1 class="notfound-title">Page not found</h1>
+      <p class="notfound-desc">
+        The page you're looking for doesn't exist or has been moved.
+        Let's get you back on track.
+      </p>
+      <div class="notfound-actions">
+        <a href="/" class="btn btn-primary btn-lg" id="notfound-home">Go to Homepage</a>
+        <a href="/blog/" class="btn btn-ghost btn-lg" id="notfound-blog">Read the Blog</a>
+      </div>
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .notfound-main {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding-top: 72px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .notfound-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+
+  .notfound-inner {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding-block: 4rem;
+  }
+
+  .notfound-code {
+    font-family: var(--font-heading);
+    font-size: clamp(6rem, 20vw, 12rem);
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--color-teal) 0%, var(--color-indigo) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    opacity: 0.2;
+    margin-bottom: -2rem;
+    animation: float 4s ease-in-out infinite;
+  }
+
+  .notfound-title {
+    font-size: clamp(1.75rem, 4vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--color-text);
+    margin-bottom: 1.25rem;
+  }
+
+  .notfound-desc {
+    font-size: 1.125rem;
+    color: var(--color-text-muted);
+    max-width: 480px;
+    margin: 0 auto 2.5rem;
+    line-height: 1.7;
+  }
+
+  .notfound-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+</style>

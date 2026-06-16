@@ -1,0 +1,277 @@
+---
+import { dashboardUrl } from '../lib/appLinks';
+
+const navLinks = [
+  { href: '/#features', label: 'Features' },
+  { href: '/#how-it-works', label: 'How It Works' },
+  { href: '/#pricing', label: 'Pricing' },
+  { href: '/blog/', label: 'Blog' },
+];
+
+const loginUrl = dashboardUrl('/login');
+const registerUrl = dashboardUrl('/register');
+---
+
+<header id="site-header" class="site-header">
+  <nav class="container nav-inner" aria-label="Main navigation">
+    <!-- Logo -->
+    <a href="/" class="logo-link" aria-label="SiteMapSEO Home">
+      <div class="logo-icon" aria-hidden="true">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00e5c9"/>
+              <stop offset="1" stop-color="#6366f1"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="8" fill="url(#lg1)" opacity="0.15"/>
+          <path d="M8 10h16M8 16h10M8 22h13" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="24" cy="22" r="4" fill="url(#lg1)" opacity="0.8"/>
+          <circle cx="24" cy="22" r="2" fill="#00e5c9"/>
+        </svg>
+      </div>
+      <span class="logo-text">SiteMap<span class="logo-accent">SEO</span></span>
+    </a>
+
+    <!-- Desktop Nav -->
+    <ul class="nav-links hide-mobile" role="list">
+      {navLinks.map(link => (
+        <li>
+          <a href={link.href} class="nav-link">{link.label}</a>
+        </li>
+      ))}
+    </ul>
+
+    <!-- Desktop CTA -->
+    <div class="nav-cta hide-mobile">
+      <a href={loginUrl} class="btn btn-ghost btn-sm">Sign in</a>
+      <a href={registerUrl} class="btn btn-primary btn-sm">
+        Get Started Free
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </div>
+
+    <!-- Mobile Menu Button -->
+    <button
+      id="mobile-menu-btn"
+      class="mobile-menu-btn hide-desktop"
+      aria-label="Open menu"
+      aria-expanded="false"
+      aria-controls="mobile-menu"
+    >
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+  </nav>
+</header>
+
+<!-- Mobile Menu -->
+<div id="mobile-menu" class="mobile-menu" role="dialog" aria-modal="true" aria-label="Mobile navigation" aria-hidden="true">
+  <div class="mobile-menu-header">
+    <a href="/" class="logo-link" onclick="closeMobileMenu()">
+      <div class="logo-icon" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+          <defs>
+            <linearGradient id="lg2" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00e5c9"/>
+              <stop offset="1" stop-color="#6366f1"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="8" fill="url(#lg2)" opacity="0.15"/>
+          <path d="M8 10h16M8 16h10M8 22h13" stroke="url(#lg2)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="24" cy="22" r="4" fill="url(#lg2)" opacity="0.8"/>
+          <circle cx="24" cy="22" r="2" fill="#00e5c9"/>
+        </svg>
+      </div>
+      <span class="logo-text">SiteMap<span class="logo-accent">SEO</span></span>
+    </a>
+    <button id="mobile-close-btn" class="mobile-close-btn" aria-label="Close menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <ul class="mobile-nav-links" role="list">
+    {navLinks.map(link => (
+      <li>
+        <a href={link.href} class="mobile-nav-link" onclick="closeMobileMenu()">{link.label}</a>
+      </li>
+    ))}
+  </ul>
+
+  <div class="mobile-nav-cta">
+    <a href={loginUrl} class="btn btn-ghost" style="width:100%;justify-content:center;">Sign in</a>
+    <a href={registerUrl} class="btn btn-primary" style="width:100%;justify-content:center;">Get Started Free</a>
+  </div>
+</div>
+
+<style>
+  .site-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(8, 13, 20, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    transition: background 0.3s;
+  }
+
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    height: 72px;
+  }
+
+  .logo-link {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-family: var(--font-heading);
+    font-size: 1.125rem;
+    font-weight: 800;
+    color: var(--color-text);
+    letter-spacing: -0.02em;
+  }
+
+  .logo-accent {
+    background: linear-gradient(135deg, var(--color-teal) 0%, var(--color-indigo) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    list-style: none;
+  }
+
+  .nav-cta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .mobile-menu-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 8px;
+  }
+
+  .hamburger-line {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: var(--color-text);
+    border-radius: 1px;
+    transition: transform 0.3s, opacity 0.3s;
+  }
+
+  .mobile-menu-btn[aria-expanded="true"] .hamburger-line:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+  .mobile-menu-btn[aria-expanded="true"] .hamburger-line:nth-child(2) {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  .mobile-menu-btn[aria-expanded="true"] .hamburger-line:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+
+  .mobile-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 3rem;
+  }
+
+  .mobile-close-btn {
+    background: none;
+    border: none;
+    color: var(--color-text);
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 8px;
+    transition: color 0.2s;
+  }
+
+  .mobile-close-btn:hover { color: var(--color-teal); }
+
+  .mobile-nav-links {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: auto;
+  }
+
+  .mobile-nav-link {
+    display: block;
+    font-family: var(--font-heading);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    padding: 0.75rem 0;
+    transition: color 0.2s;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .mobile-nav-link:hover { color: var(--color-teal); }
+
+  .mobile-nav-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+</style>
+
+<script>
+  const menuBtn = document.getElementById('mobile-menu-btn');
+  const closeBtn = document.getElementById('mobile-close-btn');
+  const menu = document.getElementById('mobile-menu');
+
+  function openMobileMenu() {
+    menu?.classList.add('open');
+    menu?.setAttribute('aria-hidden', 'false');
+    menuBtn?.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeMobileMenu() {
+    menu?.classList.remove('open');
+    menu?.setAttribute('aria-hidden', 'true');
+    menuBtn?.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+  }
+
+  menuBtn?.addEventListener('click', openMobileMenu);
+  closeBtn?.addEventListener('click', closeMobileMenu);
+
+  // Close on ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMobileMenu();
+  });
+
+  // Make closeMobileMenu global for onclick attributes
+  (window as any).closeMobileMenu = closeMobileMenu;
+</script>

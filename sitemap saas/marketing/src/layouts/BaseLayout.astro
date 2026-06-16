@@ -1,0 +1,112 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  canonicalURL?: string;
+  ogImage?: string;
+  noIndex?: boolean;
+}
+
+const {
+  title,
+  description = 'SiteMapSEO compares your sitemap against competitor sitemaps, extracts URL-topic keyword gaps, and presents prioritized content opportunities — helping you create better content faster.',
+  canonicalURL = Astro.url.href,
+  ogImage = '/og-image.png',
+  noIndex = false,
+} = Astro.props;
+
+const siteURL = 'https://sitemapseo.io';
+const siteName = 'SiteMapSEO';
+const fullTitle = title.includes(siteName) ? title : `${title} | ${siteName}`;
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${siteURL}/#organization`,
+      name: siteName,
+      url: siteURL,
+      legalName: 'SiteMapSEO Inc.',
+      logo: {
+        '@type': 'ImageObject',
+        url: `${siteURL}/logo.svg`,
+        width: 180,
+        height: 40,
+      },
+      description: 'AI-powered competitor sitemap analysis and SEO keyword discovery platform.',
+      sameAs: [
+        'https://twitter.com/sitemapseo',
+        'https://linkedin.com/company/sitemapseo',
+      ],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${siteURL}/#website`,
+      url: siteURL,
+      name: siteName,
+      publisher: { '@id': `${siteURL}/#organization` },
+    },
+  ],
+};
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+    <!-- FOUC Prevention for color-scheme -->
+    <meta name="color-scheme" content="dark" />
+
+    <!-- Primary Meta -->
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
+    {noIndex ? (
+      <meta name="robots" content="noindex, nofollow" />
+    ) : (
+      <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    )}
+    <meta name="googlebot" content="index, follow" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={`${siteURL}${ogImage}`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={`${siteName} — SEO Intelligence Platform`} />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@sitemapseo" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={`${siteURL}${ogImage}`} />
+
+    <!-- Preconnect fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Schema JSON-LD -->
+    <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+
+    <!-- Slot for page-level head additions -->
+    <slot name="head" />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

@@ -1,0 +1,322 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<BaseLayout
+  title="Contact Us — SiteMapSEO"
+  description="Get in touch with the SiteMapSEO team. We're here to help with questions about our SEO intelligence platform, pricing, and enterprise plans."
+>
+  <script type="application/ld+json" slot="head" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    "name": "Contact SiteMapSEO",
+    "url": "https://sitemapseo.io/contact/",
+    "description": "Contact the SiteMapSEO support team",
+  })} />
+
+  <Header />
+  <main class="page-main">
+    <section class="contact-section">
+      <div class="contact-bg" aria-hidden="true">
+        <div class="glow-orb glow-indigo" style="width:400px;height:400px;top:-100px;left:-100px;"></div>
+      </div>
+      <div class="container contact-inner">
+        <!-- Left: info -->
+        <div class="contact-info reveal">
+          <p class="section-label">Get in Touch</p>
+          <h1 class="contact-title">We'd love to<br/><span class="gradient-text">hear from you</span></h1>
+          <p class="contact-desc">
+            Have a question about our platform, pricing, or a custom enterprise plan?
+            Fill in the form and we'll get back to you within 24 hours.
+          </p>
+
+          <div class="contact-channels">
+            {[
+              {
+                icon: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2.5 6.667 10 11.25l7.5-4.583M2.5 6.667v8.333A1.667 1.667 0 0 0 4.167 16.667h11.666A1.667 1.667 0 0 0 17.5 15V6.667M2.5 6.667A1.667 1.667 0 0 1 4.167 5h11.666A1.667 1.667 0 0 1 17.5 6.667" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+                label: 'Email',
+                value: 'hello@sitemapseo.io',
+                href: 'mailto:hello@sitemapseo.io',
+              },
+              {
+                icon: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M18.333 14.108v2.5a1.667 1.667 0 0 1-1.816 1.667 16.492 16.492 0 0 1-7.192-2.558A16.25 16.25 0 0 1 4.325 10.7 16.491 16.491 0 0 1 1.767 3.55a1.667 1.667 0 0 1 1.658-1.883h2.5a1.667 1.667 0 0 1 1.667 1.433 10.692 10.692 0 0 0 .583 2.342 1.667 1.667 0 0 1-.375 1.758l-1.058 1.059a13.333 13.333 0 0 0 5 5l1.058-1.059a1.667 1.667 0 0 1 1.759-.375 10.692 10.692 0 0 0 2.341.583 1.667 1.667 0 0 1 1.433 1.692z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+                label: 'Twitter DMs',
+                value: '@sitemapseo',
+                href: 'https://twitter.com/sitemapseo',
+              },
+            ].map(ch => (
+              <a href={ch.href} class="contact-channel glass-card" rel="noopener">
+                <span class="channel-icon" aria-hidden="true">
+                  <Fragment set:html={ch.icon} />
+                </span>
+                <div>
+                  <div class="channel-label">{ch.label}</div>
+                  <div class="channel-value">{ch.value}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <!-- Right: form -->
+        <div class="contact-form-wrapper glass-card reveal" style="animation-delay:0.1s;">
+          <form id="contact-form" novalidate>
+            <div class="form-group">
+              <label for="contact-name" class="form-label">Your Name</label>
+              <input
+                type="text"
+                id="contact-name"
+                name="name"
+                class="input-field"
+                placeholder="Jane Smith"
+                required
+                autocomplete="name"
+              />
+            </div>
+            <div class="form-group">
+              <label for="contact-email" class="form-label">Email Address</label>
+              <input
+                type="email"
+                id="contact-email"
+                name="email"
+                class="input-field"
+                placeholder="jane@company.com"
+                required
+                autocomplete="email"
+              />
+            </div>
+            <div class="form-group">
+              <label for="contact-subject" class="form-label">Subject</label>
+              <select id="contact-subject" name="subject" class="input-field" style="cursor:pointer;">
+                <option value="">Select a topic</option>
+                <option value="general">General inquiry</option>
+                <option value="pricing">Pricing & plans</option>
+                <option value="enterprise">Enterprise / custom plan</option>
+                <option value="bug">Bug report</option>
+                <option value="feature">Feature request</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="contact-message" class="form-label">Message</label>
+              <textarea
+                id="contact-message"
+                name="message"
+                class="input-field"
+                rows="5"
+                placeholder="Tell us about your project or question..."
+                required
+                style="resize:vertical;min-height:120px;"
+              ></textarea>
+            </div>
+
+            <div id="form-status" role="alert" aria-live="polite" class="form-status" style="display:none;"></div>
+
+            <button type="submit" id="submit-btn" class="btn btn-primary" style="width:100%;justify-content:center;">
+              <span id="submit-label">Send Message</span>
+              <svg id="submit-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M3 9h12M10.5 3.75 15.75 9 10.5 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <p class="form-fallback">
+              Or email us directly at
+              <a href="mailto:hello@sitemapseo.io">hello@sitemapseo.io</a>
+            </p>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .page-main { padding-top: 72px; }
+
+  .contact-section {
+    position: relative;
+    min-height: calc(100vh - 72px);
+    display: flex;
+    align-items: center;
+    padding: clamp(4rem, 8vw, 7rem) 0;
+    overflow: hidden;
+  }
+
+  .contact-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+
+  .contact-inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: start;
+    width: 100%;
+  }
+
+  @media (max-width: 768px) { .contact-inner { grid-template-columns: 1fr; } }
+
+  .contact-title {
+    font-size: clamp(2rem, 4vw, 3.25rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 1rem 0 1.25rem;
+    color: var(--color-text);
+  }
+
+  .contact-desc {
+    font-size: 1.0625rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+  }
+
+  .contact-channels {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .contact-channel {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+
+  .contact-channel:hover { border-color: var(--color-teal); }
+
+  .channel-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--color-teal-glow);
+    color: var(--color-teal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .channel-label { font-size: 0.8125rem; color: var(--color-text-faint); margin-bottom: 0.125rem; }
+  .channel-value { font-weight: 600; color: var(--color-text); }
+
+  .contact-form-wrapper { padding: 2rem; }
+
+  .form-group { margin-bottom: 1.5rem; }
+  .form-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+    font-family: var(--font-heading);
+  }
+
+  .form-status {
+    padding: 0.875rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.9375rem;
+    margin-bottom: 1.25rem;
+    border: 1px solid;
+  }
+
+  .form-status.success {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #4ade80;
+  }
+
+  .form-status.error {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #f87171;
+  }
+
+  .form-status.sending {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: var(--color-indigo);
+  }
+
+  .form-fallback {
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--color-text-faint);
+    margin-top: 1.25rem;
+  }
+
+  .form-fallback a { color: var(--color-teal); text-decoration: underline; }
+</style>
+
+<script>
+  const revealObserver = new IntersectionObserver(
+    entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('revealed'); revealObserver.unobserve(e.target); } }),
+    { threshold: 0.1 }
+  );
+  document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+  const form = document.getElementById('contact-form') as HTMLFormElement;
+  const statusEl = document.getElementById('form-status') as HTMLElement;
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
+  const submitLabel = document.getElementById('submit-label') as HTMLElement;
+
+  function showStatus(msg: string, type: 'success' | 'error' | 'sending') {
+    statusEl.textContent = msg;
+    statusEl.className = `form-status ${type}`;
+    statusEl.style.display = 'block';
+  }
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const name = (form.elements.namedItem('name') as HTMLInputElement)?.value?.trim();
+    const email = (form.elements.namedItem('email') as HTMLInputElement)?.value?.trim();
+    const message = (form.elements.namedItem('message') as HTMLTextAreaElement)?.value?.trim();
+
+    if (!name || !email || !message) {
+      showStatus('Please fill in all required fields.', 'error');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showStatus('Please enter a valid email address.', 'error');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitLabel.textContent = 'Sending...';
+    showStatus('Sending your message...', 'sending');
+
+    try {
+      // Web3Forms-compatible POST (replace ACCESS_KEY with your key)
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_key: 'YOUR_WEB3FORMS_KEY',
+          name, email,
+          subject: (form.elements.namedItem('subject') as HTMLSelectElement)?.value || 'Contact Form',
+          message,
+        }),
+      });
+
+      if (res.ok) {
+        showStatus('✓ Message sent! We\'ll reply within 24 hours.', 'success');
+        form.reset();
+      } else {
+        throw new Error('API error');
+      }
+    } catch {
+      showStatus('Network error. Please email us directly at hello@sitemapseo.io', 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Send Message';
+    }
+  });
+</script>

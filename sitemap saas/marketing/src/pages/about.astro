@@ -1,0 +1,231 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { dashboardUrl } from '../lib/appLinks';
+
+const registerUrl = dashboardUrl('/register');
+---
+
+<BaseLayout
+  title="About Us — SiteMapSEO"
+  description="Learn about SiteMapSEO's mission to make competitor SEO intelligence accessible and automated for content creators and SEO professionals worldwide."
+>
+  <Header />
+  <main class="page-main">
+    <!-- Hero -->
+    <section class="page-hero">
+      <div class="page-hero-bg" aria-hidden="true">
+        <div class="glow-orb glow-teal" style="width:500px;height:500px;top:-100px;right:-100px;"></div>
+      </div>
+      <div class="container">
+        <div class="page-hero-content">
+          <p class="section-label">Our Story</p>
+          <h1 class="page-title">
+            Built by SEOs,<br/><span class="gradient-text">for SEOs</span>
+          </h1>
+          <p class="page-subtitle">
+            SiteMapSEO was born out of frustration. After spending weeks manually
+            crawling competitor blogs and copy-pasting keywords into spreadsheets,
+            we knew there had to be a better way.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Mission -->
+    <section class="section">
+      <div class="container">
+        <div class="about-grid">
+          <div class="about-text reveal">
+            <p class="section-label">Our Mission</p>
+            <h2 class="about-heading">Democratizing competitor SEO intelligence</h2>
+            <p class="about-body">
+              Enterprise SEO teams have always had access to sophisticated competitor
+              analysis tools. We believe every content creator, indie blogger, and
+              small agency deserves the same intelligence — without the five-figure
+              annual price tag.
+            </p>
+            <p class="about-body">
+              SiteMapSEO automates the entire pipeline: from sitemap discovery to
+              NLP-powered keyword extraction, giving you actionable data in hours
+              instead of weeks.
+            </p>
+          </div>
+          <div class="about-values reveal">
+            {[
+              { icon: '🎯', title: 'Accuracy first', desc: 'We use production-grade NLP — RAKE, KeyBERT, and spaCy — not regex shortcuts.' },
+              { icon: '⚡', title: 'Speed matters', desc: 'Full 200-page blog analyzed in under 2 hours, including all politeness delays.' },
+              { icon: '🔒', title: 'Privacy by design', desc: 'Scraped content auto-deleted after 30 days. We never store personal data.' },
+              { icon: '🌍', title: 'Ethical scraping', desc: 'robots.txt respected. Crawl-delay honored. Always transparent about what we do.' },
+            ].map(v => (
+              <div class="value-card glass-card">
+                <span class="value-icon" aria-hidden="true">{v.icon}</span>
+                <div>
+                  <h3 class="value-title">{v.title}</h3>
+                  <p class="value-desc">{v.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">The Team</p>
+          <h2 class="section-title">Meet the people<br/><span class="gradient-text">behind the product</span></h2>
+        </div>
+        <div class="team-grid">
+          {[
+            { name: 'Alex Morgan', role: 'Co-founder & CEO', bio: 'Former SEO lead at a Series B SaaS. Built and scaled content programs to 500K monthly organic visits.', initials: 'AM', color: '#00e5c9' },
+            { name: 'Jordan Lee', role: 'Co-founder & CTO', bio: 'ex-Google engineer. 8 years of NLP and large-scale web crawling experience at production scale.', initials: 'JL', color: '#6366f1' },
+            { name: 'Sam Torres', role: 'Head of Product', bio: 'Previously at Ahrefs. Obsessed with turning complex data into simple, actionable workflows for marketers.', initials: 'ST', color: '#ec4899' },
+          ].map(member => (
+            <div class="team-card glass-card reveal">
+              <div class="team-avatar" style={`background:${member.color}18;color:${member.color};`}>{member.initials}</div>
+              <h3 class="team-name">{member.name}</h3>
+              <p class="team-role">{member.role}</p>
+              <p class="team-bio">{member.bio}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="section">
+      <div class="container" style="text-align:center;">
+        <div class="reveal">
+          <h2 class="section-title">Ready to get started?</h2>
+          <p class="section-desc" style="margin-bottom:2rem;">
+            Join 2,000+ SEO professionals already using SiteMapSEO.
+          </p>
+          <a href={registerUrl} class="btn btn-primary btn-lg" id="about-cta">Start for Free →</a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .page-main { padding-top: 72px; }
+
+  .page-hero {
+    position: relative;
+    padding: clamp(4rem, 8vw, 8rem) 0 clamp(3rem, 6vw, 5rem);
+    overflow: hidden;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .page-hero-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+
+  .page-hero-content {
+    position: relative;
+    z-index: 1;
+    max-width: 700px;
+  }
+
+  .page-title {
+    font-size: clamp(2.25rem, 5vw, 4rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 1rem 0 1.5rem;
+    color: var(--color-text);
+  }
+
+  .page-subtitle {
+    font-size: 1.125rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    max-width: 560px;
+  }
+
+  .about-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: start;
+  }
+
+  @media (max-width: 768px) { .about-grid { grid-template-columns: 1fr; } }
+
+  .about-heading {
+    font-size: clamp(1.5rem, 3vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 1rem 0 1.5rem;
+    color: var(--color-text);
+  }
+
+  .about-body {
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    line-height: 1.75;
+    margin-bottom: 1rem;
+  }
+
+  .about-values {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .value-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .value-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+  .value-title { font-weight: 700; margin-bottom: 0.25rem; }
+  .value-desc { font-size: 0.9rem; color: var(--color-text-muted); }
+
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 768px) { .team-grid { grid-template-columns: 1fr; max-width: 400px; margin-inline: auto; } }
+
+  .team-card {
+    padding: 2rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .team-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-heading);
+    font-size: 1.125rem;
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+  }
+
+  .team-name { font-weight: 700; font-size: 1.0625rem; }
+  .team-role { font-size: 0.875rem; color: var(--color-teal); font-weight: 500; }
+  .team-bio { font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.65; }
+</style>
+
+<script>
+  const revealObserver = new IntersectionObserver(
+    entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('revealed'); revealObserver.unobserve(e.target); } }),
+    { threshold: 0.1 }
+  );
+  document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+</script>

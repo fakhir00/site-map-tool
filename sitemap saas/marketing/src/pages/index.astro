@@ -1,0 +1,1739 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { dashboardUrl } from '../lib/appLinks';
+
+const registerUrl = dashboardUrl('/register');
+---
+
+<BaseLayout
+  title="SiteMapSEO — Competitor SEO Intelligence, Automated"
+  description="Automatically compare your sitemap against competitor sitemaps, extract URL-topic keywords, and discover content gaps. Turn competitor intelligence into your content strategy."
+>
+  <Header />
+  <main>
+    <!-- ══════════════════════════════════════
+         HERO SECTION
+    ══════════════════════════════════════ -->
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="glow-orb glow-teal" style="width:600px;height:600px;top:-200px;left:-100px;"></div>
+        <div class="glow-orb glow-indigo" style="width:500px;height:500px;top:100px;right:-150px;"></div>
+        <div class="bg-grid" style="position:absolute;inset:0;opacity:0.6;"></div>
+      </div>
+
+      <div class="container hero-inner">
+        <div class="hero-content">
+          <div class="badge badge-teal animate-fade-up" style="margin-bottom:1.5rem;">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="6" cy="6" r="6" opacity="0.3"/><circle cx="6" cy="6" r="3"/></svg>
+            Now in Public Beta — Free to Start
+          </div>
+
+          <h1 id="hero-heading" class="hero-title animate-fade-up delay-100">
+            Uncover Your Competitors'<br/>
+            <span class="gradient-text">SEO Strategy</span> in Minutes
+          </h1>
+
+          <p class="hero-subtitle animate-fade-up delay-200">
+            SiteMapSEO reads your sitemap and competitor sitemaps, compares URL topics,
+            and delivers a prioritized list of keyword gaps —
+            so you can create content that actually ranks.
+          </p>
+
+          <div class="hero-cta animate-fade-up delay-300">
+            <a href={registerUrl} class="btn btn-primary btn-lg" id="hero-cta-primary">
+              Start Analyzing Free
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M3.75 9h10.5M9 3.75 14.25 9 9 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </a>
+            <a href="#how-it-works" class="btn btn-ghost btn-lg" id="hero-cta-demo">
+              See How It Works
+            </a>
+          </div>
+
+          <div class="hero-stats animate-fade-up delay-400">
+            <div class="hero-stat">
+              <span class="hero-stat-value">50K+</span>
+              <span class="hero-stat-label">Keywords discovered</span>
+            </div>
+            <div class="hero-stat-divider" aria-hidden="true"></div>
+            <div class="hero-stat">
+              <span class="hero-stat-value">2M+</span>
+              <span class="hero-stat-label">URLs analyzed</span>
+            </div>
+            <div class="hero-stat-divider" aria-hidden="true"></div>
+            <div class="hero-stat">
+              <span class="hero-stat-value">&lt;2hr</span>
+              <span class="hero-stat-label">Per 200-page blog</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Mockup -->
+        <div class="hero-visual animate-fade-up delay-200">
+          <div class="dashboard-frame">
+            <div class="dashboard-chrome" aria-hidden="true">
+              <span class="chrome-dot" style="background:#ff5f57;"></span>
+              <span class="chrome-dot" style="background:#febc2e;"></span>
+              <span class="chrome-dot" style="background:#28c840;"></span>
+              <span class="chrome-url">app.sitemapseo.io/projects</span>
+            </div>
+            <img
+              src="/dashboard-mockup.png"
+              alt="SiteMapSEO dashboard showing keyword opportunities table with competitor SEO analysis"
+              width="680"
+              height="420"
+              loading="eager"
+              fetchpriority="high"
+              class="dashboard-img"
+            />
+          </div>
+          <!-- Floating keyword pills -->
+          <div class="floating-pill pill-1 animate-float" aria-hidden="true">content gap analysis</div>
+          <div class="floating-pill pill-2 animate-float delay-200" aria-hidden="true">LSI keywords</div>
+          <div class="floating-pill pill-3 animate-float delay-400" aria-hidden="true">competitor SEO</div>
+        </div>
+      </div>
+
+      <!-- Scroll indicator -->
+      <div class="scroll-indicator" aria-hidden="true">
+        <div class="scroll-dot"></div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         LOGO MARQUEE / SOCIAL PROOF
+    ══════════════════════════════════════ -->
+    <section class="marquee-section" aria-label="Used by SEO professionals at">
+      <div class="container">
+        <p class="marquee-label">Trusted by SEO professionals at</p>
+      </div>
+      <div class="marquee-wrapper">
+        <div class="marquee-track animate-marquee" aria-hidden="true">
+          {['Shopify', 'HubSpot', 'Moz', 'Ahrefs', 'Semrush', 'Surfer SEO', 'Clearscope', 'ContentKing', 'Shopify', 'HubSpot', 'Moz', 'Ahrefs', 'Semrush', 'Surfer SEO', 'Clearscope', 'ContentKing'].map(name => (
+            <span class="marquee-item">{name}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         FEATURES SECTION
+    ══════════════════════════════════════ -->
+    <section id="features" class="section" aria-labelledby="features-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">Platform Features</p>
+          <h2 id="features-heading" class="section-title">
+            Everything you need to<br/><span class="gradient-text">outsmart the competition</span>
+          </h2>
+          <p class="section-desc">
+            From sitemap discovery to keyword export — SiteMapSEO handles the entire pipeline
+            so your content team can focus on creating, not researching.
+          </p>
+        </div>
+
+        <div class="features-grid">
+          {[
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke="currentColor" stroke-width="1.5"/><path d="M15 12H9m3-3v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+              color: 'teal',
+              title: 'Automatic Sitemap Discovery',
+              desc: 'Finds sitemaps via /sitemap.xml, /sitemap_index.xml, and robots.txt. Handles gzipped sitemaps and nested indexes automatically.',
+            },
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+              color: 'indigo',
+              title: 'Smart URL Filtering',
+              desc: 'Extracts sitemap URLs and turns clean URL slugs into comparable content topics. Fully configurable per project.',
+            },
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/><path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+              color: 'pink',
+              title: 'Sitemap Keyword Gaps',
+              desc: 'Compares your sitemap topics against competitor sitemap topics to reveal missing keywords without scraping every page.',
+            },
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+              color: 'amber',
+              title: 'Priority Dashboard',
+              desc: 'Sortable keyword table with frequency, competitor URLs, readability scores, word count, and suggested content types.',
+            },
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 2v7h7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+              color: 'teal',
+              title: 'Content Gap Analysis',
+              desc: 'Add your own sitemap to instantly see what topics competitors cover that you\'re missing — ranked by opportunity.',
+            },
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+              color: 'indigo',
+              title: 'Scheduled Re-scans',
+              desc: 'Set daily, weekly, or monthly rescans. Get notified when competitors publish new content with keywords you\'re tracking.',
+            },
+          ].map((feat, i) => (
+            <div class={`glass-card feature-card reveal`} style={`animation-delay:${i * 0.1}s`}>
+              <div class={`feature-icon feature-icon-${feat.color}`}>
+                <Fragment set:html={feat.icon} />
+              </div>
+              <h3 class="feature-title">{feat.title}</h3>
+              <p class="feature-desc">{feat.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         HOW IT WORKS
+    ══════════════════════════════════════ -->
+    <section id="how-it-works" class="section how-section" aria-labelledby="how-heading">
+      <div class="how-bg" aria-hidden="true">
+        <div class="glow-orb glow-indigo" style="width:400px;height:400px;top:50%;left:50%;transform:translate(-50%,-50%);"></div>
+      </div>
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">How It Works</p>
+          <h2 id="how-heading" class="section-title">
+            From domain to keywords<br/><span class="gradient-text">in 5 simple steps</span>
+          </h2>
+        </div>
+
+        <div class="steps-grid">
+          {[
+            { n: '01', color: '#00e5c9', title: 'Enter Competitor Domain', desc: 'Paste any competitor\'s root domain. We\'ll take it from there — no sitemap URL needed.' },
+            { n: '02', color: '#6366f1', title: 'Discover Sitemaps', desc: 'We scan /sitemap.xml, /sitemap_index.xml, robots.txt, and fall back to homepage crawling.' },
+            { n: '03', color: '#ec4899', title: 'Extract & Filter URLs', desc: 'Blog URLs are identified via smart pattern matching. Preview the count before analysis begins.' },
+            { n: '04', color: '#f59e0b', title: 'Compare Sitemap Topics', desc: 'We extract meaningful phrases from URL slugs and compare competitor coverage against your own sitemap.' },
+            { n: '05', color: '#00e5c9', title: 'Explore Opportunities', desc: 'Your keyword dashboard populates in real-time. Sort, filter, export, and build winning content.' },
+          ].map((step, i) => (
+            <div class="step-card reveal" style={`animation-delay:${i * 0.12}s`}>
+              <div class="step-number" style={`color:${step.color};border-color:${step.color}22;background:${step.color}11`}>{step.n}</div>
+              <div class="step-connector-line" aria-hidden="true"></div>
+              <h3 class="step-title">{step.title}</h3>
+              <p class="step-desc">{step.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        <!-- Interactive sitemap comparison demo -->
+        <div class="how-visual reveal" style="animation-delay:0.5s;">
+          <div class="sitemap-demo" data-sitemap-demo>
+            <div class="sitemap-demo-header">
+              <div>
+                <p class="sitemap-demo-eyebrow">Sitemap gap preview</p>
+                <h3 class="sitemap-demo-title">Compare sitemap topics before any page scraping starts.</h3>
+              </div>
+              <div class="sitemap-demo-status">
+                <span class="pulse-dot" aria-hidden="true"></span>
+                Sitemap only
+              </div>
+            </div>
+
+            <div class="sitemap-demo-tabs" role="tablist" aria-label="Competitor sitemap examples">
+              <button type="button" class="sitemap-tab active" role="tab" aria-selected="true" data-demo-source="smartdraw">smartdraw.com</button>
+              <button type="button" class="sitemap-tab" role="tab" aria-selected="false" data-demo-source="lucidchart">lucidchart.com</button>
+              <button type="button" class="sitemap-tab" role="tab" aria-selected="false" data-demo-source="edrawsoft">edrawsoft.com</button>
+            </div>
+
+            <div class="sitemap-demo-body">
+              <div class="sitemap-pane">
+                <div class="sitemap-pane-head">
+                  <span>Your sitemap</span>
+                  <strong data-demo-own-count>126 URLs</strong>
+                </div>
+                <ul class="sitemap-url-list" data-demo-list="own" aria-label="Your sitemap URLs"></ul>
+              </div>
+
+              <div class="sitemap-compare">
+                <div class="compare-ring">
+                  <span data-demo-overlap>38%</span>
+                  <small>topic overlap</small>
+                </div>
+                <div class="compare-meter" aria-hidden="true">
+                  <span data-demo-meter style="width:38%"></span>
+                </div>
+                <p class="compare-note">Different competitor sitemap, different gap list.</p>
+              </div>
+
+              <div class="sitemap-pane">
+                <div class="sitemap-pane-head">
+                  <span data-demo-competitor-label>Competitor sitemap</span>
+                  <strong data-demo-competitor-count>214 URLs</strong>
+                </div>
+                <ul class="sitemap-url-list" data-demo-list="competitor" aria-label="Competitor sitemap URLs"></ul>
+              </div>
+            </div>
+
+            <div class="keyword-gap-panel" aria-live="polite">
+              <div class="gap-panel-head">
+                <div>
+                  <span>Keyword gaps found</span>
+                  <strong data-demo-gap-count>18 opportunities</strong>
+                </div>
+                <span class="source-count" data-demo-source-count>3 sitemap sources</span>
+              </div>
+              <div class="gap-keywords" data-demo-gaps></div>
+              <div class="gap-sources" data-demo-sources></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         METRICS / SOCIAL PROOF
+    ══════════════════════════════════════ -->
+    <section class="section metrics-section" aria-labelledby="metrics-heading">
+      <div class="container">
+        <h2 id="metrics-heading" class="visually-hidden">Platform metrics</h2>
+        <div class="metrics-grid">
+          {[
+            { value: '50+', label: 'Keywords per 100-post blog', color: 'var(--color-teal)' },
+            { value: '&lt;2hr', label: 'Full 200-page analysis', color: 'var(--color-indigo)' },
+            { value: '3s', label: 'Dashboard load time', color: 'var(--color-pink)' },
+            { value: '99.9%', label: 'Platform uptime SLA', color: 'var(--color-amber)' },
+          ].map(m => (
+            <div class="metric-card reveal glass-card">
+              <div class="metric-value" style={`color:${m.color}`} set:html={m.value}></div>
+              <div class="metric-label">{m.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         KEYWORD TABLE PREVIEW
+    ══════════════════════════════════════ -->
+    <section class="section" aria-labelledby="preview-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">Live Preview</p>
+          <h2 id="preview-heading" class="section-title">
+            Your keyword table,<br/><span class="gradient-text">instantly actionable</span>
+          </h2>
+          <p class="section-desc">
+            Every keyword is ranked by frequency across competitor posts, enriched with metadata,
+            and ready to export to your favorite SEO tools.
+          </p>
+        </div>
+
+        <div class="table-preview-wrapper reveal glass-card" style="border-radius:20px;overflow:hidden;">
+          <div class="table-preview-header">
+            <div class="table-preview-title">
+              <span class="dot dot-green"></span>
+              competitor-blog.com — 247 URLs analyzed
+            </div>
+            <div class="table-actions">
+              <button class="btn btn-ghost btn-sm" disabled>Export CSV</button>
+              <button class="btn btn-primary btn-sm" disabled>Save All</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="feature-table" aria-label="Sample keyword opportunities table">
+              <thead>
+                <tr>
+                  <th style="text-align:left;width:40%;">Keyword Phrase</th>
+                  <th>Frequency</th>
+                  <th>Content Type</th>
+                  <th>Readability</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { kw: 'content gap analysis', freq: 47, type: 'How-to Guide', read: 'Grade 10', color: '#00e5c9' },
+                  { kw: 'keyword clustering strategy', freq: 38, type: 'Long-form Post', read: 'Grade 11', color: '#6366f1' },
+                  { kw: 'competitor SEO audit', freq: 34, type: 'Tutorial', read: 'Grade 9', color: '#ec4899' },
+                  { kw: 'topic modeling for SEO', freq: 29, type: 'Case Study', read: 'Grade 12', color: '#f59e0b' },
+                  { kw: 'internal linking structure', freq: 24, type: 'Best Practices', read: 'Grade 8', color: '#00e5c9' },
+                ].map(row => (
+                  <tr>
+                    <td>
+                      <span class="kw-phrase">{row.kw}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="freq-badge" style={`color:${row.color};background:${row.color}18;border:1px solid ${row.color}33`}>{row.freq}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="type-badge">{row.type}</span>
+                    </td>
+                    <td style="text-align:center;color:var(--color-text-muted);">{row.read}</td>
+                    <td style="text-align:center;">
+                      <button class="btn btn-ghost btn-sm" style="font-size:0.75rem;padding:0.375rem 0.875rem;" disabled>Save</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span>Showing 5 of 1,240 keywords</span>
+            <a href={registerUrl} class="btn btn-primary btn-sm">Unlock Full Report →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         PRICING SECTION
+    ══════════════════════════════════════ -->
+    <section id="pricing" class="section pricing-section" aria-labelledby="pricing-heading">
+      <div class="pricing-bg" aria-hidden="true">
+        <div class="glow-orb glow-teal" style="width:500px;height:500px;bottom:-200px;left:-100px;"></div>
+      </div>
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">Pricing</p>
+          <h2 id="pricing-heading" class="section-title">
+            Simple, transparent<br/><span class="gradient-text">pricing for every team</span>
+          </h2>
+          <p class="section-desc">
+            Start free. Upgrade when you're ready to scale your content intelligence.
+          </p>
+        </div>
+
+        <div class="pricing-grid">
+          <!-- FREE -->
+          <div class="pricing-card reveal">
+            <div class="pricing-plan">Free</div>
+            <div class="pricing-price">
+              <span class="price-amount">$0</span>
+              <span class="price-period">/month</span>
+            </div>
+            <p class="pricing-tagline">Perfect for exploring</p>
+            <ul class="pricing-features" role="list">
+              {[
+                '1 competitor domain',
+                '500 URLs / month',
+                'Basic CSV export',
+                'Manual scans only',
+                'Shared proxy pool',
+                'Community support',
+              ].map(f => (
+                <li class="pricing-feature">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#00e5c9" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#00e5c9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href={registerUrl} class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:auto;" id="pricing-free-cta">Get Started Free</a>
+          </div>
+
+          <!-- PRO (featured) -->
+          <div class="pricing-card featured reveal" style="animation-delay:0.1s;">
+            <div class="pricing-plan" style="color:var(--color-teal);">Pro</div>
+            <div class="pricing-price">
+              <span class="price-amount">$29</span>
+              <span class="price-period">/month</span>
+            </div>
+            <p class="pricing-tagline">For serious SEO professionals</p>
+            <ul class="pricing-features" role="list">
+              {[
+                '10 competitor domains',
+                '10,000 URLs / month',
+                'CSV + PDF export',
+                'Weekly auto-rescans',
+                'Dedicated proxy pool',
+                'Priority email support',
+                'Content brief generator',
+                'Keyword bank (unlimited)',
+              ].map(f => (
+                <li class="pricing-feature">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#6366f1" opacity="0.2"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href={registerUrl} class="btn btn-primary" style="width:100%;justify-content:center;margin-top:auto;" id="pricing-pro-cta">Start Pro Trial</a>
+          </div>
+
+          <!-- BUSINESS -->
+          <div class="pricing-card reveal" style="animation-delay:0.2s;">
+            <div class="pricing-plan">Business</div>
+            <div class="pricing-price">
+              <span class="price-amount">$99</span>
+              <span class="price-period">/month</span>
+            </div>
+            <p class="pricing-tagline">For agencies & large teams</p>
+            <ul class="pricing-features" role="list">
+              {[
+                'Unlimited domains',
+                '100,000 URLs / month',
+                'CSV + PDF + API access',
+                'Daily auto-rescans',
+                'Premium residential proxies',
+                '24/7 dedicated support',
+                'White-label reports',
+                'Webhook integrations',
+                'Team member seats (5)',
+              ].map(f => (
+                <li class="pricing-feature">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#f59e0b" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href={registerUrl} class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:auto;" id="pricing-business-cta">Contact Sales</a>
+          </div>
+        </div>
+
+        <!-- Money back note -->
+        <p class="pricing-note reveal">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 2.5v4l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          14-day free trial on all paid plans. No credit card required. Cancel anytime.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         TESTIMONIALS
+    ══════════════════════════════════════ -->
+    <section class="section" aria-labelledby="testimonials-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">Testimonials</p>
+          <h2 id="testimonials-heading" class="section-title">
+            What SEO professionals<br/><span class="gradient-text">are saying</span>
+          </h2>
+        </div>
+        <div class="testimonials-grid">
+          {[
+            {
+              quote: "SiteMapSEO cut our content research time by 80%. We went from spending a full week on competitor analysis to getting actionable insights in under an hour.",
+              name: "Sarah Chen",
+              role: "Head of SEO",
+              company: "GrowthLab Agency",
+              avatar: "SC",
+              color: '#00e5c9',
+            },
+            {
+              quote: "The keyword clustering alone is worth the subscription price. I found 200+ opportunities in a niche I thought was saturated. Game changer.",
+              name: "Marcus Rivera",
+              role: "Content Strategist",
+              company: "TechFlow Inc.",
+              avatar: "MR",
+              color: '#6366f1',
+            },
+            {
+              quote: "Finally a tool that doesn't just give me a keyword list — it shows me exactly what my competitors are writing about and how I can do it better.",
+              name: "Priya Patel",
+              role: "Freelance SEO Consultant",
+              company: "@priyaseo_",
+              avatar: "PP",
+              color: '#ec4899',
+            },
+          ].map(t => (
+            <div class="testimonial-card glass-card reveal">
+              <div class="stars" aria-label="5 stars">
+                {Array(5).fill(0).map(() => (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="#f59e0b" aria-hidden="true"><path d="M8 1l2.06 4.18L15 6.18l-3.5 3.41.83 4.82L8 12.18l-4.33 2.23.83-4.82L1 6.18l4.94-.72L8 1z"/></svg>
+                ))}
+              </div>
+              <blockquote class="testimonial-quote">"{t.quote}"</blockquote>
+              <div class="testimonial-author">
+                <div class="avatar" style={`background:${t.color}22;color:${t.color};`}>{t.avatar}</div>
+                <div>
+                  <div class="author-name">{t.name}</div>
+                  <div class="author-role">{t.role} · {t.company}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         FAQ SECTION
+    ══════════════════════════════════════ -->
+    <section class="section" aria-labelledby="faq-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">FAQ</p>
+          <h2 id="faq-heading" class="section-title">
+            Frequently asked<br/><span class="gradient-text">questions</span>
+          </h2>
+        </div>
+
+        <div class="faq-container reveal">
+          {[
+            {
+              q: 'How does SiteMapSEO find keywords from competitor blogs?',
+              a: 'We automatically discover your competitor\'s sitemap, extract content URL slugs, normalize the phrases, and compare them against your own sitemap topics. This surfaces keyword gaps from the competitor sitemap structure without fetching every page.',
+            },
+            {
+              q: 'Does it respect robots.txt and crawl limits?',
+              a: 'Yes, absolutely. SiteMapSEO reads and respects every site\'s robots.txt, honors Crawl-delay directives, and applies randomized delays between requests (1–5 seconds). We are committed to ethical scraping practices and require users to agree to our terms before scanning.',
+            },
+            {
+              q: 'How long does it take to analyze a 200-page blog?',
+              a: 'Because the scan is sitemap-first, most projects complete in minutes. Larger sites can take longer when they have deeply nested sitemap indexes.',
+            },
+            {
+              q: 'Can I export the keywords to Ahrefs, SurferSEO, or Google Sheets?',
+              a: 'Yes. You can export any keyword selection as a clean CSV that opens perfectly in Excel, Google Sheets, and imports directly into tools like SurferSEO, Ahrefs, and SEMrush. Business plan users also get PDF reports and API access.',
+            },
+            {
+              q: 'What makes this different from tools like Ahrefs or SEMrush?',
+              a: 'Traditional tools show you keyword volumes and rankings. SiteMapSEO shows you exactly which keywords your competitors are actively writing about — extracted directly from their content. It\'s competitor content intelligence, not just SERP data. Think of it as a layer on top of your existing SEO stack.',
+            },
+            {
+              q: 'Can I add my own sitemap for content gap analysis?',
+              a: 'Yes! Add your own domain to a project and SiteMapSEO will compare your existing content against your competitors\'. The content gap view highlights topics they cover that you\'re completely missing, ranked by the number of competitor posts about that topic.',
+            },
+          ].map((item, i) => (
+            <div class="faq-item">
+              <button
+                class="faq-trigger"
+                aria-expanded="false"
+                aria-controls={`faq-body-${i}`}
+                id={`faq-trigger-${i}`}
+              >
+                {item.q}
+                <span class="faq-icon" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+              </button>
+              <div class="faq-body" id={`faq-body-${i}`} role="region" aria-labelledby={`faq-trigger-${i}`}>
+                <div class="faq-body-inner">{item.a}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         CTA BANNER
+    ══════════════════════════════════════ -->
+    <section class="section cta-section" aria-labelledby="cta-heading">
+      <div class="container">
+        <div class="cta-card reveal">
+          <div class="cta-glow" aria-hidden="true"></div>
+          <div class="cta-content">
+            <p class="section-label" style="color:var(--color-teal);margin-bottom:1rem;">Ready to start?</p>
+            <h2 id="cta-heading" class="cta-title">
+              Start discovering keyword<br/>opportunities <span class="gradient-text">today, for free</span>
+            </h2>
+            <p class="cta-desc">
+              Join 2,000+ SEO professionals who use SiteMapSEO to build
+              smarter content strategies. No credit card required.
+            </p>
+            <div class="cta-actions">
+              <a href={registerUrl} class="btn btn-primary btn-lg" id="bottom-cta-primary">
+                Get Started — It's Free
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                  <path d="M3.75 9h10.5M9 3.75 14.25 9 9 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </a>
+              <a href="/contact/" class="btn btn-ghost btn-lg" id="bottom-cta-contact">Talk to Sales</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<style>
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding-top: 96px;
+    padding-bottom: 4rem;
+    overflow: hidden;
+  }
+
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+  }
+
+  @media (max-width: 900px) {
+    .hero-inner { grid-template-columns: 1fr; text-align: center; }
+    .hero-stats { justify-content: center; }
+    .hero-cta { justify-content: center; }
+    .hero-visual { order: -1; }
+  }
+
+  .hero-title {
+    font-size: clamp(2.25rem, 5vw, 3.75rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 1.5rem;
+    color: var(--color-text);
+  }
+
+  .hero-subtitle {
+    font-size: clamp(1rem, 2vw, 1.1875rem);
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+    max-width: 480px;
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 3rem;
+  }
+
+  .hero-stats {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .hero-stat { display: flex; flex-direction: column; gap: 0.25rem; }
+  .hero-stat-value {
+    font-family: var(--font-heading);
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--color-text);
+    letter-spacing: -0.02em;
+  }
+  .hero-stat-label { font-size: 0.8125rem; color: var(--color-text-muted); }
+  .hero-stat-divider {
+    width: 1px;
+    height: 40px;
+    background: var(--color-border-2);
+    flex-shrink: 0;
+  }
+
+  /* Dashboard frame */
+  .hero-visual { position: relative; }
+
+  .dashboard-frame {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-2);
+    box-shadow: 0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    background: var(--color-bg-2);
+  }
+
+  .dashboard-chrome {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .chrome-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: block;
+  }
+
+  .chrome-url {
+    margin-left: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-faint);
+    background: var(--color-bg);
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    flex: 1;
+    max-width: 280px;
+  }
+
+  .dashboard-img { width: 100%; height: auto; display: block; }
+
+  /* Floating pills */
+  .floating-pill {
+    position: absolute;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    border: 1px solid;
+  }
+
+  .pill-1 {
+    background: rgba(0,229,201,0.1);
+    border-color: rgba(0,229,201,0.3);
+    color: var(--color-teal);
+    top: -24px;
+    right: 60px;
+  }
+
+  .pill-2 {
+    background: rgba(99,102,241,0.1);
+    border-color: rgba(99,102,241,0.3);
+    color: var(--color-indigo);
+    bottom: 40px;
+    left: -40px;
+  }
+
+  .pill-3 {
+    background: rgba(236,72,153,0.1);
+    border-color: rgba(236,72,153,0.3);
+    color: var(--color-pink);
+    bottom: -16px;
+    right: 20px;
+  }
+
+  /* Scroll indicator */
+  .scroll-indicator {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .scroll-dot {
+    width: 28px;
+    height: 48px;
+    border: 2px solid var(--color-border-2);
+    border-radius: 14px;
+    position: relative;
+  }
+
+  .scroll-dot::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 8px;
+    background: var(--color-teal);
+    border-radius: 2px;
+    animation: scroll-bounce 1.5s ease-in-out infinite;
+  }
+
+  @keyframes scroll-bounce {
+    0%, 100% { top: 6px; opacity: 1; }
+    70% { top: 26px; opacity: 0; }
+  }
+
+  /* ── MARQUEE ── */
+  .marquee-section {
+    padding-block: 3rem;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+    background: rgba(255,255,255,0.01);
+  }
+
+  .marquee-label {
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--color-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1.5rem;
+  }
+
+  .marquee-track {
+    display: flex;
+    gap: 0;
+    width: max-content;
+  }
+
+  .marquee-item {
+    padding: 0 2.5rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.125rem;
+    color: var(--color-text-faint);
+    opacity: 0.6;
+    white-space: nowrap;
+    border-right: 1px solid var(--color-border);
+    line-height: 1;
+    padding-block: 0.25rem;
+    transition: opacity 0.2s;
+  }
+
+  /* ── SECTION HEADERS ── */
+  .section-header {
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto 4rem;
+  }
+
+  .section-label {
+    display: block;
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-teal);
+  }
+
+  .section-title {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin-bottom: 1.25rem;
+    color: var(--color-text);
+  }
+
+  .section-desc {
+    font-size: 1.0625rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    max-width: 580px;
+    margin: 0 auto;
+  }
+
+  /* ── FEATURES ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 960px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .features-grid { grid-template-columns: 1fr; } }
+
+  .feature-card { padding: 2rem; }
+
+  .feature-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+  }
+  .feature-icon-teal { background: var(--color-teal-glow); color: var(--color-teal); border: 1px solid rgba(0,229,201,0.2); }
+  .feature-icon-indigo { background: var(--color-indigo-glow); color: var(--color-indigo); border: 1px solid rgba(99,102,241,0.2); }
+  .feature-icon-pink { background: rgba(236,72,153,0.1); color: #ec4899; border: 1px solid rgba(236,72,153,0.2); }
+  .feature-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+
+  .feature-title { font-size: 1.0625rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--color-text); }
+  .feature-desc { font-size: 0.9375rem; color: var(--color-text-muted); line-height: 1.65; }
+
+  /* ── HOW IT WORKS ── */
+  .how-section { position: relative; overflow: hidden; }
+  .how-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+
+  .steps-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 4rem;
+  }
+
+  @media (max-width: 900px) { .steps-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 500px) { .steps-grid { grid-template-columns: 1fr; } }
+
+  .step-card {
+    position: relative;
+    padding: 1.75rem 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    transition: border-color 0.3s, transform 0.3s;
+  }
+
+  .step-card:hover {
+    border-color: var(--color-border-2);
+    transform: translateY(-4px);
+  }
+
+  .step-number {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 700;
+    padding: 0.375rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid;
+    display: inline-block;
+    margin-bottom: 1.25rem;
+  }
+
+  .step-connector-line {
+    display: none; /* simplified — relies on grid gap */
+  }
+
+  .step-title { font-size: 0.9375rem; font-weight: 700; margin-bottom: 0.625rem; color: var(--color-text); }
+  .step-desc { font-size: 0.875rem; color: var(--color-text-muted); line-height: 1.6; }
+
+  .how-visual {
+    position: relative;
+    z-index: 1;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    background:
+      linear-gradient(135deg, rgba(0, 229, 201, 0.08), transparent 32%),
+      linear-gradient(315deg, rgba(245, 158, 11, 0.08), transparent 26%),
+      var(--color-surface);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  }
+
+  .sitemap-demo {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .sitemap-demo-header,
+  .sitemap-pane-head,
+  .gap-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .sitemap-demo-header {
+    padding: 0.75rem 0.75rem 0.25rem;
+  }
+
+  .sitemap-demo-eyebrow {
+    margin-bottom: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-teal);
+  }
+
+  .sitemap-demo-title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: clamp(1.125rem, 2vw, 1.5rem);
+    line-height: 1.25;
+  }
+
+  .sitemap-demo-status,
+  .source-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    border: 1px solid rgba(0, 229, 201, 0.18);
+    border-radius: 999px;
+    padding: 0.5rem 0.75rem;
+    color: var(--color-teal);
+    background: rgba(0, 229, 201, 0.08);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-teal);
+    box-shadow: 0 0 0 6px rgba(0, 229, 201, 0.12);
+  }
+
+  .sitemap-demo-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .sitemap-tab {
+    min-height: 42px;
+    border: 0;
+    border-radius: 9px;
+    color: var(--color-text-muted);
+    background: transparent;
+    font: 700 0.8125rem var(--font-heading);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  }
+
+  .sitemap-tab:hover,
+  .sitemap-tab.active {
+    color: var(--color-text);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .sitemap-tab.active {
+    box-shadow: inset 0 0 0 1px rgba(0, 229, 201, 0.22);
+  }
+
+  .sitemap-demo-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px minmax(0, 1fr);
+    gap: 1rem;
+    align-items: stretch;
+  }
+
+  .sitemap-pane,
+  .keyword-gap-panel {
+    min-width: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    background: rgba(7, 13, 23, 0.58);
+  }
+
+  .sitemap-pane {
+    padding: 1rem;
+  }
+
+  .sitemap-pane-head {
+    margin-bottom: 0.875rem;
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .sitemap-pane-head strong {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .sitemap-url-list {
+    display: grid;
+    gap: 0.625rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .sitemap-url-list li {
+    display: grid;
+    gap: 0.25rem;
+    min-height: 58px;
+    padding: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .url-path {
+    overflow: hidden;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .url-topic {
+    color: var(--color-text-faint);
+    font-size: 0.75rem;
+  }
+
+  .sitemap-compare {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 1rem;
+    min-height: 100%;
+    padding: 1rem;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    text-align: center;
+  }
+
+  .compare-ring {
+    display: grid;
+    place-items: center;
+    width: 122px;
+    height: 122px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 229, 201, 0.22);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(0, 229, 201, 0.18), transparent 58%),
+      conic-gradient(from 160deg, rgba(0, 229, 201, 0.8), rgba(99, 102, 241, 0.55), rgba(245, 158, 11, 0.35), rgba(0, 229, 201, 0.8));
+  }
+
+  .compare-ring span,
+  .compare-ring small {
+    grid-area: 1 / 1;
+  }
+
+  .compare-ring span {
+    color: var(--color-text);
+    font-family: var(--font-heading);
+    font-size: 1.75rem;
+    font-weight: 900;
+  }
+
+  .compare-ring small {
+    align-self: end;
+    margin-bottom: 1.7rem;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.6875rem;
+  }
+
+  .compare-meter {
+    width: 100%;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .compare-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--color-teal), var(--color-amber));
+    transition: width 0.35s ease;
+  }
+
+  .compare-note {
+    margin: 0;
+    color: var(--color-text-faint);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+
+  .keyword-gap-panel {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .gap-panel-head {
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .gap-panel-head strong {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--color-text);
+    font-size: 1rem;
+  }
+
+  .gap-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+  }
+
+  .gap-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+    color: var(--color-text);
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    font-size: 0.8125rem;
+    font-weight: 700;
+  }
+
+  .gap-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .gap-source-link {
+    display: inline-flex;
+    max-width: 100%;
+    min-height: 32px;
+    align-items: center;
+    border-radius: 8px;
+    padding: 0.375rem 0.625rem;
+    color: var(--color-text-muted);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-decoration: none;
+  }
+
+  .gap-source-link:hover {
+    color: var(--color-text);
+    border-color: rgba(0, 229, 201, 0.28);
+  }
+
+  @media (max-width: 900px) {
+    .sitemap-demo-body { grid-template-columns: 1fr; }
+    .sitemap-compare { min-height: auto; }
+  }
+
+  @media (max-width: 560px) {
+    .sitemap-demo { padding: 0.75rem; }
+    .sitemap-demo-header,
+    .gap-panel-head { align-items: flex-start; flex-direction: column; }
+    .sitemap-demo-tabs { grid-template-columns: 1fr; }
+    .url-path { white-space: normal; word-break: break-word; }
+  }
+
+  /* ── METRICS ── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 768px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 400px) { .metrics-grid { grid-template-columns: 1fr; } }
+
+  .metric-card { padding: 2rem; text-align: center; }
+  .metric-value { font-family: var(--font-heading); font-size: 2.5rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+  .metric-label { font-size: 0.875rem; color: var(--color-text-muted); }
+
+  /* ── TABLE PREVIEW ── */
+  .table-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .table-preview-title {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 0.9375rem;
+  }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+
+  .table-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+  .kw-phrase { font-family: var(--font-mono); font-size: 0.875rem; color: var(--color-text); }
+
+  .freq-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 28px;
+    padding: 0 0.5rem;
+    border-radius: 8px;
+    font-family: var(--font-heading);
+    font-size: 0.8125rem;
+    font-weight: 700;
+  }
+
+  .type-badge {
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 0.25rem 0.625rem;
+    border-radius: 6px;
+  }
+
+  .table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    flex-wrap: wrap;
+  }
+
+  /* ── PRICING ── */
+  .pricing-section { position: relative; overflow: hidden; }
+  .pricing-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+
+  .pricing-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+    margin-bottom: 2rem;
+  }
+
+  @media (max-width: 900px) { .pricing-grid { grid-template-columns: 1fr; max-width: 480px; margin-inline: auto; } }
+
+  .pricing-plan {
+    font-family: var(--font-heading);
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .pricing-price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .price-amount {
+    font-family: var(--font-heading);
+    font-size: 3rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    color: var(--color-text);
+  }
+
+  .price-period { font-size: 0.9375rem; color: var(--color-text-muted); }
+
+  .pricing-tagline {
+    font-size: 0.9375rem;
+    color: var(--color-text-muted);
+    margin-bottom: 1.75rem;
+    padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .pricing-features { list-style: none; display: flex; flex-direction: column; gap: 0.875rem; margin-bottom: 2rem; }
+  .pricing-feature { display: flex; align-items: flex-start; gap: 0.625rem; font-size: 0.9375rem; color: var(--color-text-muted); }
+
+  .pricing-note {
+    text-align: center;
+    font-size: 0.9375rem;
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  /* ── TESTIMONIALS ── */
+  .testimonials-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 900px) { .testimonials-grid { grid-template-columns: 1fr; max-width: 560px; margin-inline: auto; } }
+
+  .testimonial-card { padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+  .stars { display: flex; gap: 2px; }
+  .testimonial-quote { font-size: 0.9375rem; color: var(--color-text-muted); line-height: 1.7; flex: 1; }
+  .testimonial-author { display: flex; align-items: center; gap: 0.875rem; }
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-heading);
+    font-size: 0.875rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .author-name { font-family: var(--font-heading); font-weight: 600; font-size: 0.9375rem; }
+  .author-role { font-size: 0.8125rem; color: var(--color-text-faint); }
+
+  /* ── FAQ ── */
+  .faq-container { max-width: 800px; margin: 0 auto; }
+
+  /* ── CTA BANNER ── */
+  .cta-section { padding-bottom: 6rem; }
+
+  .cta-card {
+    position: relative;
+    padding: clamp(2.5rem, 6vw, 5rem);
+    border-radius: 24px;
+    border: 1px solid rgba(0,229,201,0.15);
+    background: linear-gradient(135deg, rgba(0,229,201,0.04) 0%, rgba(99,102,241,0.06) 50%, rgba(236,72,153,0.03) 100%);
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .cta-glow {
+    position: absolute;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 500px;
+    height: 300px;
+    background: radial-gradient(ellipse, rgba(99,102,241,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-content { position: relative; z-index: 1; }
+
+  .cta-title {
+    font-size: clamp(1.75rem, 4vw, 2.75rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin-bottom: 1.25rem;
+    color: var(--color-text);
+  }
+
+  .cta-desc {
+    font-size: 1.0625rem;
+    color: var(--color-text-muted);
+    max-width: 480px;
+    margin: 0 auto 2.5rem;
+    line-height: 1.7;
+  }
+
+  .cta-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* ── UTILS ── */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+</style>
+
+<script>
+  // ── Scroll Reveal ──
+  const revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('revealed');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.12, rootMargin: '0px 0px -60px 0px' }
+  );
+
+  document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+  // ── Sitemap gap demo ──
+  const sitemapDemo = document.querySelector('[data-sitemap-demo]');
+
+  if (sitemapDemo) {
+    const ownUrls = [
+      { path: '/blog/flowchart-maker/', topic: 'flowchart maker' },
+      { path: '/blog/process-map-template/', topic: 'process map template' },
+      { path: '/templates/decision-tree/', topic: 'decision tree template' },
+    ];
+
+    const sitemapDemoData = {
+      smartdraw: {
+        label: 'smartdraw.com',
+        ownTotal: 126,
+        competitorTotal: 214,
+        overlap: 38,
+        competitorUrls: [
+          { path: '/flowchart/flowchart-symbols.htm', topic: 'flowchart symbols' },
+          { path: '/workflow-diagram/workflow-diagram.htm', topic: 'workflow diagram examples' },
+          { path: '/org-chart/org-chart-software.htm', topic: 'org chart software' },
+        ],
+        gaps: ['flowchart symbols', 'process mapping software', 'workflow diagram examples', 'org chart software', 'network diagram tool', 'floor plan symbols'],
+        sources: [
+          { label: 'smartdraw.com/flowchart/', href: 'https://www.smartdraw.com/flowchart/' },
+          { label: 'smartdraw.com/workflow-diagram/', href: 'https://www.smartdraw.com/workflow-diagram/' },
+          { label: 'smartdraw.com/org-chart/', href: 'https://www.smartdraw.com/org-chart/' },
+        ],
+      },
+      lucidchart: {
+        label: 'lucidchart.com',
+        ownTotal: 126,
+        competitorTotal: 302,
+        overlap: 44,
+        competitorUrls: [
+          { path: '/pages/examples/swimlane-diagram', topic: 'swimlane diagram' },
+          { path: '/pages/uml-sequence-diagram', topic: 'uml sequence diagram' },
+          { path: '/pages/process-mapping', topic: 'business process mapping' },
+        ],
+        gaps: ['swimlane diagram', 'uml sequence diagram', 'business process mapping', 'data flow diagram', 'value stream mapping', 'process documentation'],
+        sources: [
+          { label: 'lucidchart.com/pages/process-mapping', href: 'https://www.lucidchart.com/pages/process-mapping' },
+          { label: 'lucidchart.com/pages/uml-sequence-diagram', href: 'https://www.lucidchart.com/pages/uml-sequence-diagram' },
+          { label: 'lucidchart.com/pages/examples', href: 'https://www.lucidchart.com/pages/examples' },
+        ],
+      },
+      edrawsoft: {
+        label: 'edrawsoft.com',
+        ownTotal: 126,
+        competitorTotal: 287,
+        overlap: 31,
+        competitorUrls: [
+          { path: '/templates/fishbone-diagram.html', topic: 'fishbone diagram' },
+          { path: '/symbols/electrical-symbols.html', topic: 'electrical diagram symbols' },
+          { path: '/mindmap/mind-map-template.html', topic: 'mind map templates' },
+        ],
+        gaps: ['fishbone diagram', 'gantt chart template', 'electrical diagram symbols', 'mind map templates', 'p&id symbols', 'circuit diagram maker'],
+        sources: [
+          { label: 'edrawsoft.com/templates/', href: 'https://www.edrawsoft.com/templates/' },
+          { label: 'edrawsoft.com/symbols/', href: 'https://www.edrawsoft.com/symbols/' },
+          { label: 'edrawsoft.com/mindmap/', href: 'https://www.edrawsoft.com/mindmap/' },
+        ],
+      },
+    };
+
+    const setText = (selector, value) => {
+      const node = sitemapDemo.querySelector(selector);
+      if (node) node.textContent = value;
+    };
+
+    const renderUrls = (listName, urls) => {
+      const list = sitemapDemo.querySelector(`[data-demo-list="${listName}"]`);
+      if (!list) return;
+
+      const nodes = urls.map((url) => {
+        const item = document.createElement('li');
+        const path = document.createElement('span');
+        const topic = document.createElement('span');
+
+        path.className = 'url-path';
+        path.textContent = url.path;
+        topic.className = 'url-topic';
+        topic.textContent = url.topic;
+
+        item.append(path, topic);
+        return item;
+      });
+
+      list.replaceChildren(...nodes);
+    };
+
+    const renderGaps = (gaps) => {
+      const gapWrap = sitemapDemo.querySelector('[data-demo-gaps]');
+      if (!gapWrap) return;
+
+      const chips = gaps.map((gap) => {
+        const chip = document.createElement('span');
+        chip.className = 'gap-chip';
+        chip.textContent = gap;
+        return chip;
+      });
+
+      gapWrap.replaceChildren(...chips);
+    };
+
+    const renderSources = (sources) => {
+      const sourceWrap = sitemapDemo.querySelector('[data-demo-sources]');
+      if (!sourceWrap) return;
+
+      const links = sources.map((source) => {
+        const link = document.createElement('a');
+        link.className = 'gap-source-link';
+        link.href = source.href;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.textContent = source.label;
+        return link;
+      });
+
+      sourceWrap.replaceChildren(...links);
+    };
+
+    const updateDemo = (key) => {
+      const data = sitemapDemoData[key] || sitemapDemoData.smartdraw;
+
+      sitemapDemo.querySelectorAll('.sitemap-tab').forEach((tab) => {
+        const active = tab.getAttribute('data-demo-source') === key;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+
+      setText('[data-demo-own-count]', `${data.ownTotal} URLs`);
+      setText('[data-demo-competitor-label]', `${data.label} sitemap`);
+      setText('[data-demo-competitor-count]', `${data.competitorTotal} URLs`);
+      setText('[data-demo-overlap]', `${data.overlap}%`);
+      setText('[data-demo-gap-count]', `${data.gaps.length} opportunities`);
+      setText('[data-demo-source-count]', `${data.sources.length} sitemap sources`);
+
+      const meter = sitemapDemo.querySelector('[data-demo-meter]');
+      if (meter) meter.style.width = `${data.overlap}%`;
+
+      renderUrls('own', ownUrls);
+      renderUrls('competitor', data.competitorUrls);
+      renderGaps(data.gaps);
+      renderSources(data.sources);
+    };
+
+    sitemapDemo.querySelectorAll('.sitemap-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const key = tab.getAttribute('data-demo-source') || 'smartdraw';
+        updateDemo(key);
+      });
+    });
+
+    updateDemo('smartdraw');
+  }
+
+  // ── FAQ Accordion ──
+  document.querySelectorAll('.faq-trigger').forEach(trigger => {
+    trigger.addEventListener('click', () => {
+      const expanded = trigger.getAttribute('aria-expanded') === 'true';
+      const bodyId = trigger.getAttribute('aria-controls');
+      const body = bodyId ? document.getElementById(bodyId) : null;
+
+      // Collapse all
+      document.querySelectorAll('.faq-trigger').forEach(t => {
+        t.setAttribute('aria-expanded', 'false');
+        const id = t.getAttribute('aria-controls');
+        const b = id ? document.getElementById(id) : null;
+        b?.classList.remove('open');
+      });
+
+      // Expand clicked (toggle)
+      if (!expanded) {
+        trigger.setAttribute('aria-expanded', 'true');
+        body?.classList.add('open');
+      }
+    });
+  });
+
+  // ── Header scroll effect ──
+  const header = document.getElementById('site-header');
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 60) {
+      header?.classList.add('scrolled');
+    } else {
+      header?.classList.remove('scrolled');
+    }
+  }, { passive: true });
+</script>
