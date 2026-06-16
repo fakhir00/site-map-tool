@@ -1,10 +1,11 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./sitemapseo.db"
-    SYNC_DATABASE_URL: str = "sqlite:///./sitemapseo.db"
+    SYNC_DATABASE_URL: str = ""
     REDIS_URL: str = "redis://localhost:6379/0"
     USE_CELERY: bool = False
     SECRET_KEY: str = "super-secret-jwt-key-change-in-production-32chars"
@@ -28,6 +29,34 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    @model_validator(mode="after")
+    def normalize_database_urls(self):
+        database_url = self.DATABASE_URL.strip()
+        sync_database_url = self.SYNC_DATABASE_URL.strip()
+
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        if not sync_database_url:
+            if database_url.startswith("postgresql+asyncpg://"):
+                sync_database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            elif database_url.startswith("sqlite+aiosqlite:///"):
+                sync_database_url = database_url.replace("sqlite+aiosqlite:///", "sqlite:///", 1)
+            else:
+                sync_database_url = database_url
+        elif sync_database_url.startswith("postgres://"):
+            sync_database_url = sync_database_url.replace("postgres://", "postgresql://", 1)
+        elif sync_database_url.startswith("postgresql+asyncpg://"):
+            sync_database_url = sync_database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif sync_database_url.startswith("sqlite+aiosqlite:///"):
+            sync_database_url = sync_database_url.replace("sqlite+aiosqlite:///", "sqlite:///", 1)
+
+        self.DATABASE_URL = database_url
+        self.SYNC_DATABASE_URL = sync_database_url
+        return self
 
 
 @lru_cache
