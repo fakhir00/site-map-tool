@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, Lock, Mail, Map } from 'lucide-react'
-import { api, auth, type User } from '../lib/api'
+import { DEMO_BACKEND_ENABLED, api, auth, type User } from '../lib/api'
 import { marketingUrl } from '../lib/marketing'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -62,6 +62,12 @@ export function Login() {
               <h2 className="text-xl font-bold text-slate-950">Sign in</h2>
               <p className="mt-1 text-sm text-slate-500">Access your project dashboard.</p>
             </div>
+
+            {DEMO_BACKEND_ENABLED && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Demo mode is active. Accounts and projects stay in this browser.
+              </div>
+            )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               {error && (

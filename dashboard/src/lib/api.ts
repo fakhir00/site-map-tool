@@ -1,3 +1,5 @@
+import { DemoApiError, demoFetch } from './demoBackend'
+
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
 const isBrowser = typeof window !== 'undefined'
 const isLocalHost =
@@ -7,6 +9,8 @@ const DEFAULT_API_URL =
 const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, '')
 const REQUEST_TIMEOUT_MS = 20_000
 const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
+export const DEMO_BACKEND_ENABLED =
+  import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true' || needsProductionApiUrl
 
 export type User = {
   id: string
@@ -231,6 +235,26 @@ export const api = {
   async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers)
     const accessToken = token()
+
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+    if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json')
+    }
+
+    if (DEMO_BACKEND_ENABLED) {
+      try {
+        return await demoFetch<T>(endpoint, {
+          ...options,
+          headers,
+        })
+      } catch (err) {
+        if (err instanceof DemoApiError) {
+          throw new ApiError(err.message, err.status)
+        }
+        throw new ApiError(err instanceof Error ? err.message : 'Demo backend failed', 0)
+      }
+    }
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
@@ -240,11 +264,6 @@ export const api = {
       } else {
         options.signal.addEventListener('abort', () => controller.abort(), { once: true })
       }
-    }
-
-    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
-    if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-      headers.set('Content-Type', 'application/json')
     }
 
     let response: Response
