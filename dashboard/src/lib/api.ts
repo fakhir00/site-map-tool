@@ -123,6 +123,50 @@ export type KeywordBankEntry = {
   saved_at: string
 }
 
+export type ArticleDraft = {
+  id: string
+  project_id: string
+  keyword_id: string
+  keyword_phrase: string
+  status: 'passed' | 'needs_revision' | 'generating' | 'error'
+  title: string | null
+  content_markdown: string | null
+  audit_score: number | null
+  generation_attempts: number
+  research_summary: {
+    brief?: {
+      content_gaps?: string[]
+      competitor_takeaways?: string[]
+      must_include_terms?: string[]
+      recommended_title?: string
+      meta_description?: string
+    }
+    competitor_pages?: Array<{
+      url: string
+      domain: string | null
+      title: string | null
+    }>
+    own_pages?: Array<{
+      url: string
+      domain: string | null
+      title: string | null
+    }>
+  } | null
+  audit_feedback: {
+    score?: number
+    passed?: boolean
+    strengths?: string[]
+    issues?: string[]
+    revision_notes?: string[]
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+export type ArticleListResponse = {
+  items: ArticleDraft[]
+}
+
 export class ApiError extends Error {
   status: number
 

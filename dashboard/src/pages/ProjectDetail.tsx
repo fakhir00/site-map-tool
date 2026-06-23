@@ -5,6 +5,7 @@ import { api, type Project, type ProjectSource, type ProjectStats, type ScanJob,
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
 import { KeywordsTable } from '../components/KeywordsTable'
 
 function statusBadge(status: Project['status'] | string) {
@@ -49,6 +50,7 @@ export function ProjectDetail() {
     queryClient.invalidateQueries({ queryKey: ['project-urls', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project-sources', projectId] })
     queryClient.invalidateQueries({ queryKey: ['keywords'] })
+    queryClient.invalidateQueries({ queryKey: ['project-articles', projectId] })
   }
 
   const { data: project, isLoading: loadingProject } = useQuery({
@@ -357,6 +359,13 @@ export function ProjectDetail() {
           <h3 className="text-xl font-bold text-slate-950">Keyword gaps</h3>
         </div>
         <KeywordsTable projectId={projectId} />
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-xl font-bold text-slate-950">Latest article</h3>
+        </div>
+        <GeneratedArticlePanel projectId={projectId} />
       </section>
     </div>
   )

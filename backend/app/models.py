@@ -51,6 +51,7 @@ class Project(Base):
     scan_jobs: Mapped[List["ScanJob"]] = relationship("ScanJob", back_populates="project", cascade="all, delete-orphan")
     urls: Mapped[List["Url"]] = relationship("Url", back_populates="project", cascade="all, delete-orphan")
     keywords: Mapped[List["Keyword"]] = relationship("Keyword", back_populates="project", cascade="all, delete-orphan")
+    article_drafts: Mapped[List["ArticleDraft"]] = relationship("ArticleDraft", back_populates="project", cascade="all, delete-orphan")
 
 
 class ScanJob(Base):
@@ -108,6 +109,7 @@ class Keyword(Base):
     project: Mapped["Project"] = relationship("Project", back_populates="keywords")
     keyword_urls: Mapped[List["KeywordUrl"]] = relationship("KeywordUrl", back_populates="keyword", cascade="all, delete-orphan")
     bank_entries: Mapped[List["KeywordBank"]] = relationship("KeywordBank", back_populates="keyword", cascade="all, delete-orphan")
+    article_drafts: Mapped[List["ArticleDraft"]] = relationship("ArticleDraft", back_populates="keyword", cascade="all, delete-orphan")
 
     __table_args__ = (UniqueConstraint("project_id", "phrase", name="uq_project_phrase"),)
 
@@ -135,3 +137,27 @@ class KeywordBank(Base):
     keyword: Mapped["Keyword"] = relationship("Keyword", back_populates="bank_entries")
 
     __table_args__ = (UniqueConstraint("user_id", "keyword_id", name="uq_user_keyword"),)
+
+
+class ArticleDraft(Base):
+    __tablename__ = "article_drafts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    keyword_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="generating")
+    title: Mapped[Optional[str]] = mapped_column(String(255))
+    content_markdown: Mapped[Optional[str]] = mapped_column(Text)
+    audit_score: Mapped[Optional[float]] = mapped_column(Float)
+    generation_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    research_summary: Mapped[Optional[dict]] = mapped_column(JSON)
+    audit_feedback: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="article_drafts")
+    keyword: Mapped["Keyword"] = relationship("Keyword", back_populates="article_drafts")
+
+    __table_args__ = (
+        Index("ix_article_drafts_project_created_at", "project_id", "created_at"),
+    )

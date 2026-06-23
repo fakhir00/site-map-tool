@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, Search, Sparkles } from 'lucide-react'
+import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, FilePenLine, Search, Sparkles } from 'lucide-react'
 import { api, type Keyword, type KeywordListResponse } from '../lib/api'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -51,6 +51,8 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
   const [search, setSearch] = useState('')
   const [type, setType] = useState('')
   const [exportError, setExportError] = useState('')
+  const [articleError, setArticleError] = useState('')
+  const [writingKeywordId, setWritingKeywordId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['keywords', projectId, page, search, type],
@@ -79,6 +81,23 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
     mutationFn: () => api.post<{ message: string, generated: number }>(`/projects/${projectId}/keywords/generate`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
+    },
+  })
+
+  const articleMutation = useMutation({
+    mutationFn: (keywordId: string) => api.post(`/projects/${projectId}/keywords/${keywordId}/article/generate`, {}),
+    onMutate: (keywordId) => {
+      setWritingKeywordId(keywordId)
+      setArticleError('')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-articles', projectId] })
+    },
+    onError: (err) => {
+      setArticleError(err instanceof Error ? err.message : 'Article generation failed')
+    },
+    onSettled: () => {
+      setWritingKeywordId(null)
     },
   })
 
@@ -158,6 +177,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
       </div>
 
       {exportError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{exportError}</div>}
+      {articleError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{articleError}</div>}
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -167,13 +187,14 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
               <th className="px-5 py-3 font-semibold">Type</th>
               <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
               <th className="px-5 py-3 font-semibold">Sources</th>
+              <th className="px-5 py-3 text-right font-semibold">Write</th>
               <th className="px-5 py-3 text-right font-semibold">Save</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {keywords.length === 0 ? (
               <tr>
-                <td className="px-5 py-10 text-center text-slate-500" colSpan={5}>
+                <td className="px-5 py-10 text-center text-slate-500" colSpan={6}>
                   No keyword gaps found yet.
                 </td>
               </tr>
@@ -209,8 +230,8 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                         </span>
                       )}
                     </div>
-                    <div className="mt-2 flex gap-1">
-                      {keywordSources(keyword).slice(0, 5).map((source) => (
+                      <div className="mt-2 flex gap-1">
+                        {keywordSources(keyword).slice(0, 5).map((source) => (
                         <a
                           aria-label={source.url}
                           className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-800"
@@ -222,8 +243,19 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    </td>
+                  <td className="px-5 py-4 text-right">
+                    <Button
+                      disabled={articleMutation.isPending}
+                      onClick={() => articleMutation.mutate(keyword.id)}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      <FilePenLine className="h-4 w-4" />
+                      {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
+                    </Button>
                   </td>
                   <td className="px-5 py-4 text-right">
                     <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(keyword.id)} size="sm" variant="ghost">

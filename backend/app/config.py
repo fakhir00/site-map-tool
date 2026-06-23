@@ -13,13 +13,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     FRONTEND_URL: str = "http://localhost:3000"
     OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
 
     # Scraping
     MAX_URLS_PER_SCAN: int = 500
     MAX_COMPETITOR_DOMAINS: int = 10
     GOOGLE_SERP_RESULT_LIMIT: int = 10
+    MAX_CONTENT_URLS_PER_DOMAIN: int = 8
+    MAX_COMPETITOR_JUDGE_CANDIDATES: int = 12
     AI_KEYWORD_GAP_CANDIDATE_LIMIT: int = 80
     AI_KEYWORD_GAP_RESULT_LIMIT: int = 60
+    ARTICLE_RESEARCH_SOURCE_LIMIT: int = 5
+    ARTICLE_GENERATION_MAX_ATTEMPTS: int = 3
     SCRAPE_DELAY_MIN: float = 1.0
     SCRAPE_DELAY_MAX: float = 3.0
     REQUEST_TIMEOUT: int = 15

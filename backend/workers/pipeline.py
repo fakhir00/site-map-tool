@@ -38,7 +38,9 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
     pending URL rows from the previous paused run.
     """
     from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
+    from nlp.keywords import extract_keywords_from_page
     from scraping.filters import filter_blog_urls
+    from scraping.crawler import scrape_page
     from scraping.sitemap import extract_all_urls_from_domain
 
     project_uuid = uuid.UUID(project_id)
@@ -70,6 +72,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             required_terms = _search_required_terms(seed_keywords)
             ranking_terms = _search_ranking_terms(seed_keywords)
             per_domain_url_limit = max(1, settings.MAX_URLS_PER_SCAN // max(1, len(competitor_domains) + 1))
+            crawl_limit = min(per_domain_url_limit, max(1, settings.MAX_CONTENT_URLS_PER_DOMAIN))
             logger.info("[%s] Own domain: %s", project_id, own_domain)
             logger.info("[%s] Competitor domains: %s", project_id, competitor_domains)
 
@@ -85,7 +88,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 project.url_filter_patterns,
                 extract_all_urls_from_domain,
                 filter_blog_urls,
-                per_domain_url_limit,
+                crawl_limit,
                 required_terms,
                 ranking_terms,
                 include_homepage=True,
@@ -104,7 +107,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                     project.url_filter_patterns,
                     extract_all_urls_from_domain,
                     filter_blog_urls,
-                    per_domain_url_limit,
+                    crawl_limit,
                     required_terms,
                     ranking_terms,
                 )
@@ -135,18 +138,50 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 return
 
             logger.info("[%s] Analyzing sitemap URL %s/%s: %s", project_id, index, len(pending_urls), url_row.url)
+            page = scrape_page(
+                url_row.url,
+                delay_min=settings.SCRAPE_DELAY_MIN,
+                delay_max=settings.SCRAPE_DELAY_MAX,
+                timeout=settings.REQUEST_TIMEOUT,
+                max_retries=settings.MAX_RETRIES,
+            )
+
+            if page.error:
+                url_row.status = "failed"
+                url_row.error_reason = page.error
+                url_row.h1 = url_row.h1 or _url_display_title(url_row.url)
+                url_row.scraped_at = datetime.utcnow()
+                project.urls_failed += 1
+                if url_row.source_type != "own":
+                    _collect_sitemap_keywords(kw_accumulator, url_row.url, url_row.id, topic_terms)
+                db.commit()
+                continue
+
             url_row.status = "scraped"
             url_row.error_reason = None
-            url_row.h1 = _url_display_title(url_row.url)
-            url_row.word_count = len(_url_words(url_row.url))
-            url_row.readability_score = 0.0
-            url_row.publish_date = None
+            url_row.h1 = page.h1 or _url_display_title(url_row.url)
+            url_row.word_count = page.word_count or len(_url_words(url_row.url))
+            url_row.readability_score = page.readability_score or 0.0
+            url_row.publish_date = page.publish_date
             url_row.scraped_at = datetime.utcnow()
             project.urls_processed += 1
-            db.commit()
 
-            if url_row.source_type != "own":
+            keyword_result = extract_keywords_from_page(
+                page.text,
+                h1=page.h1,
+                h2s=page.h2s,
+                h3s=page.h3s,
+                use_keybert=settings.ENABLE_KEYBERT,
+                use_spacy=settings.ENABLE_SPACY,
+            )
+
+            if url_row.source_type == "own":
+                own_keyword_phrases.update(_url_keyword_candidates(url_row.url, topic_terms, include_single_terms=True))
+                own_keyword_phrases.update(_keyword_phrases(keyword_result, min_words=2))
+            else:
                 _collect_sitemap_keywords(kw_accumulator, url_row.url, url_row.id, topic_terms)
+                _collect_keywords(kw_accumulator, keyword_result, url_row.id, topic_terms)
+            db.commit()
 
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
         kw_accumulator = _refine_keyword_gap_recommendations(
@@ -266,8 +301,9 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
     competitor_limit = max(10, settings.MAX_COMPETITOR_DOMAINS)
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
+    candidate_signals: dict[str, dict[str, Any]] = {}
 
-    def add_domain(url: str | None, require_relevance: bool = True) -> None:
+    def add_domain(url: str | None, require_relevance: bool = True, query: str | None = None, source: str = "search") -> None:
         unwrapped_url = _unwrap_result_url(url)
         if require_relevance and not _is_relevant_result_url(unwrapped_url, required_terms):
             return
@@ -277,26 +313,47 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
             return
         if root == own_root or _is_blocked_competitor_root(root):
             return
+        signal = candidate_signals.setdefault(domain, {
+            "domain": domain,
+            "sample_urls": [],
+            "queries": [],
+            "source": source,
+        })
+        if unwrapped_url and unwrapped_url not in signal["sample_urls"]:
+            signal["sample_urls"].append(unwrapped_url)
+        if query and query not in signal["queries"]:
+            signal["queries"].append(query)
         if root not in competitor_roots:
             competitor_domains.append(domain)
             competitor_roots.add(root)
 
     primary_query = _primary_competitor_search_query(seed_keywords)
     for href in _search_google_result_urls(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT):
-        add_domain(href, require_relevance=False)
+        add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
         if len(competitor_domains) >= competitor_limit:
-            return competitor_domains[:competitor_limit]
+            break
 
     for query in _competitor_search_queries(seed_keywords):
         for href in _search_result_urls(query, include_google=True):
-            add_domain(href)
+            add_domain(href, query=query)
             if len(competitor_domains) >= competitor_limit:
-                return competitor_domains[:competitor_limit]
-
-    for domain in _fallback_competitor_domains(seed_keywords):
-        add_domain(domain, require_relevance=False)
+                break
         if len(competitor_domains) >= competitor_limit:
             break
+
+    for domain in _fallback_competitor_domains(seed_keywords):
+        add_domain(domain, require_relevance=False, source="fallback")
+        if len(competitor_domains) >= competitor_limit:
+            break
+
+    llm_domains = _llm_filter_competitor_domains(
+        seed_keywords,
+        project.own_domain or project.domain,
+        [candidate_signals[domain] for domain in competitor_domains if domain in candidate_signals],
+        competitor_limit,
+    )
+    if llm_domains:
+        return llm_domains
 
     return competitor_domains[:competitor_limit]
 
@@ -777,11 +834,43 @@ def _queue_url(
 def _pending_urls(db: Session, project_id: uuid.UUID) -> list[Any]:
     from app.models import Url
 
-    return db.execute(
+    rows = db.execute(
         select(Url)
         .where(Url.project_id == project_id, Url.status == "pending")
-        .order_by(Url.source_type.desc(), Url.url.asc())
+        .order_by(Url.url.asc())
     ).scalars().all()
+    return sorted(rows, key=lambda row: (row.source_type != "own", row.url))
+
+
+def _llm_filter_competitor_domains(
+    seed_keywords: list[str],
+    own_domain: str,
+    candidates: list[dict[str, Any]],
+    competitor_limit: int,
+) -> list[str]:
+    if not candidates or not settings.OPENROUTER_API_KEY:
+        return []
+    try:
+        from nlp.openrouter import judge_competitor_domains
+
+        judged = judge_competitor_domains(
+            seed_keywords,
+            own_domain,
+            candidates[: settings.MAX_COMPETITOR_JUDGE_CANDIDATES],
+            max_domains=competitor_limit,
+        )
+    except Exception as exc:
+        logger.warning("Competitor LLM judge failed before request: %s", exc)
+        return []
+
+    accepted: list[str] = []
+    for item in judged:
+        domain = _origin(item.get("domain"))
+        if domain and domain not in accepted:
+            accepted.append(domain)
+    if accepted:
+        logger.info("Competitor LLM judge accepted %s domains", len(accepted))
+    return accepted[:competitor_limit]
 
 
 def _keyword_phrases(keyword_result: Any, min_words: int) -> set[str]:

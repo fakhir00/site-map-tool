@@ -188,6 +188,26 @@ class SaveKeywordRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class ArticleDraftOut(BaseModel):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    keyword_id: uuid.UUID
+    keyword_phrase: str
+    status: str
+    title: Optional[str]
+    content_markdown: Optional[str]
+    audit_score: Optional[float]
+    generation_attempts: int
+    research_summary: Optional[dict]
+    audit_feedback: Optional[dict]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ArticleListResponse(BaseModel):
+    items: List[ArticleDraftOut]
+
+
 # ── URLs ──────────────────────────────────────────────────────
 class UrlOut(BaseModel):
     id: uuid.UUID

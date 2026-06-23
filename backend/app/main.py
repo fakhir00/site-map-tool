@@ -112,12 +112,14 @@ from app.projects.router import router as projects_router
 from app.scan.router import router as scan_router
 from app.keywords.router import bank_router as keyword_bank_router
 from app.keywords.router import router as keywords_router
+from app.content.router import router as content_router
 
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(scan_router)
 app.include_router(keywords_router)
 app.include_router(keyword_bank_router)
+app.include_router(content_router)
 
 
 @app.get("/api/health")
