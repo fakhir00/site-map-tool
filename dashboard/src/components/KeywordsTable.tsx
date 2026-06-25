@@ -85,7 +85,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
   })
 
   const articleMutation = useMutation({
-    mutationFn: (keywordId: string) => api.post(`/projects/${projectId}/keywords/${keywordId}/article/generate`, {}),
+    mutationFn: (keywordId: string) => api.postArticle(`/projects/${projectId}/keywords/${keywordId}/article/generate`, {}),
     onMutate: (keywordId) => {
       setWritingKeywordId(keywordId)
       setArticleError('')

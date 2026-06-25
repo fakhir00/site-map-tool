@@ -7,6 +7,7 @@ import { Card } from '../components/ui/Card'
 function keywordBadge(type: KeywordBankEntry['keyword_type']) {
   if (type === 'primary') return <Badge variant="teal">Primary</Badge>
   if (type === 'lsi') return <Badge variant="indigo">LSI</Badge>
+  if (type === 'long-tail') return <Badge variant="cyan">Long-tail</Badge>
   if (type === 'entity') return <Badge variant="amber">Entity</Badge>
   return <Badge variant="slate">Heading</Badge>
 }

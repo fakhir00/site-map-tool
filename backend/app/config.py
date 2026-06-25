@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     FRONTEND_URL: str = "http://localhost:3000"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
 
@@ -24,7 +26,7 @@ class Settings(BaseSettings):
     AI_KEYWORD_GAP_CANDIDATE_LIMIT: int = 80
     AI_KEYWORD_GAP_RESULT_LIMIT: int = 60
     ARTICLE_RESEARCH_SOURCE_LIMIT: int = 5
-    ARTICLE_GENERATION_MAX_ATTEMPTS: int = 3
+    ARTICLE_GENERATION_MAX_ATTEMPTS: int = 5
     SCRAPE_DELAY_MIN: float = 1.0
     SCRAPE_DELAY_MAX: float = 3.0
     REQUEST_TIMEOUT: int = 15

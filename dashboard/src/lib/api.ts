@@ -8,9 +8,14 @@ const DEFAULT_API_URL =
   !isBrowser || isLocalHost ? 'http://localhost:8000/api' : '/api'
 const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, '')
 const REQUEST_TIMEOUT_MS = 20_000
+const ARTICLE_REQUEST_TIMEOUT_MS = 300_000
 const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
 export const DEMO_BACKEND_ENABLED =
   import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true' || needsProductionApiUrl
+
+type ApiRequestInit = RequestInit & {
+  timeoutMs?: number
+}
 
 export type User = {
   id: string
@@ -276,7 +281,8 @@ export const auth = {
 }
 
 export const api = {
-  async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async fetch<T>(endpoint: string, options: ApiRequestInit = {}): Promise<T> {
+    const { timeoutMs = REQUEST_TIMEOUT_MS, ...requestOptions } = options
     const headers = new Headers(options.headers)
     const accessToken = token()
 
@@ -288,7 +294,7 @@ export const api = {
     if (DEMO_BACKEND_ENABLED) {
       try {
         return await demoFetch<T>(endpoint, {
-          ...options,
+          ...requestOptions,
           headers,
         })
       } catch (err) {
@@ -300,7 +306,7 @@ export const api = {
     }
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
     if (options.signal) {
       if (options.signal.aborted) {
@@ -314,7 +320,7 @@ export const api = {
 
     try {
       response = await fetch(`${API_URL}${endpoint}`, {
-        ...options,
+        ...requestOptions,
         headers,
         signal: controller.signal,
       })
@@ -353,18 +359,23 @@ export const api = {
     throw new ApiError(apiConnectionMessage('html'), response.status)
   },
 
-  get<T>(endpoint: string) {
-    return this.fetch<T>(endpoint, { method: 'GET' })
+  get<T>(endpoint: string, options: ApiRequestInit = {}) {
+    return this.fetch<T>(endpoint, { ...options, method: 'GET' })
   },
 
-  post<T>(endpoint: string, body?: unknown) {
+  post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}) {
     return this.fetch<T>(endpoint, {
+      ...options,
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   },
 
-  delete<T>(endpoint: string) {
-    return this.fetch<T>(endpoint, { method: 'DELETE' })
+  delete<T>(endpoint: string, options: ApiRequestInit = {}) {
+    return this.fetch<T>(endpoint, { ...options, method: 'DELETE' })
+  },
+
+  postArticle<T>(endpoint: string, body?: unknown) {
+    return this.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
   },
 }

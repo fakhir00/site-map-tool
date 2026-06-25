@@ -45,6 +45,10 @@ services:
       USE_CELERY: "true"
       SECRET_KEY: super-secret-jwt-key-change-in-production-32chars
       FRONTEND_URL: http://localhost:3000
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
     ports:
       - "8000:8000"
     depends_on:
@@ -68,6 +72,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       USE_CELERY: "true"
       SECRET_KEY: super-secret-jwt-key-change-in-production-32chars
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
     depends_on:
       postgres:
         condition: service_healthy

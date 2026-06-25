@@ -12,7 +12,7 @@ from app.models import User, Project, Keyword, KeywordUrl, Url, KeywordBank
 from app.schemas import KeywordOut, KeywordListResponse, KeywordSourceOut, SaveKeywordRequest
 from app.auth.jwt import get_current_user
 from nlp.keywords import is_publishable_keyword, seed_keyword_terms
-from nlp.openrouter import generate_ai_keywords
+from nlp.openrouter import ai_generated_source, generate_ai_keywords
 
 router = APIRouter(prefix="/api/projects", tags=["keywords"])
 bank_router = APIRouter(prefix="/api/keyword-bank", tags=["keywords"])
@@ -87,7 +87,7 @@ async def generate_keywords(
         raise HTTPException(status_code=500, detail="Failed to generate AI keywords")
         
     # Get or create an AI source URL
-    ai_url_str = "https://openrouter.ai/generated"
+    ai_url_str, ai_source_domain = ai_generated_source()
     q_url = select(Url).where(Url.project_id == project.id, Url.url == ai_url_str)
     result = await db.execute(q_url)
     ai_url = result.scalar_one_or_none()
@@ -97,7 +97,7 @@ async def generate_keywords(
             project_id=project.id,
             url=ai_url_str,
             source_type="ai",
-            source_domain="OpenRouter AI",
+            source_domain=ai_source_domain,
             status="scraped",
         )
         db.add(ai_url)

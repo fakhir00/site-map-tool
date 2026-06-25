@@ -848,7 +848,7 @@ def _llm_filter_competitor_domains(
     candidates: list[dict[str, Any]],
     competitor_limit: int,
 ) -> list[str]:
-    if not candidates or not settings.OPENROUTER_API_KEY:
+    if not candidates or not (settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY):
         return []
     try:
         from nlp.openrouter import judge_competitor_domains
@@ -1175,15 +1175,14 @@ def _build_ai_refined_accumulator(
     topic_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
     from nlp.keywords import clean_phrase, is_publishable_keyword
+    from nlp.openrouter import normalize_keyword_type
 
     source_lookup = {clean_phrase(phrase): data for phrase, data in accumulator.items()}
     refined: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(ai_recommendations):
         source_phrase = clean_phrase(str(item.get("source_phrase", "")))
         phrase = clean_phrase(str(item.get("phrase", "")))
-        keyword_type = str(item.get("type", "lsi")).strip().lower()
-        if keyword_type not in {"primary", "lsi", "long-tail"}:
-            keyword_type = "lsi"
+        keyword_type = normalize_keyword_type(item.get("type"))
         if source_phrase not in source_lookup and phrase in source_lookup:
             source_phrase = phrase
         source_data = source_lookup.get(source_phrase)

@@ -1,9 +1,10 @@
 import uuid
+import re
 from typing import Any
 
 from app.config import settings
 from nlp.keywords import keyword_terms
-from nlp.openrouter import audit_article, build_article_brief, judge_competitor_domains, write_article
+from nlp.openrouter import audit_article, build_article_brief, is_ai_configured, judge_competitor_domains, write_article
 from scraping.crawler import ScrapedPage, scrape_page
 from workers.pipeline import (
     _is_blocked_competitor_root,
@@ -22,11 +23,15 @@ def generate_article_package(
     competitor_urls: list[str],
     own_urls: list[str],
 ) -> dict[str, Any]:
-    if not settings.OPENROUTER_API_KEY:
-        raise ValueError("OpenRouter API key is required to generate articles")
+    if not is_ai_configured():
+        raise ValueError("AI API key is required to generate articles. Set GROQ_API_KEY or OPENROUTER_API_KEY.")
 
     competitor_pages = _collect_research_pages(competitor_urls, limit=settings.ARTICLE_RESEARCH_SOURCE_LIMIT)
-    google_pages = _collect_google_research(primary_keyword, project_domain)
+    google_pages = (
+        []
+        if len(competitor_pages) >= settings.ARTICLE_RESEARCH_SOURCE_LIMIT
+        else _collect_google_research(primary_keyword, project_domain)
+    )
     own_pages = _collect_research_pages(own_urls, limit=2)
 
     page_lookup = {page["url"]: page for page in competitor_pages}
@@ -48,7 +53,7 @@ def generate_article_package(
     article_markdown = ""
     audit: dict[str, Any] | None = None
     revision_notes: list[str] = []
-    attempts = max(1, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
+    attempts = max(3, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
 
     for attempt in range(1, attempts + 1):
         article_markdown = write_article(
@@ -58,21 +63,38 @@ def generate_article_package(
             competitor_pages=merged_competitors,
             revision_notes=revision_notes,
         )
-        audit = audit_article(
-            primary_keyword=primary_keyword,
-            brief=brief,
-            article_markdown=article_markdown,
-        ) or {
-            "score": 0,
-            "passed": False,
-            "strengths": [],
-            "issues": ["The article audit did not return a valid result."],
-            "revision_notes": ["Rewrite the article with stronger structure, clarity, and SEO coverage."],
-        }
-        score = int(audit.get("score") or 0)
-        passed = bool(audit.get("passed")) or score >= 90
+        local_issues = _local_article_quality_issues(article_markdown, primary_keyword)
+        if local_issues:
+            audit = {
+                "score": 55,
+                "passed": False,
+                "strengths": [],
+                "issues": local_issues,
+                "revision_notes": _revision_notes_from_local_issues(local_issues, primary_keyword),
+                "missing_sections": [],
+                "keyword_intent_score": 55,
+                "gap_coverage_score": 55,
+            }
+        else:
+            audit = audit_article(
+                primary_keyword=primary_keyword,
+                brief=brief,
+                article_markdown=article_markdown,
+            ) or {
+                "score": 0,
+                "passed": False,
+                "strengths": [],
+                "issues": ["The article audit did not return a valid result."],
+                "revision_notes": ["Rewrite the article with stronger structure, clarity, and SEO coverage."],
+                "missing_sections": [],
+                "keyword_intent_score": 0,
+                "gap_coverage_score": 0,
+            }
+        score, keyword_intent_score, gap_coverage_score, passed = _normalize_audit_result(audit)
         audit["passed"] = passed
         audit["score"] = score
+        audit["keyword_intent_score"] = keyword_intent_score
+        audit["gap_coverage_score"] = gap_coverage_score
         if passed:
             return {
                 "status": "passed",
@@ -84,11 +106,7 @@ def generate_article_package(
                 "competitor_pages": merged_competitors,
                 "own_pages": own_pages,
             }
-        revision_notes = [
-            str(note).strip()
-            for note in audit.get("revision_notes", [])
-            if str(note).strip()
-        ][:8]
+        revision_notes = _revision_notes_from_audit(audit, primary_keyword, attempt, attempts)
 
     return {
         "status": "needs_revision",
@@ -100,6 +118,58 @@ def generate_article_package(
         "competitor_pages": merged_competitors,
         "own_pages": own_pages,
     }
+
+
+def _normalize_audit_result(audit: dict[str, Any]) -> tuple[int, int, int, bool]:
+    score = int(audit.get("score") or 0)
+    keyword_intent_score = int(audit.get("keyword_intent_score") or score)
+    gap_coverage_score = int(audit.get("gap_coverage_score") or score)
+    passed = (
+        bool(audit.get("passed"))
+        and score >= 92
+        and keyword_intent_score >= 90
+        and gap_coverage_score >= 90
+    )
+    return score, keyword_intent_score, gap_coverage_score, passed
+
+
+def _revision_notes_from_audit(
+    audit: dict[str, Any],
+    primary_keyword: str,
+    attempt: int,
+    attempts: int,
+) -> list[str]:
+    score = int(audit.get("score") or 0)
+    keyword_intent_score = int(audit.get("keyword_intent_score") or score)
+    gap_coverage_score = int(audit.get("gap_coverage_score") or score)
+    notes = [
+        (
+            f"Previous draft failed audit on attempt {attempt} of {attempts}: "
+            f"overall {score}, keyword intent {keyword_intent_score}, gap coverage {gap_coverage_score}."
+        ),
+        f"Rewrite the entire article for the exact gap keyword '{primary_keyword}' until it fully passes the audit.",
+    ]
+
+    for key, label in (
+        ("issues", "Fix"),
+        ("missing_sections", "Add or strengthen"),
+        ("revision_notes", "Rewrite instruction"),
+    ):
+        for item in audit.get(key, []) or []:
+            value = str(item).strip()
+            if value:
+                notes.append(f"{label}: {value}")
+
+    notes.append("Do not mention the audit, revision process, scores, or internal notes in the article.")
+    notes.append("Return a complete replacement draft, not a patch or explanation.")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for note in notes:
+        if note not in seen:
+            deduped.append(note)
+            seen.add(note)
+    return deduped[:12]
 
 
 def _collect_google_research(primary_keyword: str, project_domain: str) -> list[dict[str, Any]]:
@@ -184,6 +254,49 @@ def _article_title(article_markdown: str, brief: dict[str, Any], fallback_keywor
         if line.startswith("# "):
             return line[2:].strip()
     return str(brief.get("recommended_title") or fallback_keyword).strip()
+
+
+def _local_article_quality_issues(article_markdown: str, primary_keyword: str) -> list[str]:
+    content = (article_markdown or "").strip()
+    lowered = content.lower()
+    issues: list[str] = []
+    if not content:
+        return ["The writer returned an empty draft."]
+    if "```" in content:
+        issues.append("The article contains code fences or wrapper formatting.")
+    if re.search(r"\bas an ai\b|\bi cannot\b|\bi can't\b", lowered):
+        issues.append("The article contains AI meta commentary.")
+
+    words = re.findall(r"\b[\w'-]+\b", content)
+    h1_count = len(re.findall(r"^#\s+.+", content, flags=re.MULTILINE))
+    h2_count = len(re.findall(r"^##\s+.+", content, flags=re.MULTILINE))
+    keyword_terms = keyword_terms_for_quality(primary_keyword)
+    keyword_hits = sum(1 for term in keyword_terms if term in lowered)
+
+    if len(words) < 900:
+        issues.append("The article is too thin; expand it to at least 1,100 words with practical depth and examples.")
+    if h1_count != 1:
+        issues.append("The article must have exactly one H1.")
+    if h2_count < 5:
+        issues.append("The article needs at least five useful H2 sections.")
+    if keyword_terms and keyword_hits < max(1, min(2, len(keyword_terms))):
+        issues.append("The article does not clearly target the primary keyword.")
+    if primary_keyword.lower() not in lowered:
+        issues.append("The exact primary keyword should appear naturally in the article.")
+    if not re.search(r"^##\s+.*(faq|questions)", lowered, flags=re.MULTILINE):
+        issues.append("The article should include an FAQ or common questions section.")
+    return issues
+
+
+def keyword_terms_for_quality(primary_keyword: str) -> set[str]:
+    return {term.lower() for term in keyword_terms(primary_keyword, min_len=3)}
+
+
+def _revision_notes_from_local_issues(issues: list[str], primary_keyword: str) -> list[str]:
+    notes = [f"Rewrite for the exact gap keyword '{primary_keyword}' with stronger search-intent alignment."]
+    notes.extend(issues)
+    notes.append("Add concrete examples, decision criteria, pitfalls, and a useful FAQ while avoiding unsupported claims.")
+    return notes[:8]
 
 
 def _heuristic_brief(primary_keyword: str, competitor_pages: list[dict[str, Any]]) -> dict[str, Any]:

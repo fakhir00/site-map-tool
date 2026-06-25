@@ -137,7 +137,7 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {!!audit?.issues?.length && (
+      {!audit?.passed && !!audit?.issues?.length && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="mb-2 flex items-center gap-2 font-semibold">
             <AlertTriangle className="h-4 w-4" />
