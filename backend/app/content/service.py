@@ -175,7 +175,15 @@ def _revision_notes_from_audit(
 def _collect_google_research(primary_keyword: str, project_domain: str) -> list[dict[str, Any]]:
     own_root = _registered_domain(project_domain)
     grouped: dict[str, list[str]] = {}
-    for href in _search_google_result_urls(primary_keyword, max_results=settings.GOOGLE_SERP_RESULT_LIMIT):
+    from scraping.apify_client_module import search_google_via_apify, is_apify_configured
+    
+    if is_apify_configured():
+        results = search_google_via_apify(primary_keyword, max_results=settings.GOOGLE_SERP_RESULT_LIMIT)
+        hrefs = [res["url"] for res in results]
+    else:
+        hrefs = _search_google_result_urls(primary_keyword, max_results=settings.GOOGLE_SERP_RESULT_LIMIT)
+        
+    for href in hrefs:
         origin = _origin(href)
         root = _registered_domain(origin)
         if not origin or not root or root == own_root or _is_blocked_competitor_root(root):

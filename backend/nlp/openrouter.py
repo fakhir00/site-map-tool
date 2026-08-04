@@ -24,7 +24,15 @@ def normalize_keyword_type(value: Any) -> str:
     return "lsi"
 
 
-def _provider_config() -> tuple[str, str, str, str]:
+def _provider_config(use_writing_model: bool = False) -> tuple[str, str, str, str]:
+    if settings.DEEPSEEK_API_KEY:
+        model = settings.DEEPSEEK_WRITING_MODEL if use_writing_model else settings.DEEPSEEK_MODEL
+        return (
+            "DeepSeek",
+            "https://api.deepseek.com",
+            settings.DEEPSEEK_API_KEY,
+            model,
+        )
     if settings.GROQ_API_KEY:
         return (
             "Groq",
@@ -59,16 +67,16 @@ def ai_generated_source() -> tuple[str, str]:
     return "https://ai.generated", "AI"
 
 
-def _sync_client() -> OpenAI:
-    _provider, base_url, api_key, _model = _provider_config()
+def _sync_client(use_writing_model: bool = False) -> OpenAI:
+    _provider, base_url, api_key, _model = _provider_config(use_writing_model)
     return OpenAI(
         base_url=base_url,
         api_key=api_key,
     )
 
 
-def _async_client() -> AsyncOpenAI:
-    _provider, base_url, api_key, _model = _provider_config()
+def _async_client(use_writing_model: bool = False) -> AsyncOpenAI:
+    _provider, base_url, api_key, _model = _provider_config(use_writing_model)
     return AsyncOpenAI(
         base_url=base_url,
         api_key=api_key,
@@ -97,9 +105,10 @@ async def _achat_json(
     user_prompt: str,
     temperature: float = 0.2,
     max_tokens: int | None = None,
+    use_writing_model: bool = False,
 ) -> Any:
-    client = _async_client()
-    _provider, _base_url, _api_key, model = _provider_config()
+    client = _async_client(use_writing_model)
+    _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -122,9 +131,10 @@ def _chat_json(
     user_prompt: str,
     temperature: float = 0.2,
     max_tokens: int | None = None,
+    use_writing_model: bool = False,
 ) -> Any:
-    client = _sync_client()
-    _provider, _base_url, _api_key, model = _provider_config()
+    client = _sync_client(use_writing_model)
+    _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -147,9 +157,10 @@ def _chat_text(
     user_prompt: str,
     temperature: float = 0.3,
     max_tokens: int | None = None,
+    use_writing_model: bool = False,
 ) -> str:
-    client = _sync_client()
-    _provider, _base_url, _api_key, model = _provider_config()
+    client = _sync_client(use_writing_model)
+    _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -430,6 +441,7 @@ Return ONLY a JSON object with these keys:
             user_prompt=prompt,
             temperature=0.2,
             max_tokens=2600,
+            use_writing_model=True,
         )
         return payload if isinstance(payload, dict) else None
     except Exception as exc:
@@ -491,6 +503,7 @@ Requirements:
         user_prompt=prompt,
         temperature=0.28,
         max_tokens=4500,
+        use_writing_model=True,
     )
 
 

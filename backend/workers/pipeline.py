@@ -92,6 +92,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 required_terms,
                 ranking_terms,
                 include_homepage=True,
+                source_type="own",
             )
             _queue_discovered_urls(
                 db,
@@ -110,6 +111,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                     crawl_limit,
                     required_terms,
                     ranking_terms,
+                    source_type="competitor",
                 )
                 _queue_discovered_urls(
                     db,
@@ -216,13 +218,21 @@ def _discover_content_urls(
     required_terms: set[str] | None = None,
     ranking_terms: set[str] | None = None,
     include_homepage: bool = False,
+    source_type: str = "competitor",
 ) -> list[str]:
     max_raw_urls = min(1000, max(limit * 10, limit + 25))
-    all_urls = extract_all_urls_from_domain(
-        domain,
-        timeout=settings.REQUEST_TIMEOUT,
-        max_urls=max_raw_urls,
-    )
+    
+    from scraping.apify_client_module import crawl_competitor_content_via_apify, is_apify_configured
+    if source_type == "competitor" and is_apify_configured():
+        logger.info("Using Apify Website Crawler for competitor domain: %s", domain)
+        all_urls = crawl_competitor_content_via_apify(domain, max_pages=limit * 5)
+    else:
+        all_urls = extract_all_urls_from_domain(
+            domain,
+            timeout=settings.REQUEST_TIMEOUT,
+            max_urls=max_raw_urls,
+        )
+        
     logger.info("Found %s sitemap URLs for %s", len(all_urls), domain)
     content_urls = filter_blog_urls(
         all_urls,
@@ -302,6 +312,8 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
     candidate_signals: dict[str, dict[str, Any]] = {}
+    
+    from scraping.apify_client_module import search_google_via_apify, is_apify_configured
 
     def add_domain(url: str | None, require_relevance: bool = True, query: str | None = None, source: str = "search") -> None:
         unwrapped_url = _unwrap_result_url(url)
@@ -328,16 +340,32 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
             competitor_roots.add(root)
 
     primary_query = _primary_competitor_search_query(seed_keywords)
-    for href in _search_google_result_urls(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT):
-        add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
-        if len(competitor_domains) >= competitor_limit:
-            break
-
-    for query in _competitor_search_queries(seed_keywords):
-        for href in _search_result_urls(query, include_google=True):
-            add_domain(href, query=query)
+    
+    if is_apify_configured():
+        logger.info(f"Using Apify for primary query: {primary_query}")
+        apify_results = search_google_via_apify(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT)
+        for res in apify_results:
+            add_domain(res["url"], require_relevance=False, query=primary_query, source="apify_page_1")
             if len(competitor_domains) >= competitor_limit:
                 break
+    else:
+        for href in _search_google_result_urls(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT):
+            add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
+            if len(competitor_domains) >= competitor_limit:
+                break
+
+    for query in _competitor_search_queries(seed_keywords):
+        if is_apify_configured():
+            apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT)
+            for res in apify_results:
+                add_domain(res["url"], query=query)
+                if len(competitor_domains) >= competitor_limit:
+                    break
+        else:
+            for href in _search_result_urls(query, include_google=True):
+                add_domain(href, query=query)
+                if len(competitor_domains) >= competitor_limit:
+                    break
         if len(competitor_domains) >= competitor_limit:
             break
 

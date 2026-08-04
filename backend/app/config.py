@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
+    APIFY_API_TOKEN: str = ""
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    DEEPSEEK_WRITING_MODEL: str = "deepseek-v4-pro"
 
     # Scraping
     MAX_URLS_PER_SCAN: int = 500
