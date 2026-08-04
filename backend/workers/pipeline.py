@@ -1022,7 +1022,7 @@ def _collect_sitemap_keywords(
     url_id: uuid.UUID,
     topic_terms: set[str] | None,
 ) -> None:
-    for phrase in _url_keyword_candidates(url, topic_terms, include_single_terms=False):
+    for phrase in _url_keyword_candidates(url, None, include_single_terms=False):
         if phrase not in accumulator:
             accumulator[phrase] = {
                 "type": "primary",
@@ -1045,7 +1045,7 @@ def _collect_keywords(
 
     def add_keyword(phrase: str, keyword_type: str, score: float = 1.0) -> None:
         key = clean_phrase(phrase)
-        if not is_publishable_keyword(key, min_words=2, topic_terms=topic_terms):
+        if not is_publishable_keyword(key, min_words=2):
             return
         if key not in accumulator:
             accumulator[key] = {"type": keyword_type, "count": 0, "url_ids": set(), "score": score}
@@ -1068,14 +1068,15 @@ def _remove_covered_keywords(accumulator: dict[str, dict[str, Any]], own_keyword
 
     own_term_sets = [_phrase_terms(phrase) for phrase in own_keyword_phrases]
     own_term_sets = [terms for terms in own_term_sets if terms]
+    own_term_frozensets = {frozenset(terms) for terms in own_term_sets}
 
     for phrase in list(accumulator.keys()):
         if phrase in own_keyword_phrases:
             del accumulator[phrase]
             continue
 
-        phrase_terms = _phrase_terms(phrase)
-        if phrase_terms and any(phrase_terms.issubset(own_terms) for own_terms in own_term_sets):
+        phrase_terms = frozenset(_phrase_terms(phrase))
+        if phrase_terms and phrase_terms in own_term_frozensets:
             del accumulator[phrase]
 
 
