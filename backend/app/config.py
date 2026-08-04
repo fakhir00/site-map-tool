@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
     APIFY_API_TOKEN: str = ""
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
-    DEEPSEEK_WRITING_MODEL: str = "deepseek-v4-pro"
+    TOKENROUTER_API_KEY: str = ""
+    TOKENROUTER_MODEL: str = "moonshotai/kimi-k3-free"
+    TOKENROUTER_WRITING_MODEL: str = "moonshotai/kimi-k3-free"
 
     # Scraping
     MAX_URLS_PER_SCAN: int = 500

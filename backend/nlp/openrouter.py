@@ -25,12 +25,12 @@ def normalize_keyword_type(value: Any) -> str:
 
 
 def _provider_config(use_writing_model: bool = False) -> tuple[str, str, str, str]:
-    if settings.DEEPSEEK_API_KEY:
-        model = settings.DEEPSEEK_WRITING_MODEL if use_writing_model else settings.DEEPSEEK_MODEL
+    if settings.TOKENROUTER_API_KEY:
+        model = settings.TOKENROUTER_WRITING_MODEL if use_writing_model else settings.TOKENROUTER_MODEL
         return (
-            "DeepSeek",
-            "https://api.deepseek.com",
-            settings.DEEPSEEK_API_KEY,
+            "TokenRouter",
+            "http://api.tokenrouter.com/v1",
+            settings.TOKENROUTER_API_KEY,
             model,
         )
     if settings.GROQ_API_KEY:
