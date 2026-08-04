@@ -147,7 +147,7 @@ def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
         return False
 
     meaningful_lengths = [len(word.strip("-")) for word in words if word not in STOPWORDS]
-    if meaningful_lengths and max(meaningful_lengths) < 5 and not any(word in COMMON_SHORT_TOKENS for word in words):
+    if meaningful_lengths and max(meaningful_lengths) < 4 and len(words) == 1 and not any(word in COMMON_SHORT_TOKENS for word in words):
         return False
 
     meaningful_words = [word for word in words if word not in STOPWORDS]
