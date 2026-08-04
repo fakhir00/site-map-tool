@@ -241,7 +241,7 @@ async def get_keyword_bank(
 
 
 def _is_displayable_keyword(keyword: Keyword, topic_terms: set[str]) -> bool:
-    return is_publishable_keyword(keyword.phrase, min_words=2, topic_terms=topic_terms)
+    return is_publishable_keyword(keyword.phrase, min_words=2)
 
 
 async def _keyword_sources(
