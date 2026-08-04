@@ -93,10 +93,32 @@ def _strip_code_fences(content: str) -> str:
 
 
 def _parse_json_payload(content: str) -> Any:
-    payload = json.loads(_strip_code_fences(content))
-    if isinstance(payload, dict) and "data" in payload:
-        return payload["data"]
-    return payload
+    cleaned = _strip_code_fences(content)
+    try:
+        payload = json.loads(cleaned)
+        if isinstance(payload, dict) and "data" in payload:
+            return payload["data"]
+        return payload
+    except json.JSONDecodeError:
+        # If the JSON is truncated or malformed, try to salvage any complete {...} objects
+        import re
+        import ast
+        objects = []
+        pattern = re.compile(r'\{[^{}]*\}')
+        for match in pattern.finditer(cleaned):
+            try:
+                obj = json.loads(match.group(0))
+                objects.append(obj)
+            except json.JSONDecodeError:
+                try:
+                    obj = ast.literal_eval(match.group(0))
+                    if isinstance(obj, dict):
+                        objects.append(obj)
+                except Exception:
+                    pass
+        if objects:
+            return objects
+        raise
 
 
 async def _achat_json(

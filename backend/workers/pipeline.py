@@ -1118,7 +1118,7 @@ def _refine_keyword_gap_recommendations(
             logger.info("AI keyword gap filter kept %s of %s candidates", len(refined), len(accumulator))
             return refined
 
-    fallback = _build_heuristic_gap_accumulator(accumulator, candidate_rows)
+    fallback = _build_heuristic_gap_accumulator(accumulator, candidate_rows, topic_terms)
     logger.info("Heuristic keyword gap filter kept %s of %s candidates", len(fallback), len(accumulator))
     return fallback
 
@@ -1235,9 +1235,19 @@ def _build_ai_refined_accumulator(
 def _build_heuristic_gap_accumulator(
     accumulator: dict[str, dict[str, Any]],
     candidate_rows: list[dict[str, Any]],
+    topic_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
     limit = max(1, settings.AI_KEYWORD_GAP_RESULT_LIMIT)
-    kept_phrases = {row["phrase"] for row in candidate_rows[:limit]}
+    
+    if topic_terms:
+        filtered_candidates = [
+            row for row in candidate_rows
+            if _phrase_terms(row["phrase"]) & topic_terms
+        ]
+    else:
+        filtered_candidates = candidate_rows
+        
+    kept_phrases = {row["phrase"] for row in filtered_candidates[:limit]}
     return {
         phrase: data
         for phrase, data in accumulator.items()
