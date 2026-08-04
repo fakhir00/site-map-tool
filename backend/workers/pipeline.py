@@ -225,7 +225,7 @@ def _discover_content_urls(
     from scraping.apify_client_module import crawl_competitor_content_via_apify, is_apify_configured
     if source_type == "competitor" and is_apify_configured():
         logger.info("Using Apify Website Crawler for competitor domain: %s", domain)
-        all_urls = crawl_competitor_content_via_apify(domain, max_pages=limit * 5)
+        all_urls = crawl_competitor_content_via_apify(domain, max_pages=3)
     else:
         all_urls = extract_all_urls_from_domain(
             domain,

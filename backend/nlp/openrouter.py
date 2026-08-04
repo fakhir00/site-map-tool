@@ -29,7 +29,7 @@ def _provider_config(use_writing_model: bool = False) -> tuple[str, str, str, st
         model = settings.TOKENROUTER_WRITING_MODEL if use_writing_model else settings.TOKENROUTER_MODEL
         return (
             "TokenRouter",
-            "http://api.tokenrouter.com/v1",
+            "https://api.tokenrouter.com/v1",
             settings.TOKENROUTER_API_KEY,
             model,
         )

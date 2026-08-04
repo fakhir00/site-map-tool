@@ -63,6 +63,8 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
     run_input = {
         "startUrls": [{"url": domain_or_url}],
         "crawlerType": "playwright:adaptive",
+        "maxCrawlPages": max_pages,
+        "maxCrawlDepth": 1,
         "maxRequestsPerCrawl": max_pages,
         "proxyConfiguration": {"useApifyProxy": True},
     }
@@ -93,6 +95,8 @@ def extract_apify_page_content(url: str) -> Optional[ScrapedPage]:
     run_input = {
         "startUrls": [{"url": url}],
         "crawlerType": "playwright:adaptive",
+        "maxCrawlPages": 1,
+        "maxCrawlDepth": 0,
         "maxRequestsPerCrawl": 1,
     }
     
