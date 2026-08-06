@@ -24,7 +24,7 @@ def search_google_via_apify(query: str, max_results: int = 10) -> List[Dict[str,
 
     client = _get_client()
     run_input = {
-        "queries": query,
+        "query": query,
         "maxPagesPerQuery": 1,
         "resultsPerPage": max_results,
         "countryCode": "us",
@@ -37,13 +37,13 @@ def search_google_via_apify(query: str, max_results: int = 10) -> List[Dict[str,
         
         results = []
         for item in client.dataset(run.default_dataset_id).iterate_items():
-            if "organicResults" in item:
-                for organic_item in item["organicResults"]:
-                    results.append({
-                        "url": organic_item.get("url"),
-                        "title": organic_item.get("title"),
-                        "snippet": organic_item.get("description")
-                    })
+            url = item.get("url")
+            if url and not url.startswith("https://apify.com/pricing"):
+                results.append({
+                    "url": url,
+                    "title": item.get("title"),
+                    "snippet": item.get("snippet") or item.get("description")
+                })
         return results[:max_results]
     except Exception as exc:
         logger.error(f"Apify search failed for {query}: {exc}")

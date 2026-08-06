@@ -140,49 +140,20 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 return
 
             logger.info("[%s] Analyzing sitemap URL %s/%s: %s", project_id, index, len(pending_urls), url_row.url)
-            page = scrape_page(
-                url_row.url,
-                delay_min=settings.SCRAPE_DELAY_MIN,
-                delay_max=settings.SCRAPE_DELAY_MAX,
-                timeout=settings.REQUEST_TIMEOUT,
-                max_retries=settings.MAX_RETRIES,
-            )
-
-            if page.error:
-                url_row.status = "failed"
-                url_row.error_reason = page.error
-                url_row.h1 = url_row.h1 or _url_display_title(url_row.url)
-                url_row.scraped_at = datetime.utcnow()
-                project.urls_failed += 1
-                if url_row.source_type != "own":
-                    _collect_sitemap_keywords(kw_accumulator, url_row.url, url_row.id, topic_terms)
-                db.commit()
-                continue
-
+            
             url_row.status = "scraped"
             url_row.error_reason = None
-            url_row.h1 = page.h1 or _url_display_title(url_row.url)
-            url_row.word_count = page.word_count or len(_url_words(url_row.url))
-            url_row.readability_score = page.readability_score or 0.0
-            url_row.publish_date = page.publish_date
+            url_row.h1 = _url_display_title(url_row.url)
+            url_row.word_count = len(_url_words(url_row.url))
+            url_row.readability_score = 0.0
             url_row.scraped_at = datetime.utcnow()
             project.urls_processed += 1
 
-            keyword_result = extract_keywords_from_page(
-                page.text,
-                h1=page.h1,
-                h2s=page.h2s,
-                h3s=page.h3s,
-                use_keybert=settings.ENABLE_KEYBERT,
-                use_spacy=settings.ENABLE_SPACY,
-            )
-
             if url_row.source_type == "own":
                 own_keyword_phrases.update(_url_keyword_candidates(url_row.url, topic_terms, include_single_terms=True))
-                own_keyword_phrases.update(_keyword_phrases(keyword_result, min_words=2))
             else:
                 _collect_sitemap_keywords(kw_accumulator, url_row.url, url_row.id, topic_terms)
-                _collect_keywords(kw_accumulator, keyword_result, url_row.id, topic_terms)
+            
             db.commit()
 
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
@@ -222,16 +193,11 @@ def _discover_content_urls(
 ) -> list[str]:
     max_raw_urls = min(1000, max(limit * 10, limit + 25))
     
-    from scraping.apify_client_module import crawl_competitor_content_via_apify, is_apify_configured
-    if source_type == "competitor" and is_apify_configured():
-        logger.info("Using Apify Website Crawler for competitor domain: %s", domain)
-        all_urls = crawl_competitor_content_via_apify(domain, max_pages=3)
-    else:
-        all_urls = extract_all_urls_from_domain(
-            domain,
-            timeout=settings.REQUEST_TIMEOUT,
-            max_urls=max_raw_urls,
-        )
+    all_urls = extract_all_urls_from_domain(
+        domain,
+        timeout=settings.REQUEST_TIMEOUT,
+        max_urls=max_raw_urls,
+    )
         
     logger.info("Found %s sitemap URLs for %s", len(all_urls), domain)
     content_urls = filter_blog_urls(
