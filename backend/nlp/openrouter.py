@@ -59,12 +59,7 @@ def ai_provider_name() -> str:
 
 
 def ai_generated_source() -> tuple[str, str]:
-    provider = ai_provider_name()
-    if provider == "Groq":
-        return "https://groq.com/generated", "Groq AI"
-    if provider == "OpenRouter":
-        return "https://openrouter.ai/generated", "OpenRouter AI"
-    return "https://ai.generated", "AI"
+    return "https://ai.generated", "AI Recommendations"
 
 
 def _sync_client(use_writing_model: bool = False) -> OpenAI:
