@@ -41,13 +41,13 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
     master-prompt-theme.txt rules.
     """
     system_prompt = (
-        "You are an elite AI Architect and SEO Prompt Engineer. Your task is to take a generic 'Template Master Prompt' and tailor it for a specific KEYWORD and INTENT.\n\n"
+        "You are an elite AI Architect and SEO Prompt Engineer. Your task is to generate strict supplementary instructions to be appended to a 'Template Master Prompt'.\n\n"
         "CRITICAL INSTRUCTIONS:\n"
-        "1. PRESERVE THE TEMPLATE: You MUST output the ENTIRE Template Master Prompt exactly as it is written, preserving all of its original rules, formatting, and sections. DO NOT summarize or omit anything from the original template.\n"
-        "2. MINOR TWEAKS: You may make minor edits to the original text ONLY to replace generic terms with the specific keyword or intent (e.g., specifying it's a calculator instead of a generic site), but do not delete any core rules.\n"
-        "3. ADD 'SPECIAL SPECIFICATION' SECTION: You MUST ADD a brand new section titled '========================================================================\\nSPECIAL SPECIFICATION\\n========================================================================'. In this section, define the situation-specific features for the Keyword and Intent (e.g., exact interactive features, calculators, SaaS forms, etc.).\n"
-        "4. ADD 'SILO STRUCTURE' SECTION: You MUST ADD a brand new section titled '========================================================================\\nSILO STRUCTURE\\n========================================================================'. In this section, define the URL silo architecture and content mapping for the keyword.\n"
-        "5. The output must be the raw tailored prompt text (ready to be copy-pasted). Do NOT output markdown wrappers (like ```markdown) at the top/bottom."
+        "1. DO NOT REWRITE OR OUTPUT THE ORIGINAL TEMPLATE. The backend will automatically prepend it.\n"
+        "2. ONLY OUTPUT THE SUPPLEMENTARY SECTIONS.\n"
+        "3. ADD 'SPECIAL SPECIFICATION' SECTION: You MUST output a section titled '========================================================================\\nSPECIAL SPECIFICATION\\n========================================================================'. In this section, define the situation-specific features for the Keyword and Intent (e.g., exact interactive features, calculators, SaaS forms, etc.).\n"
+        "4. ADD 'SILO STRUCTURE' SECTION: You MUST output a section titled '========================================================================\\nSILO STRUCTURE\\n========================================================================'. In this section, define the URL silo architecture and content mapping for the keyword.\n"
+        "5. The output must be raw text (ready to be copy-pasted). Do NOT output markdown wrappers (like ```markdown) at the top/bottom."
     )
     
     if revision_notes:
@@ -56,8 +56,7 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
     user_prompt = (
         f"KEYWORD: {keyword}\n"
         f"INTENT: {intent}\n\n"
-        f"--- TEMPLATE MASTER PROMPT ---\n{master_theme_text}\n--- END TEMPLATE ---\n\n"
-        "Generate the full, highly specific, customized Website Master Prompt now."
+        "Generate the supplementary Special Specification and Silo Structure sections now."
     )
 
     try:
@@ -67,7 +66,9 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
             temperature=0.7,
             max_tokens=4000,
         )
-        return response_text.strip()
+        # Programmatically combine the raw master template with the LLM's generated sections
+        combined_prompt = f"{master_theme_text}\n\n{response_text.strip()}"
+        return combined_prompt
     except Exception as e:
         logger.error(f"Failed to generate website prompt: {e}")
         return ""

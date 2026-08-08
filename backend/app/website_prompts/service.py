@@ -35,15 +35,24 @@ def analyze_intent_flow(keyword: str, manual_competitors: List[str] = None) -> D
         except Exception as e:
             logger.error(f"Failed to fetch SERP competitors for '{keyword}': {e}")
 
-    # Scrape the content of these homepages
+    import concurrent.futures
+
+    # Scrape the content of these homepages in parallel to avoid timeout
     scraped_texts = []
-    for url in competitors[:5]:
+    def fetch_page(url):
         try:
             page = extract_apify_page_content(url)
             if page and page.text:
-                scraped_texts.append(page.text)
+                return page.text
         except Exception as e:
             logger.error(f"Failed to extract content for {url}: {e}")
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = executor.map(fetch_page, competitors[:5])
+        for text in results:
+            if text:
+                scraped_texts.append(text)
 
     # Analyze intent
     if not scraped_texts:
