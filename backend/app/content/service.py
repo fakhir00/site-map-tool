@@ -117,7 +117,7 @@ def generate_final_article_package(
     article_markdown = ""
     audit: dict[str, Any] | None = None
     revision_notes: list[str] = []
-    attempts = max(3, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
+    attempts = 20  # Try up to 20 times to ensure we pass the auditor
 
     for attempt in range(1, attempts + 1):
         article_markdown = write_final_article(

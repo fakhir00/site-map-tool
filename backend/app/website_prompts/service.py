@@ -40,8 +40,8 @@ def analyze_intent_flow(keyword: str, manual_competitors: List[str] = None) -> D
     for url in competitors[:5]:
         try:
             page = extract_apify_page_content(url)
-            if page and page.markdown_content:
-                scraped_texts.append(page.markdown_content)
+            if page and page.text:
+                scraped_texts.append(page.text)
         except Exception as e:
             logger.error(f"Failed to extract content for {url}: {e}")
 

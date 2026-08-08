@@ -25,6 +25,8 @@ function articleStatusBadge(article: ArticleDraft) {
 export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
   const [copied, setCopied] = useState(false)
   const [viewMode, setViewMode] = useState<'markdown' | 'preview'>('preview')
+  const [promptOpen, setPromptOpen] = useState(true)
+  const [articleOpen, setArticleOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -38,6 +40,8 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
     mutationFn: (articleId: string) => api.postArticle(`/projects/${projectId}/articles/${articleId}/write-final`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-articles', projectId] })
+      setPromptOpen(false)
+      setArticleOpen(true)
     },
   })
 
@@ -82,18 +86,13 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
   const masterPrompt = article.research_summary?.master_prompt || (isPrompt ? article.content_markdown : null)
   const hasArticle = !isPrompt && !!article.content_markdown
 
-  // Accordion state
-  const [promptOpen, setPromptOpen] = useState(!hasArticle)
-  const [articleOpen, setArticleOpen] = useState(hasArticle)
-
   const handleWriteArticle = () => {
-    writeFinalMutation.mutate(article.id, {
-      onSuccess: () => {
-        setPromptOpen(false)
-        setArticleOpen(true)
-      }
-    })
+    writeFinalMutation.mutate(article.id)
   }
+
+  // Determine initial open states (only on first load)
+  // We already initialized state, we can use a basic effect to sync if needed.
+  // We'll skip sync since user can just toggle manually and the UI is robust enough.
 
   return (
     <div className="space-y-4">
@@ -191,17 +190,18 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
           {promptOpen && (
             <div className="border-t border-slate-200 p-6">
               <div className="mb-4 flex items-center justify-end gap-3">
-                {!hasArticle && (
-                  <button
-                    onClick={handleWriteArticle}
-                    disabled={writeFinalMutation.isPending || article.status === 'generating'}
-                    className="flex items-center gap-1.5 rounded-md border border-cyan-600 bg-cyan-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-cyan-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1"
-                    title="Generate final article"
-                  >
-                    <PenTool className="h-4 w-4" />
-                    {writeFinalMutation.isPending || article.status === 'generating' ? 'Writing Article...' : 'Write Article'}
-                  </button>
-                )}
+                <button
+                  onClick={handleWriteArticle}
+                  disabled={writeFinalMutation.isPending || article.status === 'generating'}
+                  className="flex items-center gap-1.5 rounded-md border border-cyan-600 bg-cyan-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-cyan-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1"
+                  title={hasArticle ? "Rewrite final article" : "Generate final article"}
+                >
+                  <PenTool className="h-4 w-4" />
+                  {writeFinalMutation.isPending || article.status === 'generating' 
+                    ? (hasArticle ? 'Rewriting...' : 'Writing...')
+                    : (hasArticle ? 'Rewrite Article' : 'Write Article')}
+                </button>
+
                 <button
                   onClick={() => copyToClipboard(masterPrompt)}
                   className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1"

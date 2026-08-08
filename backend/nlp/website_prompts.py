@@ -41,18 +41,13 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
     master-prompt-theme.txt rules.
     """
     system_prompt = (
-        "You are an elite AI Architect and SEO Prompt Engineer. Your task is to generate a comprehensive 'Website Master Prompt' "
-        "for another AI (like Claude Opus) to build a website from scratch.\n"
-        "You have been provided with a 'Template Master Prompt' that dictates strict rules for the codebase (Astro, Tailwind, SEO, I18N, silos, essential pages).\n"
-        "You must output a full, ready-to-use prompt that retains ALL the strict architectural, SEO, and functional rules from the template, "
-        "but is fully tailored and customized to build a website for the specific KEYWORD and INTENT provided.\n\n"
-        "CRITICAL REQUIREMENTS:\n"
-        "1. The output must be the raw prompt text (ready to be copy-pasted).\n"
-        "2. Keep the 'Silo Structure' and mention how the URLs should be mapped.\n"
-        "3. Keep the I18N language pages requirement.\n"
-        "4. Keep the essential pages (Home, About Us, Contact Us, Privacy, Terms, Sitemap).\n"
-        "5. Keep the strict SEO optimization rules (Schemas, meta tags, OpenGraph).\n"
-        "6. Do NOT output any markdown wrappers (like ```markdown) unless it's part of the prompt itself."
+        "You are an elite AI Architect and SEO Prompt Engineer. Your task is to take a generic 'Template Master Prompt' and tailor it for a specific KEYWORD and INTENT.\n\n"
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. PRESERVE THE TEMPLATE: You MUST output the ENTIRE Template Master Prompt exactly as it is written, preserving all of its original rules, formatting, and sections. DO NOT summarize or omit anything from the original template.\n"
+        "2. MINOR TWEAKS: You may make minor edits to the original text ONLY to replace generic terms with the specific keyword or intent (e.g., specifying it's a calculator instead of a generic site), but do not delete any core rules.\n"
+        "3. ADD 'SPECIAL SPECIFICATION' SECTION: You MUST ADD a brand new section titled '========================================================================\\nSPECIAL SPECIFICATION\\n========================================================================'. In this section, define the situation-specific features for the Keyword and Intent (e.g., exact interactive features, calculators, SaaS forms, etc.).\n"
+        "4. ADD 'SILO STRUCTURE' SECTION: You MUST ADD a brand new section titled '========================================================================\\nSILO STRUCTURE\\n========================================================================'. In this section, define the URL silo architecture and content mapping for the keyword.\n"
+        "5. The output must be the raw tailored prompt text (ready to be copy-pasted). Do NOT output markdown wrappers (like ```markdown) at the top/bottom."
     )
     
     if revision_notes:
@@ -62,7 +57,7 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
         f"KEYWORD: {keyword}\n"
         f"INTENT: {intent}\n\n"
         f"--- TEMPLATE MASTER PROMPT ---\n{master_theme_text}\n--- END TEMPLATE ---\n\n"
-        "Generate the customized Website Master Prompt now."
+        "Generate the full, highly specific, customized Website Master Prompt now."
     )
 
     try:
@@ -94,10 +89,10 @@ def audit_website_prompt(prompt: str) -> Dict[str, Any]:
         "}\n\n"
         "Checklist of REQUIRED items:\n"
         "1. Must explicitly mandate an Astro/Tailwind stack.\n"
-        "2. Must explicitly mandate 'Silo Structure' or structured routing for content.\n"
-        "3. Must explicitly mandate I18N/Language localization pages.\n"
-        "4. Must explicitly mandate essential pages (About Us, Contact Us, Terms, Privacy, Sitemap).\n"
-        "5. Must explicitly mandate SEO optimizations (JSON-LD schemas, meta tags).\n"
+        "2. Must explicitly define a 'Silo Structure' with URL mapping examples specific to the keyword.\n"
+        "3. Must explicitly describe the specific Intent (e.g., if it's a calculator or tool, it must outline those features).\n"
+        "4. Must explicitly mandate I18N/Language localization pages.\n"
+        "5. Must explicitly mandate essential pages (About Us, Contact Us, Terms, Privacy, Sitemap).\n"
         "If ANY of these 5 are missing, passed MUST be false and the score should be penalized."
     )
     
