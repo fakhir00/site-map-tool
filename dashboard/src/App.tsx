@@ -5,6 +5,7 @@ import { Register } from './pages/Register'
 import { ProjectsList } from './pages/ProjectsList'
 import { ProjectDetail } from './pages/ProjectDetail'
 import { Settings } from './pages/Settings'
+import WebsitePromptGenerator from './pages/WebsitePromptGenerator'
 import { auth } from './lib/api'
 
 function PrivateRoute() {
@@ -38,6 +39,7 @@ function App() {
           <Route path="/" element={<DashboardLayout />}>
             <Route index element={<ProjectsList />} />
             <Route path="projects/:projectId" element={<ProjectDetail />} />
+            <Route path="website-prompts" element={<WebsitePromptGenerator />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Route>

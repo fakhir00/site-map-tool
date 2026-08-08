@@ -4,7 +4,7 @@ from typing import Any
 
 from app.config import settings
 from nlp.keywords import keyword_terms
-from nlp.openrouter import audit_article, build_article_brief, is_ai_configured, judge_competitor_domains, write_article
+from nlp.openrouter import audit_article, audit_prompt, build_article_brief, is_ai_configured, judge_competitor_domains, write_prompt, write_final_article
 from scraping.crawler import ScrapedPage, scrape_page
 from workers.pipeline import (
     _is_blocked_competitor_root,
@@ -56,13 +56,75 @@ def generate_article_package(
     attempts = max(3, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
 
     for attempt in range(1, attempts + 1):
-        article_markdown = write_article(
+        article_markdown = write_prompt(
             project_name=project_name,
             primary_keyword=primary_keyword,
             brief=brief,
             competitor_pages=merged_competitors,
             revision_notes=revision_notes,
         )
+        
+        audit = audit_prompt(prompt_markdown=article_markdown) or {
+            "score": 0,
+            "passed": False,
+            "strengths": [],
+            "issues": ["The prompt audit did not return a valid result."],
+            "revision_notes": ["Rewrite the prompt with all required sections and perfect formatting."],
+            "missing_sections": [],
+            "keyword_intent_score": 0,
+            "gap_coverage_score": 0,
+        }
+            
+        score, keyword_intent_score, gap_coverage_score, passed = _normalize_audit_result(audit)
+        audit["passed"] = passed
+        audit["score"] = score
+        audit["keyword_intent_score"] = keyword_intent_score
+        audit["gap_coverage_score"] = gap_coverage_score
+        if passed:
+            return {
+                "status": "passed",
+                "title": primary_keyword.title() + " - Prompt",
+                "content_markdown": article_markdown,
+                "audit": audit,
+                "brief": brief,
+                "attempts": attempt,
+                "competitor_pages": merged_competitors,
+                "own_pages": own_pages,
+            }
+        revision_notes = audit.get("revision_notes", []) or audit.get("issues", [])
+
+    return {
+        "status": "needs_revision",
+        "title": primary_keyword.title() + " - Prompt",
+        "content_markdown": article_markdown,
+        "audit": audit,
+        "brief": brief,
+        "attempts": attempts,
+        "competitor_pages": merged_competitors,
+        "own_pages": own_pages,
+    }
+
+
+def generate_final_article_package(
+    *,
+    primary_keyword: str,
+    master_prompt: str,
+    brief: dict[str, Any],
+) -> dict[str, Any]:
+    if not is_ai_configured():
+        raise ValueError("AI API key is required to generate articles. Set GROQ_API_KEY or OPENROUTER_API_KEY.")
+
+    article_markdown = ""
+    audit: dict[str, Any] | None = None
+    revision_notes: list[str] = []
+    attempts = max(3, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
+
+    for attempt in range(1, attempts + 1):
+        article_markdown = write_final_article(
+            master_prompt=master_prompt,
+            revision_notes=revision_notes,
+        )
+        
         local_issues = _local_article_quality_issues(article_markdown, primary_keyword)
         if local_issues:
             audit = {
@@ -90,21 +152,20 @@ def generate_article_package(
                 "keyword_intent_score": 0,
                 "gap_coverage_score": 0,
             }
+            
         score, keyword_intent_score, gap_coverage_score, passed = _normalize_audit_result(audit)
         audit["passed"] = passed
         audit["score"] = score
         audit["keyword_intent_score"] = keyword_intent_score
         audit["gap_coverage_score"] = gap_coverage_score
+        
         if passed:
             return {
                 "status": "passed",
                 "title": _article_title(article_markdown, brief, primary_keyword),
                 "content_markdown": article_markdown,
                 "audit": audit,
-                "brief": brief,
                 "attempts": attempt,
-                "competitor_pages": merged_competitors,
-                "own_pages": own_pages,
             }
         revision_notes = _revision_notes_from_audit(audit, primary_keyword, attempt, attempts)
 
@@ -113,10 +174,7 @@ def generate_article_package(
         "title": _article_title(article_markdown, brief, primary_keyword),
         "content_markdown": article_markdown,
         "audit": audit,
-        "brief": brief,
         "attempts": attempts,
-        "competitor_pages": merged_competitors,
-        "own_pages": own_pages,
     }
 
 

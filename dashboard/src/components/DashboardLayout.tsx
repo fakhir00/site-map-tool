@@ -42,6 +42,7 @@ export function DashboardLayout() {
 
   const navItems = [
     { name: 'Projects', href: '/', icon: FolderKanban },
+    { name: 'Website Prompts', href: '/website-prompts', icon: Plus },
     { name: 'Settings', href: '/settings', icon: Settings },
   ]
 

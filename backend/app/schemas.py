@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from urllib.parse import urlparse
 
@@ -199,13 +199,38 @@ class ArticleDraftOut(BaseModel):
     audit_score: Optional[float]
     generation_attempts: int
     research_summary: Optional[dict]
-    audit_feedback: Optional[dict]
+    audit_feedback: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class ArticleListResponse(BaseModel):
     items: List[ArticleDraftOut]
+
+
+class WebsiteIntentRequest(BaseModel):
+    keyword: str
+    manual_competitors: Optional[List[str]] = []
+
+
+class WebsiteIntentResponse(BaseModel):
+    intent: str
+    competitors: List[str]
+
+
+class WebsitePromptGenerateRequest(BaseModel):
+    keyword: str
+    intent: str
+    competitors: List[str]
+
+
+class WebsitePromptGenerateResponse(BaseModel):
+    prompt: str
+    attempts: int
+    audit_score: int
 
 
 # ── URLs ──────────────────────────────────────────────────────

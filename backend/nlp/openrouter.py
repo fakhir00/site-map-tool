@@ -466,7 +466,7 @@ Return ONLY a JSON object with these keys:
         return None
 
 
-def write_article(
+def write_prompt(
     *,
     project_name: str,
     primary_keyword: str,
@@ -474,6 +474,13 @@ def write_article(
     competitor_pages: list[dict[str, Any]],
     revision_notes: list[str] | None = None,
 ) -> str:
+    feedback_block = ""
+    if revision_notes:
+        feedback_block = (
+            "\nThe previous generated prompt failed the audit. Fix these issues by providing an improved Master Prompt:\n"
+            + "\n".join(f"- {note}" for note in revision_notes)
+        )
+
     # Build Outline
     outline_lines = []
     outline_lines.append(f"H1: {primary_keyword.title()}")
@@ -497,7 +504,7 @@ def write_article(
         comp_content_lines.append(f"<hr/><p><em>--- Extracted from: {url} ---</em></p>\n\n{content}\n")
     competitor_content_str = "\n".join(comp_content_lines)
 
-    master_prompt = f"""# CONTENT WRITING ASSIGNMENT
+    template = f"""# CONTENT WRITING ASSIGNMENT
 
 ## PRIMARY KEYWORD
 "{primary_keyword}"
@@ -761,7 +768,92 @@ Analyze and incorporate:
 
 BEGIN WRITING THE ARTICLE NOW:
 """
-    return master_prompt
+
+    prompt = f"""
+You are an expert Prompt Engineer.
+Your ONLY job is to output the exact Master Prompt template provided below.
+DO NOT add any conversational filler. DO NOT put it inside markdown code blocks (like ```).
+Just output the raw Master Prompt text exactly as it is formatted.
+{feedback_block}
+
+TEMPLATE TO OUTPUT:
+{template}
+"""
+    return _chat_text(
+        system_prompt="You are a strict text formatter. Output only the requested text exactly as specified.",
+        user_prompt=prompt,
+        temperature=0.0,
+        max_tokens=4500,
+        use_writing_model=False,
+    )
+
+
+def audit_prompt(
+    *,
+    prompt_markdown: str,
+) -> dict[str, Any] | None:
+    prompt = f"""
+Audit this Master Prompt to ensure it contains all necessary sections and formatting.
+
+Prompt to audit:
+{prompt_markdown}
+
+Verify the following:
+1. It must start with "# CONTENT WRITING ASSIGNMENT".
+2. It must have a "## PRIMARY KEYWORD" section.
+3. It must have an "# ARTICLE STRUCTURE" section with an outline.
+4. It must have an "# SEO GUIDELINES" section.
+5. It must have an "# INTRODUCTION WRITING INSTRUCTIONS" section.
+6. It must end with "BEGIN WRITING THE ARTICLE NOW:".
+
+Return ONLY a JSON object with these exact keys:
+- "score": 0 to 100 integer. 100 means perfect prompt structure.
+- "passed": boolean true if it has all required sections.
+- "strengths": array of 1-3 strings.
+- "issues": array of missing sections or formatting errors (if any).
+- "revision_notes": array of concrete instructions to fix the prompt (if any).
+"""
+    try:
+        payload = _chat_json(
+            system_prompt="You are a strict auditor. You output only valid JSON objects.",
+            user_prompt=prompt,
+            temperature=0.0,
+            max_tokens=800,
+            use_writing_model=False,
+        )
+        return payload if isinstance(payload, dict) else None
+    except Exception as exc:
+        logger.warning("Prompt audit failed: %s", exc)
+        return None
+
+
+def write_final_article(
+    *,
+    master_prompt: str,
+    revision_notes: list[str] | None = None,
+) -> str:
+    feedback_block = ""
+    if revision_notes:
+        feedback_block = (
+            "\n[AUDITOR FEEDBACK]\nThe previous draft failed the quality audit. Solve every problem below by rewriting the full article, "
+            "then return only the improved finished article. Do not mention these notes.\n"
+            + "\n".join(f"- {note}" for note in revision_notes)
+        )
+
+    prompt = f"""
+{master_prompt}
+{feedback_block}
+"""
+    return _chat_text(
+        system_prompt=(
+            "You are a world-class SEO strategist, subject-matter ghostwriter, and ruthless editor. "
+            "You write practical, source-grounded articles that satisfy search intent and outperform generic competitor content."
+        ),
+        user_prompt=prompt,
+        temperature=0.28,
+        max_tokens=4500,
+        use_writing_model=True,
+    )
 
 
 def audit_article(

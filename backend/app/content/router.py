@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.auth.jwt import get_current_user
-from app.content.service import generate_article_package
+from app.content.service import generate_article_package, generate_final_article_package
 from app.database import get_db
 from app.models import ArticleDraft, Keyword, KeywordUrl, Project, Url, User
 from app.schemas import ArticleDraftOut, ArticleListResponse
@@ -73,6 +73,61 @@ async def generate_article(
     )
     db.add(draft)
     await db.flush()
+    await db.refresh(draft)
+    return _article_out(draft, keyword.phrase)
+
+
+@router.post("/{project_id}/articles/{article_id}/write-final", response_model=ArticleDraftOut)
+async def write_final_article_endpoint(
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await _get_user_project(project_id, current_user.id, db)
+    
+    result = await db.execute(
+        select(ArticleDraft)
+        .where(ArticleDraft.id == article_id, ArticleDraft.project_id == project.id)
+    )
+    draft = result.scalar_one_or_none()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Article draft not found")
+        
+    keyword_res = await db.execute(select(Keyword).where(Keyword.id == draft.keyword_id))
+    keyword = keyword_res.scalar_one_or_none()
+    if not keyword:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+
+    # Set status to generating
+    draft.status = "generating"
+    await db.commit()
+
+    try:
+        package = await run_in_threadpool(
+            generate_final_article_package,
+            primary_keyword=keyword.phrase,
+            master_prompt=draft.content_markdown,
+            brief=draft.research_summary.get("brief", {}),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    draft.status = package["status"]
+    draft.title = package["title"]
+    
+    # Save the original prompt into research_summary before overwriting
+    research = dict(draft.research_summary) if draft.research_summary else {}
+    if "master_prompt" not in research:
+        research["master_prompt"] = draft.content_markdown
+    draft.research_summary = research
+    
+    draft.content_markdown = package["content_markdown"]
+    draft.audit_score = package["audit"].get("score") if package.get("audit") else None
+    draft.generation_attempts = (draft.generation_attempts or 0) + package["attempts"]
+    draft.audit_feedback = package.get("audit")
+
+    await db.commit()
     await db.refresh(draft)
     return _article_out(draft, keyword.phrase)
 
