@@ -68,22 +68,12 @@ async def delete_project(
 ):
     project = await _get_user_project(project_id, current_user.id, db)
     
-    # Manually delete dependent records to avoid Postgres foreign key violations 
-    # when cascading deletes across multiple tables with cross-references
-    from app.models import KeywordBank, KeywordUrl, Keyword, Url, ScanJob, ArticleDraft
-    
-    # 1. Delete deeply nested links
-    kw_sub = select(Keyword.id).where(Keyword.project_id == project_id)
-    await db.execute(delete(KeywordBank).where(KeywordBank.keyword_id.in_(kw_sub)))
-    await db.execute(delete(KeywordUrl).where(KeywordUrl.keyword_id.in_(kw_sub)))
-    
-    # 2. Delete main entity tables for the project
-    await db.execute(delete(Keyword).where(Keyword.project_id == project_id))
-    await db.execute(delete(ArticleDraft).where(ArticleDraft.project_id == project_id))
+    # Manually delete Urls first to avoid Postgres foreign key violations 
+    # since Url.scan_job_id lacks ON DELETE CASCADE
+    from app.models import Url
     await db.execute(delete(Url).where(Url.project_id == project_id))
-    await db.execute(delete(ScanJob).where(ScanJob.project_id == project_id))
     
-    # 3. Delete the project itself
+    # Delete the project itself (which cascades to Keyword, ScanJob, ArticleDraft, etc.)
     await db.delete(project)
     await db.commit()
 
