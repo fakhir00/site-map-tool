@@ -164,6 +164,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             kw_accumulator,
             topic_terms,
         )
+        _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
         logger.info("[%s] Storing %s keyword gaps", project_id, len(kw_accumulator))
         _store_keywords(db, project_uuid, kw_accumulator)
         _sync_project_counts(db, project)

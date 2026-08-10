@@ -277,6 +277,70 @@ Each object must have:
         return []
 
 
+async def generate_ai_top_picks(seed_keywords: list[str]) -> list[dict[str, Any]]:
+    """Generate a curated list of the absolute top 5 best keywords using the configured AI provider."""
+    if not is_ai_configured():
+        logger.error("AI API key not configured")
+        return []
+
+    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
+
+    topic_terms = seed_keyword_terms(seed_keywords)
+    prompt = f"""
+You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
+Generate exactly 5 absolute top-tier, highest-value keyword opportunities that a website should target.
+These should be the "Top Picks" - high intent, strong relevance, and maximum SEO value.
+
+Seed keywords:
+{json.dumps(seed_keywords)}
+
+Quality rules:
+- Every phrase must be directly useful for the same search intent, audience, and topic cluster as the seed keywords.
+- Reject bogus, random, generic, broad, off-topic, or awkward phrases.
+- Keep phrases natural, lowercase, 2 to 6 words.
+- All keywords should be of type "primary" or "long-tail".
+
+Return ONLY a JSON array of objects. Do not include markdown formatting, explanation, or code blocks.
+Each object must have:
+- "phrase": the keyword phrase (string, lowercase)
+- "type": one of "primary" or "long-tail"
+"""
+    try:
+        payload = await _achat_json(
+            system_prompt="You output only valid JSON arrays.",
+            user_prompt=prompt,
+            temperature=0.35,
+            max_tokens=600,
+        )
+        if isinstance(payload, dict) and "keywords" in payload:
+            payload = payload["keywords"]
+        if not isinstance(payload, list):
+            return []
+
+        valid_keywords = []
+        seen_phrases: set[str] = set()
+        for kw in payload:
+            if isinstance(kw, dict) and kw.get("phrase"):
+                phrase = clean_phrase(str(kw["phrase"]))
+                kw_type = normalize_keyword_type(kw.get("type"))
+                if phrase in seen_phrases:
+                    continue
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                    continue
+                valid_keywords.append({
+                    "phrase": phrase,
+                    "type": kw_type,
+                })
+                seen_phrases.add(phrase)
+        return valid_keywords
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse JSON from %s: %s", ai_provider_name(), exc)
+        return []
+    except Exception as exc:
+        logger.error("Failed to generate top picks via %s: %s", ai_provider_name(), exc)
+        return []
+
+
 def filter_keyword_gap_recommendations(
     seed_keywords: list[str],
     candidates: list[dict[str, Any]],

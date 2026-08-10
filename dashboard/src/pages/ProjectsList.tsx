@@ -90,7 +90,7 @@ export function ProjectsList() {
 
   const createMutation = useMutation({
     mutationFn: (payload: ProjectCreate) => api.post<Project>('/projects', payload),
-    onSuccess: (project) => {
+    onSuccess: (project: Project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setShowNewModal(false)
       setForm(initialProject)

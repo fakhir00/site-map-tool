@@ -77,6 +77,14 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
     },
   })
 
+  const topPicksMutation = useMutation({
+    mutationFn: () => api.post(`/projects/${projectId}/keywords/top-picks`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
+  })
+
   const generateMutation = useMutation({
     mutationFn: () => api.post<{ message: string, generated: number }>(`/projects/${projectId}/keywords/generate`, {}),
     onSuccess: () => {
@@ -159,6 +167,16 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button 
+            disabled={topPicksMutation.isPending} 
+            onClick={() => topPicksMutation.mutate()} 
+            size="sm" 
+            variant="secondary"
+            className="text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200"
+          >
+            <Sparkles className="h-4 w-4" />
+            {topPicksMutation.isPending ? 'Generating...' : 'Top Picks'}
+          </Button>
           <Button 
             disabled={generateMutation.isPending} 
             onClick={() => generateMutation.mutate()} 
