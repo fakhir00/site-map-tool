@@ -44,6 +44,7 @@ openpyxl==3.1.5
 python-dotenv==1.0.1
 pydantic==2.10.3
 pydantic-settings==2.7.0
+email-validator==2.2.0
 tenacity==9.0.0
 xmltodict==0.14.2
 tldextract==5.1.3
