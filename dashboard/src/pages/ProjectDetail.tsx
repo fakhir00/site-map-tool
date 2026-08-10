@@ -308,15 +308,23 @@ export function ProjectDetail() {
                 <p className="px-5 py-8 text-sm text-slate-500">No sources have been queued yet.</p>
               ) : (
                 sources.map((source) => {
-                  const href = source.source_domain || project.domain
-                  const sourceLabel = source.source_type === 'own' ? 'Your site' : source.source_type === 'ai' ? 'AI' : 'Competitor'
+                  const isAi = source.source_type === 'ai'
+                  const href = isAi ? undefined : (source.source_domain || project.domain)
+                  const label = isAi ? (source.source_domain || 'AI Recommendations') : displayHost(href!)
+                  const sourceLabel = source.source_type === 'own' ? 'Your site' : isAi ? 'AI' : 'Competitor'
                   return (
                     <div className="flex items-center justify-between gap-4 px-5 py-4" key={`${source.source_type}-${source.source_domain || 'unknown'}`}>
                       <div className="min-w-0">
-                        <a className="flex items-center gap-2 truncate text-sm font-semibold text-slate-950 hover:text-cyan-800" href={href} rel="noopener noreferrer" target="_blank">
-                          {displayHost(href)}
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                        </a>
+                        {href ? (
+                          <a className="flex items-center gap-2 truncate text-sm font-semibold text-slate-950 hover:text-cyan-800" href={href} rel="noopener noreferrer" target="_blank">
+                            {label}
+                            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="flex items-center gap-2 truncate text-sm font-semibold text-slate-950">
+                            {label}
+                          </span>
+                        )}
                         <p className="mt-1 text-xs text-slate-500">
                           {source.scraped_urls.toLocaleString()} analyzed / {source.urls_found.toLocaleString()} found
                         </p>
