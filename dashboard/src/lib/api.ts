@@ -146,6 +146,7 @@ export type ArticleDraft = {
       recommended_title?: string
       meta_description?: string
     }
+    master_prompt?: string
     competitor_pages?: Array<{
       url: string
       domain: string | null

@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
-import { AlertTriangle, Check, Code, Copy, Eye, Loader2, Sparkles } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import { Badge } from '../components/ui/Badge'
+import { Check, Copy, Loader2, Sparkles } from 'lucide-react'
+
 
 type IntentResponse = {
   intent: string
@@ -26,7 +25,6 @@ export default function WebsitePromptGenerator() {
   const [generatedPrompt, setGeneratedPrompt] = useState<PromptResponse | null>(null)
   
   const [copied, setCopied] = useState(false)
-  const [viewMode, setViewMode] = useState<'markdown' | 'preview'>('preview')
   const [step, setStep] = useState<1 | 2 | 3>(1)
 
   const analyzeIntentMutation = useMutation({

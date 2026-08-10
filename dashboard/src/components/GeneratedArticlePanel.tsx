@@ -1,19 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, AlertCircle, CheckCircle2, ExternalLink, FilePenLine, Sparkles, Copy, Check, PenTool, Code, Eye } from 'lucide-react'
+import { AlertCircle, CheckCircle2, FilePenLine, Sparkles, Copy, Check, PenTool, Code, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { api, type ArticleDraft, type ArticleListResponse } from '../lib/api'
 import { Badge } from './ui/Badge'
 import { Card } from './ui/Card'
-
-function displayHost(value: string) {
-  try {
-    const withScheme = value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`
-    return new URL(withScheme).hostname.replace(/^www\./, '')
-  } catch {
-    return value.replace(/^https?:\/\//, '')
-  }
-}
 
 function articleStatusBadge(article: ArticleDraft) {
   if (article.status === 'passed') return <Badge variant="teal">Passed</Badge>
