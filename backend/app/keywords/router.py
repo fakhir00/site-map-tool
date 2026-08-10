@@ -45,11 +45,11 @@ async def list_keywords(
     ]
 
     if sort_by == "frequency":
-        filtered_keywords.sort(key=lambda keyword: keyword.frequency, reverse=True)
+        filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", -k.frequency))
     elif sort_by == "phrase":
-        filtered_keywords.sort(key=lambda keyword: keyword.phrase)
+        filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", k.phrase))
     else:
-        filtered_keywords.sort(key=lambda keyword: keyword.created_at, reverse=True)
+        filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", -k.created_at.timestamp()))
 
     total = len(filtered_keywords)
     start = (page - 1) * page_size
@@ -198,7 +198,7 @@ async def generate_top_picks(
     added_count = 0
     for kw_data in ai_keywords:
         phrase = kw_data["phrase"]
-        kw_type = kw_data["type"]
+        kw_type = "top-pick"
         
         q_kw = select(Keyword).where(Keyword.project_id == project.id, Keyword.phrase == phrase)
         result = await db.execute(q_kw)
@@ -214,6 +214,11 @@ async def generate_top_picks(
             db.add(keyword)
             await db.flush()
             added_count += 1
+            
+        elif keyword.keyword_type != "top-pick":
+            keyword.keyword_type = "top-pick"
+            db.add(keyword)
+            await db.flush()
             
         # Link keyword to AI URL
         q_link = select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)
