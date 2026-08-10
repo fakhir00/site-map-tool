@@ -988,7 +988,7 @@ def _collect_sitemap_keywords(
     url_id: uuid.UUID,
     topic_terms: set[str] | None,
 ) -> None:
-    for phrase in _url_keyword_candidates(url, None, include_single_terms=False):
+    for phrase in _url_keyword_candidates(url, topic_terms, include_single_terms=False):
         if phrase not in accumulator:
             accumulator[phrase] = {
                 "type": "primary",
