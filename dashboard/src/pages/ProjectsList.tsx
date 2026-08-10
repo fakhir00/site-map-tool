@@ -1,7 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpRight, CalendarClock, FileText, Globe2, Plus, Search, Trash2, X } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
 import { api, type Project } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -206,13 +206,18 @@ export function ProjectsList() {
                   </div>
                   <button
                     aria-label={`Delete ${project.name}`}
-                    className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
-                    onClick={() => {
-                      if (window.confirm(`Delete ${project.name}?`)) deleteMutation.mutate(project.id)
+                    className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                    disabled={deleteMutation.isPending}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (window.confirm(`Delete ${project.name}?`)) {
+                        deleteMutation.mutate(project.id)
+                      }
                     }}
                     type="button"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </button>
                 </div>
 
