@@ -86,19 +86,25 @@ async def generate_keywords(
     if not ai_keywords:
         raise HTTPException(status_code=500, detail="Failed to generate AI keywords")
         
-    # Get own website keywords to filter out
-    q_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
-    result = await db.execute(q_urls)
+    # Get existing keyword phrases in this project to avoid duplicates
+    q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id)
+    result = await db.execute(q_existing)
+    existing_phrases = {row[0] for row in result.all()}
+    
+    # Get own website URL-path keywords to filter out
+    topic_terms = seed_keyword_terms(project.target_keywords)
+    q_own_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
+    result = await db.execute(q_own_urls)
     own_urls = result.scalars().all()
     
     from workers.pipeline import _url_keyword_candidates
-    from nlp.keywords import topic_terms_from_seed
-    topic_terms = topic_terms_from_seed(project.target_keywords)
-    own_phrases = set()
+    own_phrases: set[str] = set()
     for url in own_urls:
         own_phrases.update(_url_keyword_candidates(url, topic_terms, include_single_terms=True))
-        
-    ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in own_phrases]
+    
+    # Combine both sets for filtering
+    all_excluded = existing_phrases | own_phrases
+    ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
         
     # Get or create an AI source URL
     ai_url_str, ai_source_domain = ai_generated_source()
@@ -163,19 +169,25 @@ async def generate_top_picks(
     if not ai_keywords:
         raise HTTPException(status_code=500, detail="Failed to generate AI top picks")
         
-    # Get own website keywords to filter out
-    q_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
-    result = await db.execute(q_urls)
+    # Get existing keyword phrases in this project to avoid duplicates
+    q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id)
+    result = await db.execute(q_existing)
+    existing_phrases = {row[0] for row in result.all()}
+    
+    # Get own website URL-path keywords to filter out
+    topic_terms = seed_keyword_terms(project.target_keywords)
+    q_own_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
+    result = await db.execute(q_own_urls)
     own_urls = result.scalars().all()
     
     from workers.pipeline import _url_keyword_candidates
-    from nlp.keywords import topic_terms_from_seed
-    topic_terms = topic_terms_from_seed(project.target_keywords)
-    own_phrases = set()
+    own_phrases: set[str] = set()
     for url in own_urls:
         own_phrases.update(_url_keyword_candidates(url, topic_terms, include_single_terms=True))
-        
-    ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in own_phrases]
+    
+    # Combine both sets for filtering
+    all_excluded = existing_phrases | own_phrases
+    ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
         
     # Get or create an AI source URL
     from nlp.openrouter import ai_generated_source
@@ -338,6 +350,8 @@ async def get_keyword_bank(
 
 
 def _is_displayable_keyword(keyword: Keyword, topic_terms: set[str]) -> bool:
+    if keyword.keyword_type == "top-pick":
+        return True
     return is_publishable_keyword(keyword.phrase, min_words=2)
 
 
