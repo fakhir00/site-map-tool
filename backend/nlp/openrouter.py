@@ -291,22 +291,26 @@ def filter_keyword_gap_recommendations(
 
     trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
     prompt = f"""
-You are an expert SEO strategist filtering keyword gap recommendations.
+You are a ruthless and strict SEO strategist filtering keyword gap recommendations.
 
 The user's target seed keywords are:
 {json.dumps(seed_keywords)}
 
-Below are candidate keyword gaps extracted from top-ranking competitor sitemaps.
-Each candidate includes the original phrase, competitor page count, competitor domain count, and current type.
+Below are candidate keyword gaps extracted from competitor sitemaps. 
+Many of these competitors offer OTHER products that are COMPLETELY UNRELATED to the user's seed keywords.
 
 Candidates:
 {json.dumps(trimmed_candidates, ensure_ascii=True)}
 
-Return ONLY a JSON array. Select up to {max_keywords} candidates that are genuinely useful content or landing-page opportunities for this site.
-CRITICAL TOPIC RELEVANCE: You MUST aggressively remove any candidate that is not directly related to the user's seed keywords. For example, if the seed is "circuit diagram maker", you must remove "cell diagram", "floor plan creator", etc. Only keep keywords strictly relevant to the exact topic of the seed keywords.
-Remove thin, generic, navigational, off-topic, duplicate, brand-only, and awkward sitemap-slug phrases.
-You may lightly improve wording, but keep the intent grounded in the source phrase.
+Your job is to return ONLY a JSON array of up to {max_keywords} keywords that are HIGHLY RELEVANT to the user's specific seed keywords.
 
+CRITICAL REJECTION RULES:
+1. You MUST aggressively DELETE any candidate that belongs to a different topic, industry, or use-case.
+2. If the user's seed keywords are about "circuit diagram maker", you MUST reject "cell diagram", "animal cell", "floor plan", "venn diagram", etc.
+3. If the keyword is for a feature the user clearly doesn't offer based on their seed keywords, REJECT IT.
+4. Remove thin, generic, navigational, and brand-only phrases.
+
+Return ONLY a valid JSON array of objects.
 Each returned object must include:
 - "source_phrase": exact original phrase from the candidates
 - "phrase": improved lowercase keyword phrase
