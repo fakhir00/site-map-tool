@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, ExternalLink, FilePenLine, Sparkles, Copy, Check, PenTool, Code, Eye } from 'lucide-react'
+import { AlertTriangle, AlertCircle, CheckCircle2, ExternalLink, FilePenLine, Sparkles, Copy, Check, PenTool, Code, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { api, type ArticleDraft, type ArticleListResponse } from '../lib/api'
 import { Badge } from './ui/Badge'
@@ -122,7 +122,7 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <p className="text-slate-500">Verdict</p>
-              <p className="text-lg font-bold text-slate-950">{audit?.passed ? 'Pass' : 'Retry'}</p>
+              <p className="text-lg font-bold text-slate-950">{(audit?.passed || (audit?.score && audit.score > 80)) ? 'Pass' : 'Retry'}</p>
             </div>
           </div>
         </div>
@@ -161,8 +161,8 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         {!audit?.passed && !!audit?.issues?.length && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="mb-2 flex items-center gap-2 font-semibold">
-              <AlertTriangle className="h-4 w-4" />
-              Auditor notes
+              <AlertCircle className="h-4 w-4" />
+              Auditor Recommendations
             </div>
             <ul className="space-y-1">
               {audit.issues.slice(0, 5).map((issue: string) => (

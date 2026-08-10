@@ -92,27 +92,29 @@ def extract_apify_page_content(url: str) -> Optional[ScrapedPage]:
         return None
 
     client = _get_client()
+    
+    # Use cheerio-scraper instead of Playwright to save massive amounts of credits
     run_input = {
         "startUrls": [{"url": url}],
-        "crawlerType": "playwright:adaptive",
-        "maxCrawlPages": 1,
-        "maxCrawlDepth": 0,
-        "maxRequestsPerCrawl": 1,
+        "useApifyProxy": True,
     }
     
     try:
-        run = client.actor("alizarin_refrigerator-owner/website-crawler").call(run_input=run_input)
+        run = client.actor("apify/cheerio-scraper").call(run_input=run_input)
         
         for item in client.dataset(run.default_dataset_id).iterate_items():
             if item.get("url") == url or url in item.get("url", ""):
-                text = item.get("text", "")
+                text = item.get("text", "") or item.get("body", "")
                 word_count = len(text.split()) if text else 0
-                title = item.get("metadata", {}).get("title", "")
-                # We can't easily get H2/H3 counts from text but it gives us the clean text
+                title = item.get("pageTitle", "") or item.get("title", "")
+                
+                # Cheerio scraper might not extract raw text by default,
+                # but if we extract it, we use it. 
                 return ScrapedPage(
                     url=item.get("url", url),
                     h1=title,
                     text=text,
+
                     word_count=word_count,
                     status_code=200,
                 )

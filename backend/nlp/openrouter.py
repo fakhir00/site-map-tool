@@ -188,10 +188,21 @@ def _chat_text(
     }
     if max_tokens:
         request["max_tokens"] = max_tokens
-    response = client.chat.completions.create(
-        **request,
-    )
-    return (response.choices[0].message.content or "").strip()
+
+    try:
+        response = client.chat.completions.create(**request)
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        import openai
+        if isinstance(e, openai.RateLimitError) and not use_writing_model:
+            logger.warning(f"Groq Rate limit hit. Falling back to OpenRouter for this request.")
+            # Fallback to the writing model (OpenRouter)
+            client = _sync_client(use_writing_model=True)
+            _provider, _base_url, _api_key, model = _provider_config(use_writing_model=True)
+            request["model"] = model
+            response = client.chat.completions.create(**request)
+            return response.choices[0].message.content or ""
+        raise e
 
 
 async def generate_ai_keywords(seed_keywords: list[str]) -> list[dict[str, Any]]:
