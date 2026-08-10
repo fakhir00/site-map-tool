@@ -9,7 +9,7 @@ from scraping.apify_client_module import search_google_via_apify, extract_apify_
 logger = logging.getLogger(__name__)
 
 # Path to the master prompt theme file
-THEME_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "master-prompt-theme.txt")
+THEME_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "master-prompt-theme.txt")
 
 
 def get_master_theme_text() -> str:
@@ -23,42 +23,16 @@ def get_master_theme_text() -> str:
 
 def analyze_intent_flow(keyword: str, manual_competitors: List[str] = None) -> Dict[str, Any]:
     """
-    Scrapes competitor homepages and analyzes intent.
-    If manual_competitors is empty, it uses Apify SERP scraper to get the top 5.
+    Analyzes intent and generates competitor URLs entirely via AI.
+    No Apify scraping is performed.
     """
-    competitors = manual_competitors or []
+    ai_result = analyze_website_intent(keyword)
+    intent = ai_result.get("intent", "Informational Website")
     
+    # If the user provided manual competitors, prioritize those over AI-generated ones
+    competitors = manual_competitors or []
     if not competitors:
-        try:
-            apify_results = search_google_via_apify(keyword, max_results=5)
-            competitors = [res["url"] for res in apify_results if "url" in res]
-        except Exception as e:
-            logger.error(f"Failed to fetch SERP competitors for '{keyword}': {e}")
-
-    import concurrent.futures
-
-    # Scrape the content of these homepages in parallel to avoid timeout
-    scraped_texts = []
-    def fetch_page(url):
-        try:
-            page = extract_apify_page_content(url)
-            if page and page.text:
-                return page.text
-        except Exception as e:
-            logger.error(f"Failed to extract content for {url}: {e}")
-        return None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        results = executor.map(fetch_page, competitors[:5])
-        for text in results:
-            if text:
-                scraped_texts.append(text)
-
-    # Analyze intent
-    if not scraped_texts:
-        intent = "Informational Website (Could not scrape competitor contents)"
-    else:
-        intent = analyze_website_intent(keyword, scraped_texts)
+        competitors = ai_result.get("competitors", [])
 
     return {
         "intent": intent,

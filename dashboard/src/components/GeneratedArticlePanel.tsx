@@ -266,7 +266,7 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
                   {article.content_markdown}
                 </div>
               ) : (
-                <div className="prose prose-slate max-w-none text-base leading-7 text-slate-800 prose-headings:text-slate-900 prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-a:text-cyan-700 hover:prose-a:text-cyan-800 prose-strong:text-slate-900 prose-hr:border-slate-200 bg-white p-6 rounded-md border border-slate-200 shadow-sm">
+                <div className="prose max-w-none font-serif text-black bg-white p-8 rounded-md border border-slate-300 shadow-inner prose-headings:font-serif prose-headings:text-black prose-p:text-black prose-a:text-blue-600 prose-a:underline">
                   <ReactMarkdown>
                     {article.content_markdown || ''}
                   </ReactMarkdown>

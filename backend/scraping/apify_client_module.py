@@ -24,7 +24,7 @@ def search_google_via_apify(query: str, max_results: int = 10) -> List[Dict[str,
 
     client = _get_client()
     run_input = {
-        "query": query,
+        "queries": query,
         "maxPagesPerQuery": 1,
         "resultsPerPage": max_results,
         "countryCode": "us",
@@ -33,17 +33,19 @@ def search_google_via_apify(query: str, max_results: int = 10) -> List[Dict[str,
     
     try:
         logger.info(f"Running Apify google-search-scraper for query: {query}")
-        run = client.actor("igolaizola/google-search-scraper-ppe").call(run_input=run_input)
+        run = client.actor("apify/google-search-scraper").call(run_input=run_input)
         
         results = []
         for item in client.dataset(run.default_dataset_id).iterate_items():
-            url = item.get("url")
-            if url and not url.startswith("https://apify.com/pricing"):
-                results.append({
-                    "url": url,
-                    "title": item.get("title"),
-                    "snippet": item.get("snippet") or item.get("description")
-                })
+            organic_results = item.get("organicResults", [])
+            for res in organic_results:
+                url = res.get("url")
+                if url and not url.startswith("https://apify.com/pricing"):
+                    results.append({
+                        "url": url,
+                        "title": res.get("title"),
+                        "snippet": res.get("description") or res.get("snippet")
+                    })
         return results[:max_results]
     except Exception as exc:
         logger.error(f"Apify search failed for {query}: {exc}")

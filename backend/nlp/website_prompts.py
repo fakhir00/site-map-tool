@@ -2,37 +2,36 @@ import json
 import logging
 from typing import Any, Dict, List
 
-from nlp.openrouter import _chat_text
+from nlp.openrouter import _chat_json, _chat_text
 
-logger = logging.getLogger(__name__)
-
-def analyze_website_intent(keyword: str, scraped_texts: List[str]) -> str:
+def analyze_website_intent(keyword: str) -> Dict[str, Any]:
     """
-    Analyzes the scraped homepage contents of top competitors to determine the
-    user intent and website archetype for the given keyword.
+    Analyzes the keyword to determine the user intent and generates a list of example competitor domains.
+    Returns a dictionary with 'intent' (str) and 'competitors' (list of str).
     """
-    combined_content = "\n\n---\n\n".join([text[:3000] for text in scraped_texts])  # limit tokens
-    
     system_prompt = (
-        "You are an expert SEO and product strategist. Your job is to analyze the text content "
-        "from the homepages of the top-ranking competitors for a specific keyword.\n"
-        "Determine the core 'Website Intent'. Is it a calculator? A survey? A SaaS tool? An informational blog? An e-commerce store?\n"
-        "Be concise but descriptive. Output a single paragraph describing the intent and the type of website needed."
+        "You are an expert SEO and product strategist. Your job is to analyze a target keyword.\n"
+        "1. Determine the core 'Website Intent' for this keyword. Is it a calculator? A survey? A SaaS tool? An informational blog? An e-commerce store? A local service page?\n"
+        "Be concise but descriptive. Provide a single paragraph describing the intent and the type of website needed.\n"
+        "2. Provide a list of 3-5 real-world example competitor domains or tools that match this keyword and intent.\n\n"
+        "OUTPUT FORMAT: You MUST return a valid JSON object with EXACTLY two keys:\n"
+        "- \"intent\": string\n"
+        "- \"competitors\": array of strings (URLs or domain names)"
     )
     
-    user_prompt = f"Keyword: {keyword}\n\nCompetitor Homepage Contents:\n{combined_content}\n\nWhat is the intent of this keyword and what type of website should we build?"
+    user_prompt = f"Keyword: {keyword}\n\nWhat is the intent of this keyword and what are some top competitors?"
 
     try:
-        response_text = _chat_text(
+        response_json = _chat_json(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            temperature=0.4,
-            max_tokens=300,
+            temperature=0.6,
+            max_tokens=400,
         )
-        return response_text.strip()
+        return response_json
     except Exception as e:
-        logger.error(f"Failed to analyze intent: {e}")
-        return "Informational/Standard Website"
+        logger.error(f"Failed to analyze intent and competitors: {e}")
+        return {"intent": "Informational/Standard Website", "competitors": []}
 
 
 def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, revision_notes: List[str] = None) -> str:

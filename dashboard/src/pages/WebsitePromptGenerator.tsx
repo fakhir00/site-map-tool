@@ -246,28 +246,6 @@ export default function WebsitePromptGenerator() {
 
       <Card className="relative p-6">
         <div className="absolute right-4 top-4 flex items-center gap-3">
-          <div className="flex rounded-md border border-slate-300 bg-white shadow-sm">
-            <button
-              onClick={() => setViewMode('preview')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 rounded-l-md transition-colors ${
-                viewMode === 'preview' ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Eye className="h-3.5 w-3.5" />
-              Preview
-            </button>
-            <div className="w-px bg-slate-300" />
-            <button
-              onClick={() => setViewMode('markdown')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 rounded-r-md transition-colors ${
-                viewMode === 'markdown' ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Code className="h-3.5 w-3.5" />
-              Markdown
-            </button>
-          </div>
-
           <div className="h-5 w-px bg-slate-300" />
 
           <button
@@ -288,17 +266,9 @@ export default function WebsitePromptGenerator() {
           </button>
         </div>
 
-        {viewMode === 'markdown' ? (
-          <div className="prose prose-slate mt-12 max-w-none whitespace-pre-wrap text-sm leading-7 text-slate-800 bg-slate-50 p-4 rounded-md border border-slate-100 font-mono">
-            {generatedPrompt?.prompt}
-          </div>
-        ) : (
-          <div className="prose prose-slate mt-12 max-w-none text-sm leading-7 text-slate-800 prose-headings:text-slate-900 prose-a:text-cyan-700 hover:prose-a:text-cyan-800 prose-strong:text-slate-900 prose-hr:border-slate-200">
-            <ReactMarkdown>
-              {generatedPrompt?.prompt || ''}
-            </ReactMarkdown>
-          </div>
-        )}
+        <div className="prose prose-slate mt-12 max-w-none whitespace-pre-wrap text-sm leading-7 text-slate-800 bg-slate-50 p-4 rounded-md border border-slate-100 font-mono">
+          {generatedPrompt?.prompt}
+        </div>
       </Card>
     </div>
   )
