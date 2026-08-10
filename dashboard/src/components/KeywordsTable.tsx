@@ -8,6 +8,7 @@ import { Card } from './ui/Card'
 import { Input } from './ui/Input'
 
 function keywordBadge(type: Keyword['keyword_type']) {
+  if (type === 'top-pick') return <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-bold px-2 py-0.5" variant="amber"><Sparkles className="mr-1 inline-block h-3 w-3" /> Top Pick</Badge>
   if (type === 'primary') return <Badge variant="teal">Primary</Badge>
   if (type === 'lsi') return <Badge variant="indigo">LSI</Badge>
   if (type === 'entity') return <Badge variant="amber">Entity</Badge>
@@ -158,6 +159,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
             value={type}
           >
             <option value="">All types</option>
+            <option value="top-pick">Top Picks</option>
             <option value="primary">Primary</option>
             <option value="lsi">LSI</option>
             <option value="long-tail">Long-tail</option>

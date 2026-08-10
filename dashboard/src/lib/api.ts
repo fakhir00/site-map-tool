@@ -83,7 +83,7 @@ export type ScanJob = {
 export type Keyword = {
   id: string
   phrase: string
-  keyword_type: 'primary' | 'lsi' | 'entity' | 'heading' | 'long-tail'
+  keyword_type: 'top-pick' | 'primary' | 'lsi' | 'entity' | 'heading' | 'long-tail'
   frequency: number
   search_volume: number | null
   difficulty: number | null
