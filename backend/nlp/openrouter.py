@@ -303,6 +303,7 @@ Candidates:
 {json.dumps(trimmed_candidates, ensure_ascii=True)}
 
 Return ONLY a JSON array. Select up to {max_keywords} candidates that are genuinely useful content or landing-page opportunities for this site.
+CRITICAL TOPIC RELEVANCE: You MUST aggressively remove any candidate that is not directly related to the user's seed keywords. For example, if the seed is "circuit diagram maker", you must remove "cell diagram", "floor plan creator", etc. Only keep keywords strictly relevant to the exact topic of the seed keywords.
 Remove thin, generic, navigational, off-topic, duplicate, brand-only, and awkward sitemap-slug phrases.
 You may lightly improve wording, but keep the intent grounded in the source phrase.
 
