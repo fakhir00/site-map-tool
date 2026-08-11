@@ -354,7 +354,8 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
 
 
 def _primary_competitor_search_query(seed_keywords: list[str]) -> str:
-    return " ".join(seed_keywords[:4]).strip()
+    phrase = " ".join(seed_keywords[:4]).strip()
+    return f'"{phrase}"'
 
 
 def _fallback_competitor_domains(seed_keywords: list[str]) -> list[str]:
