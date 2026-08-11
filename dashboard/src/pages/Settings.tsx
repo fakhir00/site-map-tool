@@ -1,26 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bookmark, CreditCard } from 'lucide-react'
-import { api, type KeywordBankEntry, type User } from '../lib/api'
+import { CreditCard } from 'lucide-react'
+import { api, type User } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
-
-function keywordBadge(type: KeywordBankEntry['keyword_type']) {
-  if (type === 'primary') return <Badge variant="teal">Primary</Badge>
-  if (type === 'lsi') return <Badge variant="indigo">LSI</Badge>
-  if (type === 'long-tail') return <Badge variant="cyan">Long-tail</Badge>
-  if (type === 'entity') return <Badge variant="amber">Entity</Badge>
-  return <Badge variant="slate">Heading</Badge>
-}
 
 export function Settings() {
   const { data: user } = useQuery({
     queryKey: ['user'],
     queryFn: () => api.get<User>('/auth/me'),
-  })
-
-  const { data: keywordBank = [] } = useQuery({
-    queryKey: ['keyword-bank'],
-    queryFn: () => api.get<KeywordBankEntry[]>('/keyword-bank'),
   })
 
   return (
