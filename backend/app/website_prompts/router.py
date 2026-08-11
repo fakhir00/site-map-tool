@@ -25,7 +25,8 @@ async def analyze_intent(
         result = await run_in_threadpool(
             analyze_intent_flow,
             keyword=req.keyword,
-            manual_competitors=req.manual_competitors
+            manual_competitors=req.manual_competitors,
+            short_mode=req.short_mode
         )
         return WebsiteIntentResponse(
             intent=result["intent"],

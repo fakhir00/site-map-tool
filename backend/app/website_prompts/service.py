@@ -21,12 +21,12 @@ def get_master_theme_text() -> str:
         return ""
 
 
-def analyze_intent_flow(keyword: str, manual_competitors: List[str] = None) -> Dict[str, Any]:
+def analyze_intent_flow(keyword: str, manual_competitors: List[str] = None, short_mode: bool = False) -> Dict[str, Any]:
     """
     Analyzes intent and generates competitor URLs entirely via AI.
     No Apify scraping is performed.
     """
-    ai_result = analyze_website_intent(keyword)
+    ai_result = analyze_website_intent(keyword, short_mode=short_mode)
     intent = ai_result.get("intent", "Informational Website")
     
     # If the user provided manual competitors, prioritize those over AI-generated ones

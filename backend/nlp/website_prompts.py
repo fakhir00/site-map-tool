@@ -4,15 +4,21 @@ from typing import Any, Dict, List
 
 from nlp.openrouter import _chat_json, _chat_text
 
-def analyze_website_intent(keyword: str) -> Dict[str, Any]:
+def analyze_website_intent(keyword: str, short_mode: bool = False) -> Dict[str, Any]:
     """
     Analyzes the keyword to determine the user intent and generates a list of example competitor domains.
     Returns a dictionary with 'intent' (str) and 'competitors' (list of str).
     """
+    intent_instruction = (
+        "The intent must be exactly ONE hyphenated word summarizing the intent (e.g. 'tool-page', 'blog-page', 'info-page', 'ecommerce-page'). Do not output a paragraph.\n"
+        if short_mode
+        else "Be concise but descriptive. Provide a single paragraph describing the intent and the type of website needed.\n"
+    )
+
     system_prompt = (
         "You are an expert SEO and product strategist. Your job is to analyze a target keyword.\n"
         "1. Determine the core 'Website Intent' for this keyword. Is it a calculator? A survey? A SaaS tool? An informational blog? An e-commerce store? A local service page?\n"
-        "The intent must be exactly ONE hyphenated word summarizing the intent (e.g. 'tool-page', 'blog-page', 'info-page', 'ecommerce-page'). Do not output a paragraph.\n"
+        f"{intent_instruction}"
         "2. Provide a list of 3-5 real-world example competitor domains or tools that match this keyword and intent.\n\n"
         "OUTPUT FORMAT: You MUST return a valid JSON object with EXACTLY two keys:\n"
         "- \"intent\": string\n"

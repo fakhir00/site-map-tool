@@ -216,6 +216,7 @@ class ArticleListResponse(BaseModel):
 class WebsiteIntentRequest(BaseModel):
     keyword: str
     manual_competitors: Optional[List[str]] = []
+    short_mode: bool = False
 
 
 class WebsiteIntentResponse(BaseModel):
