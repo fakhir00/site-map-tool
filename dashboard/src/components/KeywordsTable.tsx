@@ -231,6 +231,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
               <th className="px-5 py-3 font-semibold">Keyword gap</th>
+              <th className="px-5 py-3 font-semibold">Intent</th>
               <th className="px-5 py-3 font-semibold">Type</th>
               <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
               <th className="px-5 py-3 font-semibold">Sources</th>
@@ -241,7 +242,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
           <tbody className="divide-y divide-slate-100">
             {keywords.length === 0 ? (
               <tr>
-                <td className="px-5 py-10 text-center text-slate-500" colSpan={6}>
+                <td className="px-5 py-10 text-center text-slate-500" colSpan={7}>
                   No keyword gaps found yet.
                 </td>
               </tr>
@@ -253,8 +254,10 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                       <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline">
                         {keyword.phrase}
                       </a>
-                      <KeywordIntentBadge keywordPhrase={keyword.phrase} />
                     </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <KeywordIntentBadge keywordPhrase={keyword.phrase} />
                   </td>
                   <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
                   <td className="px-5 py-4 text-right font-mono text-slate-700">{keyword.frequency}</td>
