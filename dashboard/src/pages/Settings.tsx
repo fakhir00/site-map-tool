@@ -69,7 +69,6 @@ export function Settings() {
         </Card>
       </section>
 
-      </section>
     </div>
   )
 }
