@@ -10,6 +10,7 @@ import GapPageGenerator from './pages/GapPageGenerator'
 import ScanInterface from './pages/ScanInterface'
 import WriteBlog from './pages/WriteBlog'
 import WriteBlogArticle from './pages/WriteBlogArticle'
+import SavedKeywords from './pages/SavedKeywords'
 import { auth } from './lib/api'
 
 function PrivateRoute() {
@@ -48,6 +49,7 @@ function App() {
             <Route path="write-blog" element={<WriteBlog />} />
             <Route path="write-blog/:projectId" element={<WriteBlogArticle />} />
             <Route path="gap-page-prompts" element={<GapPageGenerator />} />
+            <Route path="saved-keywords" element={<SavedKeywords />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Route>

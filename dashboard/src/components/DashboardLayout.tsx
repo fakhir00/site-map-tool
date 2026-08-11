@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, ExternalLink, FolderKanban, LogOut, Map, Menu, Plus, Settings, X } from 'lucide-react'
+import { BarChart3, Bookmark, ExternalLink, FolderKanban, LogOut, Map, Menu, Plus, Settings, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { DEMO_BACKEND_ENABLED, api, auth, type Project, type User } from '../lib/api'
 import { marketingUrl } from '../lib/marketing'
@@ -46,7 +46,7 @@ export function DashboardLayout() {
     { name: 'Gap Page Generator', href: '/gap-page-prompts', icon: Plus },
     { name: 'Scan', href: '/scan', icon: Map },
     { name: 'Write Blog', href: '/write-blog', icon: Plus },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Saved Keywords', href: '/saved-keywords', icon: Bookmark },
   ]
 
   return (
@@ -148,6 +148,14 @@ export function DashboardLayout() {
               <p className="truncate text-xs text-slate-500">{user?.email}</p>
             </div>
           </div>
+          <Link
+            className="mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"
+            onClick={() => setSidebarOpen(false)}
+            to="/settings"
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </Link>
           <Button className="w-full justify-start" onClick={handleLogout} variant="secondary">
             <LogOut className="h-4 w-4" />
             Sign out

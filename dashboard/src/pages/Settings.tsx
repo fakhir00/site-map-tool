@@ -69,41 +69,7 @@ export function Settings() {
         </Card>
       </section>
 
-      <Card className="p-0">
-        <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
-          <Bookmark className="h-5 w-5 text-cyan-800" />
-          <h3 className="font-semibold text-slate-950">Saved keywords</h3>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-5 py-3 font-semibold">Keyword</th>
-                <th className="px-5 py-3 font-semibold">Type</th>
-                <th className="px-5 py-3 text-right font-semibold">Frequency</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {keywordBank.length === 0 ? (
-                <tr>
-                  <td className="px-5 py-10 text-center text-slate-500" colSpan={3}>
-                    Saved keywords will appear here.
-                  </td>
-                </tr>
-              ) : (
-                keywordBank.map((entry) => (
-                  <tr className="hover:bg-slate-50" key={entry.id}>
-                    <td className="px-5 py-4 font-semibold text-slate-950">{entry.phrase}</td>
-                    <td className="px-5 py-4">{keywordBadge(entry.keyword_type)}</td>
-                    <td className="px-5 py-4 text-right font-mono text-slate-700">{entry.frequency}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      </section>
     </div>
   )
 }
