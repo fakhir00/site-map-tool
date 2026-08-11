@@ -54,6 +54,7 @@ class ProjectCreate(BaseModel):
     scan_frequency: str = "once"
     url_filter_patterns: Optional[List[str]] = None
     target_keywords: Optional[List[str]] = None
+    search_locale: str = "us"
 
     @field_validator("domain")
     @classmethod
@@ -100,6 +101,7 @@ class ProjectOut(BaseModel):
     scan_frequency: str
     url_filter_patterns: Optional[List[str]]
     target_keywords: Optional[List[str]]
+    search_locale: str
     status: str
     urls_found: int
     urls_processed: int

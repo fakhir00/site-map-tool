@@ -39,6 +39,7 @@ class Project(Base):
     url_filter_patterns: Mapped[Optional[List[str]]] = mapped_column(JSON, default=lambda: ["/blog/", "/news/", "/post/", "/article/"])
     target_keywords: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending")
+    search_locale: Mapped[str] = mapped_column(String(10), default="us")
     urls_found: Mapped[int] = mapped_column(Integer, default=0)
     urls_processed: Mapped[int] = mapped_column(Integer, default=0)
     urls_failed: Mapped[int] = mapped_column(Integer, default=0)

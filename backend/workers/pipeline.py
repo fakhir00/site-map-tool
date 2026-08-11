@@ -276,6 +276,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
     own_root = _registered_domain(project.own_domain or project.domain)
     required_terms = _search_required_terms(seed_keywords)
     competitor_limit = max(10, settings.MAX_COMPETITOR_DOMAINS)
+    search_locale = getattr(project, 'search_locale', 'us') or 'us'
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
     candidate_signals: dict[str, dict[str, Any]] = {}
@@ -310,26 +311,26 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
     
     if is_apify_configured():
         logger.info(f"Using Apify for primary query: {primary_query}")
-        apify_results = search_google_via_apify(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT)
+        apify_results = search_google_via_apify(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
         for res in apify_results:
             add_domain(res["url"], require_relevance=False, query=primary_query, source="apify_page_1")
             if len(competitor_domains) >= competitor_limit:
                 break
     else:
-        for href in _search_google_result_urls(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT):
+        for href in _search_google_result_urls(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, locale=search_locale):
             add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
             if len(competitor_domains) >= competitor_limit:
                 break
 
     for query in _competitor_search_queries(seed_keywords):
         if is_apify_configured():
-            apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT)
+            apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
             for res in apify_results:
                 add_domain(res["url"], query=query)
                 if len(competitor_domains) >= competitor_limit:
                     break
         else:
-            for href in _search_result_urls(query, include_google=True):
+            for href in _search_result_urls(query, include_google=True, locale=search_locale):
                 add_domain(href, query=query)
                 if len(competitor_domains) >= competitor_limit:
                     break
@@ -378,11 +379,11 @@ def _fallback_competitor_domains(seed_keywords: list[str]) -> list[str]:
     return []
 
 
-def _search_result_urls(query: str, include_google: bool = False) -> list[str]:
+def _search_result_urls(query: str, include_google: bool = False, locale: str = "us") -> list[str]:
     urls: list[str] = []
 
     if include_google:
-        urls.extend(_search_google_result_urls(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT))
+        urls.extend(_search_google_result_urls(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, locale=locale))
     urls.extend(_search_bing_result_urls(query))
     urls.extend(_search_duckduckgo_html_urls(query))
     return list(dict.fromkeys(urls))
@@ -464,7 +465,7 @@ def _is_relevant_content_url(url: str, required_terms: set[str]) -> bool:
     return any(term in lowered for term in required_terms)
 
 
-def _search_google_result_urls(query: str, max_results: int = 10) -> list[str]:
+def _search_google_result_urls(query: str, max_results: int = 10, locale: str = "us") -> list[str]:
     try:
         import requests
         import urllib3
@@ -476,6 +477,7 @@ def _search_google_result_urls(query: str, max_results: int = 10) -> list[str]:
                 "q": query,
                 "num": max(10, max_results),
                 "hl": "en",
+                "gl": locale,
                 "pws": "0",
             },
             headers={

@@ -30,6 +30,7 @@ async def create_project(
         scan_frequency=body.scan_frequency,
         url_filter_patterns=patterns,
         target_keywords=body.target_keywords,
+        search_locale=body.search_locale,
     )
     db.add(project)
     await db.flush()

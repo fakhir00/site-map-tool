@@ -13,7 +13,7 @@ def is_apify_configured() -> bool:
 def _get_client() -> ApifyClient:
     return ApifyClient(settings.APIFY_API_TOKEN)
 
-def search_google_via_apify(query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+def search_google_via_apify(query: str, max_results: int = 10, country_code: str = "us") -> List[Dict[str, Any]]:
     """
     Search Google using Apify's google-search-scraper.
     Returns structured organic results.
@@ -27,7 +27,7 @@ def search_google_via_apify(query: str, max_results: int = 10) -> List[Dict[str,
         "queries": query,
         "maxPagesPerQuery": 1,
         "resultsPerPage": max_results,
-        "countryCode": "us",
+        "countryCode": country_code.lower(),
         "languageCode": "en",
     }
     

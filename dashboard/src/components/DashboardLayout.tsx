@@ -85,15 +85,6 @@ export function DashboardLayout() {
 
         <nav className="flex-1 overflow-y-auto px-4 py-5">
           <div className="space-y-1">
-            <a
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"
-              href={websiteUrl}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <Map className="h-4 w-4" />
-              Website
-              <ExternalLink className="ml-auto h-3.5 w-3.5 text-slate-400" />
-            </a>
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = location.pathname === item.href

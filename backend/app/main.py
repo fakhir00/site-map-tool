@@ -35,6 +35,8 @@ async def _ensure_runtime_schema(conn):
         project_columns = {row[1] for row in result.fetchall()}
         if "target_keywords" not in project_columns:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN target_keywords JSON"))
+        if "search_locale" not in project_columns:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN search_locale VARCHAR(10) DEFAULT 'us'"))
         result = await conn.execute(text("PRAGMA table_info(urls)"))
         url_columns = {row[1] for row in result.fetchall()}
         if "source_type" not in url_columns:
@@ -55,6 +57,8 @@ async def _ensure_runtime_schema(conn):
     columns = {row[0]: row[1] for row in result.fetchall()}
     if "target_keywords" not in columns:
         await conn.execute(text("ALTER TABLE projects ADD COLUMN target_keywords JSONB"))
+    if "search_locale" not in columns:
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN search_locale VARCHAR(10) DEFAULT 'us'"))
     if columns.get("url_filter_patterns") == "ARRAY":
         await conn.execute(
             text(

@@ -11,6 +11,7 @@ import { Input } from '../components/ui/Input'
 type ProjectForm = {
   site_url: string
   primary_keyword: string
+  search_locale: string
 }
 
 type ProjectCreate = {
@@ -19,11 +20,13 @@ type ProjectCreate = {
   own_domain: string
   scan_frequency: string
   target_keywords: string[]
+  search_locale: string
 }
 
 const initialProject: ProjectForm = {
   site_url: '',
   primary_keyword: '',
+  search_locale: 'us',
 }
 
 function displayHost(value: string) {
@@ -116,6 +119,7 @@ export function ProjectsList() {
       own_domain: siteUrl,
       scan_frequency: 'once',
       target_keywords: [keyword],
+      search_locale: form.search_locale,
     })
   }
 
@@ -299,6 +303,25 @@ export function ProjectsList() {
                     required
                     value={form.primary_keyword}
                   />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-slate-700">Competitor search region (Optional)</span>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
+                    value={form.search_locale}
+                  >
+                    <option value="us">United States (Default)</option>
+                    <option value="gb">United Kingdom</option>
+                    <option value="ca">Canada</option>
+                    <option value="au">Australia</option>
+                    <option value="in">India</option>
+                    <option value="de">Germany</option>
+                    <option value="fr">France</option>
+                  </select>
                 </label>
               </div>
 
