@@ -46,6 +46,33 @@ function sourceDomains(keyword: Keyword) {
   return Array.from(byLabel.values())
 }
 
+function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
+  const [intent, setIntent] = useState<string | null>(null)
+  
+  const mutation = useMutation({
+    mutationFn: () => api.post<{ intent: string, competitors: string[] }>('/website-prompts/analyze-intent', { keyword: keywordPhrase }),
+    onSuccess: (data) => {
+      setIntent(data.intent)
+    }
+  })
+
+  if (intent) {
+    return <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 truncate max-w-[150px]" title={intent}>{intent}</span>
+  }
+
+  return (
+    <Button 
+      variant="outline" 
+      size="sm" 
+      className="h-6 text-[10px] px-2 py-0"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+    >
+      {mutation.isPending ? '...' : 'Intent'}
+    </Button>
+  )
+}
+
 export function KeywordsTable({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -222,7 +249,12 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
               keywords.map((keyword) => (
                 <tr className="hover:bg-slate-50" key={keyword.id}>
                   <td className="max-w-[360px] px-5 py-4">
-                    <p className="truncate font-semibold text-slate-950">{keyword.phrase}</p>
+                    <div className="flex items-center gap-2">
+                      <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline">
+                        {keyword.phrase}
+                      </a>
+                      <KeywordIntentBadge keywordPhrase={keyword.phrase} />
+                    </div>
                   </td>
                   <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
                   <td className="px-5 py-4 text-right font-mono text-slate-700">{keyword.frequency}</td>

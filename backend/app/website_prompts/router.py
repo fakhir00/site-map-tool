@@ -10,7 +10,7 @@ from app.schemas import (
     WebsitePromptGenerateRequest,
     WebsitePromptGenerateResponse
 )
-from app.website_prompts.service import analyze_intent_flow, generate_prompt_flow
+from app.website_prompts.service import analyze_intent_flow, generate_prompt_flow, generate_gap_page_flow
 
 logger = logging.getLogger(__name__)
 
@@ -56,3 +56,26 @@ async def generate_prompt(
     except Exception as e:
         logger.error(f"Error in generate_prompt: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate website prompt")
+
+
+@router.post("/generate-gap-page", response_model=WebsitePromptGenerateResponse)
+async def generate_gap_page(
+    req: WebsitePromptGenerateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        result = await run_in_threadpool(
+            generate_gap_page_flow,
+            keyword=req.keyword,
+            intent=req.intent,
+            competitors=req.competitors
+        )
+        return WebsitePromptGenerateResponse(
+            prompt=result["prompt"],
+            attempts=result["attempts"],
+            audit_score=result["audit_score"]
+        )
+    except Exception as e:
+        logger.error(f"Error in generate_gap_page: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate gap page prompt")
+
