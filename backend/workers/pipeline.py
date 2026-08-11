@@ -157,8 +157,6 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             db.commit()
 
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
-        _remove_unrelated_keywords(kw_accumulator, seed_keywords)
-        logger.info("[%s] After relevance pre-filter: %s candidates", project_id, len(kw_accumulator))
         kw_accumulator = _refine_keyword_gap_recommendations(
             db,
             project_uuid,
@@ -1054,66 +1052,6 @@ def _phrase_terms(phrase: str) -> set[str]:
     from nlp.keywords import STOPWORDS
 
     return {word for word in phrase.split() if word not in STOPWORDS and len(word) > 2}
-
-
-# Generic words that appear in many niches and should NOT count as topical overlap
-_GENERIC_MATCH_TERMS = {
-    "converter", "tool", "tools", "maker", "generator", "builder", "creator",
-    "online", "free", "app", "software", "download", "best", "top",
-    "size", "chart", "calculator", "editor", "viewer", "reader",
-    "how", "what", "guide", "tutorial", "list", "review", "reviews",
-    "site", "website", "web", "page", "blog", "article",
-}
-
-
-def _remove_unrelated_keywords(
-    accumulator: dict[str, dict[str, Any]],
-    seed_keywords: list[str],
-) -> None:
-    """Pre-filter: remove keywords that share zero meaningful (non-generic) terms with the seed."""
-    if not seed_keywords:
-        return
-
-    # Build seed terms (excluding generic words)
-    seed_terms: set[str] = set()
-    for kw in seed_keywords:
-        for word in kw.lower().split():
-            word = word.strip()
-            if len(word) >= 2 and word not in _GENERIC_MATCH_TERMS:
-                seed_terms.add(word)
-                # Also add stem-like variant (drop trailing 's')
-                if len(word) > 4 and word.endswith("s") and not word.endswith("ss"):
-                    seed_terms.add(word[:-1])
-
-    if not seed_terms:
-        return
-
-    def _has_seed_overlap(phrase_words: set[str]) -> bool:
-        """Check if any phrase word overlaps with seed terms (exact, prefix, or substring)."""
-        for pw in phrase_words:
-            for st in seed_terms:
-                # Exact match
-                if pw == st:
-                    return True
-                # Prefix match: 'hex' matches 'hexadecimal', 'decimal' matches 'hexadecimal'
-                if len(pw) >= 3 and (st.startswith(pw) or pw.startswith(st)):
-                    return True
-                # Substring match: 'decimal' is inside 'hexadecimal'
-                if len(pw) >= 4 and (pw in st or st in pw):
-                    return True
-        return False
-
-    for phrase in list(accumulator.keys()):
-        phrase_words = {w for w in phrase.split() if len(w) >= 2 and w not in _GENERIC_MATCH_TERMS}
-        # Also add stem variants for phrase words
-        phrase_stems = set()
-        for w in phrase_words:
-            if len(w) > 4 and w.endswith("s") and not w.endswith("ss"):
-                phrase_stems.add(w[:-1])
-        phrase_words |= phrase_stems
-
-        if not _has_seed_overlap(phrase_words):
-            del accumulator[phrase]
 
 
 def _refine_keyword_gap_recommendations(
