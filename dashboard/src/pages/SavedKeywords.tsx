@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bookmark, Sparkles } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
@@ -15,6 +15,7 @@ function keywordBadge(type: KeywordBankEntry['keyword_type']) {
 }
 
 export default function SavedKeywords() {
+  const navigate = useNavigate()
   const { data: keywordBank = [] } = useQuery({
     queryKey: ['keyword-bank'],
     queryFn: () => api.get<KeywordBankEntry[]>('/keyword-bank'),
@@ -53,14 +54,12 @@ export default function SavedKeywords() {
                     <td className="px-5 py-4 font-mono text-slate-700">{entry.frequency}</td>
                     <td className="px-5 py-4 text-right">
                       <Button
-                        asChild
+                        onClick={() => navigate(`/gap-page-prompts?keyword=${encodeURIComponent(entry.phrase)}`)}
                         size="sm"
                         variant="secondary"
                       >
-                        <Link to={`/gap-page-prompts?keyword=${encodeURIComponent(entry.phrase)}`}>
-                          <Sparkles className="mr-1.5 h-4 w-4" />
-                          Gap Page
-                        </Link>
+                        <Sparkles className="mr-1.5 h-4 w-4" />
+                        Gap Page
                       </Button>
                     </td>
                   </tr>

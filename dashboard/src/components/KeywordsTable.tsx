@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, FilePenLine, Search, Sparkles } from 'lucide-react'
 import { api, type Keyword, type KeywordListResponse } from '../lib/api'
@@ -76,6 +76,7 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
 
 export function KeywordsTable({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [type, setType] = useState('')
@@ -316,13 +317,11 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                   </td>
                   <td className="px-5 py-4 text-right">
                     <Button
-                      asChild
+                      onClick={() => navigate(`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`)}
                       size="sm"
                       variant="secondary"
                     >
-                      <Link to={`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`}>
-                        <Sparkles className="h-4 w-4" />
-                      </Link>
+                      <Sparkles className="h-4 w-4" />
                     </Button>
                   </td>
                   <td className="px-5 py-4 text-right">
