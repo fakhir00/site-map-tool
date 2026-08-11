@@ -112,6 +112,7 @@ export function ProjectsList() {
     event.preventDefault()
     const siteUrl = form.site_url.trim()
     const keyword = form.primary_keyword.trim()
+    const locale = form.search_locale.trim() || 'us'
 
     createMutation.mutate({
       name: `${keyword} gaps for ${displayHost(siteUrl)}`,
@@ -119,7 +120,7 @@ export function ProjectsList() {
       own_domain: siteUrl,
       scan_frequency: 'once',
       target_keywords: [keyword],
-      search_locale: form.search_locale,
+      search_locale: locale,
     })
   }
 
@@ -309,19 +310,12 @@ export function ProjectsList() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-slate-700">Competitor search region (Optional)</span>
-                  <select
-                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  <Input
                     onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
+                    placeholder="us"
                     value={form.search_locale}
-                  >
-                    <option value="us">United States (Default)</option>
-                    <option value="gb">United Kingdom</option>
-                    <option value="ca">Canada</option>
-                    <option value="au">Australia</option>
-                    <option value="in">India</option>
-                    <option value="de">Germany</option>
-                    <option value="fr">France</option>
-                  </select>
+                  />
+                  <p className="mt-1 text-xs text-slate-500">e.g., us, gb, ca, au. Defaults to "us".</p>
                 </label>
               </div>
 
