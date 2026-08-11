@@ -9,6 +9,7 @@ import WebsitePromptGenerator from './pages/WebsitePromptGenerator'
 import GapPageGenerator from './pages/GapPageGenerator'
 import ScanInterface from './pages/ScanInterface'
 import WriteBlog from './pages/WriteBlog'
+import WriteBlogArticle from './pages/WriteBlogArticle'
 import { auth } from './lib/api'
 
 function PrivateRoute() {
@@ -45,6 +46,7 @@ function App() {
             <Route path="website-prompts" element={<WebsitePromptGenerator />} />
             <Route path="scan" element={<ScanInterface />} />
             <Route path="write-blog" element={<WriteBlog />} />
+            <Route path="write-blog/:projectId" element={<WriteBlogArticle />} />
             <Route path="gap-page-prompts" element={<GapPageGenerator />} />
             <Route path="settings" element={<Settings />} />
           </Route>
