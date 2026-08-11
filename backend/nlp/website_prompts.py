@@ -72,7 +72,16 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
             max_tokens=4000,
         )
         # Programmatically combine the raw master template with the LLM's generated sections
-        combined_prompt = f"{master_theme_text}\n\n{response_text.strip()}"
+        header = (
+            "========================================================================\n"
+            "PRIMARY KEYWORD & INTENT SPECIFICATION\n"
+            "========================================================================\n\n"
+            f"TARGET KEYWORD: {keyword}\n"
+            f"WEBSITE INTENT: {intent}\n\n"
+            "Please build a website that specifically caters to the target keyword and intent above.\n"
+            "Make sure to include necessary pages, tools, calculators, or layouts that satisfy this intent.\n\n"
+        )
+        combined_prompt = f"{header}{response_text.strip()}\n\n{master_theme_text}"
         return combined_prompt
     except Exception as e:
         logger.error(f"Failed to generate website prompt: {e}")

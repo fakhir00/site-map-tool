@@ -42,27 +42,39 @@ def analyze_intent_flow(keyword: str, manual_competitors: List[str] = None, shor
 
 def generate_prompt_flow(keyword: str, intent: str, competitors: List[str]) -> Dict[str, Any]:
     """
-    Generates the Website Master Prompt.
-    Prepends the keyword and intent to the master theme text without extra AI generation.
+    Generates the Website Master Prompt and audits it.
+    Retries up to 3 times if the auditor fails.
     """
     master_theme_text = get_master_theme_text()
     
-    header = (
-        "========================================================================\n"
-        "PRIMARY KEYWORD & INTENT SPECIFICATION\n"
-        "========================================================================\n\n"
-        f"TARGET KEYWORD: {keyword}\n"
-        f"WEBSITE INTENT: {intent}\n\n"
-        "Please build a website that specifically caters to the target keyword and intent above.\n"
-        "Make sure to include necessary pages, tools, calculators, or layouts that satisfy this intent.\n\n"
-    )
+    max_attempts = 3
+    revision_notes = []
+    best_prompt = ""
+    best_audit = {"passed": False, "score": 0}
     
-    prompt = header + master_theme_text
+    for attempt in range(1, max_attempts + 1):
+        prompt = generate_website_prompt(keyword, intent, master_theme_text, revision_notes)
+        
+        audit = audit_website_prompt(prompt)
+        
+        if audit.get("passed"):
+            return {
+                "prompt": prompt,
+                "audit_score": audit.get("score", 100),
+                "attempts": attempt
+            }
+            
+        # Update best prompt just in case we run out of attempts
+        if audit.get("score", 0) >= best_audit.get("score", 0):
+            best_prompt = prompt
+            best_audit = audit
+            
+        revision_notes = audit.get("issues", [])
 
     return {
-        "prompt": prompt,
-        "audit_score": 100,
-        "attempts": 1
+        "prompt": best_prompt,
+        "audit_score": best_audit.get("score", 0),
+        "attempts": max_attempts
     }
 
 

@@ -7,6 +7,8 @@ import { ProjectDetail } from './pages/ProjectDetail'
 import { Settings } from './pages/Settings'
 import WebsitePromptGenerator from './pages/WebsitePromptGenerator'
 import GapPageGenerator from './pages/GapPageGenerator'
+import ScanInterface from './pages/ScanInterface'
+import WriteBlog from './pages/WriteBlog'
 import { auth } from './lib/api'
 
 function PrivateRoute() {
@@ -41,6 +43,8 @@ function App() {
             <Route index element={<ProjectsList />} />
             <Route path="projects/:projectId" element={<ProjectDetail />} />
             <Route path="website-prompts" element={<WebsitePromptGenerator />} />
+            <Route path="scan" element={<ScanInterface />} />
+            <Route path="write-blog" element={<WriteBlog />} />
             <Route path="gap-page-prompts" element={<GapPageGenerator />} />
             <Route path="settings" element={<Settings />} />
           </Route>

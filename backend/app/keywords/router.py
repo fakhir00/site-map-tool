@@ -339,6 +339,8 @@ async def get_keyword_bank(
     return [
         {
             "id": str(bank.id),
+            "keyword_id": str(kw.id),
+            "project_id": str(kw.project_id),
             "phrase": kw.phrase,
             "keyword_type": kw.keyword_type,
             "frequency": kw.frequency,
