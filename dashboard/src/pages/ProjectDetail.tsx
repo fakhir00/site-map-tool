@@ -164,7 +164,7 @@ export function ProjectDetail() {
         <div className="min-w-0">
           <Link className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-950" to="/">
             <ArrowLeft className="h-4 w-4" />
-            Projects
+            Dashboard
           </Link>
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-2xl font-bold text-slate-950">{project.name}</h2>
@@ -212,7 +212,7 @@ export function ProjectDetail() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="font-semibold text-slate-950">{isPaused ? 'Scan paused' : status === 'complete' ? 'Latest scan complete' : 'Scan in progress'}</p>
+                <p className="font-semibold text-slate-950">{isPaused ? 'Gap Hunter paused' : status === 'complete' ? 'Latest Gap Hunter run complete' : 'Gap Hunter in progress'}</p>
                 <span className="text-sm font-semibold text-indigo-700">{percent}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-slate-100">
@@ -365,11 +365,11 @@ export function ProjectDetail() {
 
           <Card className="p-0">
             <div className="border-b border-slate-200 px-5 py-4">
-              <h3 className="font-semibold text-slate-950">Scan history</h3>
+              <h3 className="font-semibold text-slate-950">Gap Hunter history</h3>
             </div>
             <div className="divide-y divide-slate-100">
               {jobs.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500">No scan jobs yet.</p>
+                <p className="px-5 py-8 text-sm text-slate-500">No Gap Hunter jobs yet.</p>
               ) : (
                 jobs.slice(0, 6).map((job) => (
                   <div className="flex items-center justify-between gap-4 px-5 py-4" key={job.id}>

@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bookmark } from 'lucide-react'
+import { Bookmark, Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
 
 function keywordBadge(type: KeywordBankEntry['keyword_type']) {
   if (type === 'primary') return <Badge variant="teal">Primary</Badge>
@@ -32,13 +34,14 @@ export default function SavedKeywords() {
               <tr>
                 <th className="px-5 py-3 font-semibold">Keyword</th>
                 <th className="px-5 py-3 font-semibold">Type</th>
-                <th className="px-5 py-3 text-right font-semibold">Frequency</th>
+                <th className="px-5 py-3 font-semibold">Frequency</th>
+                <th className="px-5 py-3 text-right font-semibold">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {keywordBank.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-10 text-center text-slate-500" colSpan={3}>
+                  <td className="px-5 py-10 text-center text-slate-500" colSpan={4}>
                     Saved keywords will appear here.
                   </td>
                 </tr>
@@ -47,7 +50,19 @@ export default function SavedKeywords() {
                   <tr className="hover:bg-slate-50" key={entry.id}>
                     <td className="px-5 py-4 font-semibold text-slate-950">{entry.phrase}</td>
                     <td className="px-5 py-4">{keywordBadge(entry.keyword_type)}</td>
-                    <td className="px-5 py-4 text-right font-mono text-slate-700">{entry.frequency}</td>
+                    <td className="px-5 py-4 font-mono text-slate-700">{entry.frequency}</td>
+                    <td className="px-5 py-4 text-right">
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="secondary"
+                      >
+                        <Link to={`/gap-page-prompts?keyword=${encodeURIComponent(entry.phrase)}`}>
+                          <Sparkles className="mr-1.5 h-4 w-4" />
+                          Gap Page
+                        </Link>
+                      </Button>
+                    </td>
                   </tr>
                 ))
               )}

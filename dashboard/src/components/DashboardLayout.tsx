@@ -41,10 +41,10 @@ export function DashboardLayout() {
   }
 
   const navItems = [
-    { name: 'Projects', href: '/', icon: FolderKanban },
-    { name: 'Website Prompts', href: '/website-prompts', icon: Plus },
-    { name: 'Gap Page Generator', href: '/gap-page-prompts', icon: Plus },
-    { name: 'Scan', href: '/scan', icon: Map },
+    { name: 'Dashboard', href: '/', icon: FolderKanban },
+    { name: 'Astro Launchpad', href: '/website-prompts', icon: Plus },
+    { name: 'Gap Hunter', href: '/scan', icon: Map },
+    { name: 'Build Tool', href: '/gap-page-prompts', icon: Plus },
     { name: 'Write Blog', href: '/write-blog', icon: Plus },
     { name: 'Saved Keywords', href: '/saved-keywords', icon: Bookmark },
   ]
@@ -187,7 +187,7 @@ export function DashboardLayout() {
                   <p className="text-sm font-medium text-slate-500">Dashboard</p>
                   {DEMO_BACKEND_ENABLED && <Badge variant="amber">Demo mode</Badge>}
                 </div>
-                <h1 className="text-2xl font-bold text-slate-950">SEO scan workspace</h1>
+                <h1 className="text-2xl font-bold text-slate-950">SEO Gap Hunter workspace</h1>
               </div>
               <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
                 <BarChart3 className="h-4 w-4 text-cyan-800" />

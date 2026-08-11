@@ -81,8 +81,8 @@ export default function WebsitePromptGenerator() {
           <Sparkles className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Website Prompt Generator</h2>
-          <p className="text-sm text-slate-500">Analyze competitors and generate an audited Master Prompt for AI web builders.</p>
+          <h2 className="text-xl font-bold text-slate-900">Astro Launchpad</h2>
+          <p className="text-sm text-slate-500">Analyze competitors and generate a unified master prompt.</p>
         </div>
       </div>
 

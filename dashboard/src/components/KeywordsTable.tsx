@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, FilePenLine, Search, Sparkles } from 'lucide-react'
 import { api, type Keyword, type KeywordListResponse } from '../lib/api'
@@ -236,6 +237,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
               <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
               <th className="px-5 py-3 font-semibold">Sources</th>
               <th className="px-5 py-3 text-right font-semibold">Write</th>
+              <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
               <th className="px-5 py-3 text-right font-semibold">Save</th>
             </tr>
           </thead>
@@ -310,6 +312,17 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                     >
                       <FilePenLine className="h-4 w-4" />
                       {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
+                    </Button>
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="secondary"
+                    >
+                      <Link to={`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`}>
+                        <Sparkles className="h-4 w-4" />
+                      </Link>
                     </Button>
                   </td>
                   <td className="px-5 py-4 text-right">

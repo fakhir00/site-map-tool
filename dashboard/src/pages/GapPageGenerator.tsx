@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
@@ -17,7 +18,10 @@ type PromptResponse = {
 }
 
 export default function GapPageGenerator() {
-  const [keyword, setKeyword] = useState('')
+  const [searchParams] = useSearchParams()
+  const initialKeyword = searchParams.get('keyword') || ''
+
+  const [keyword, setKeyword] = useState(initialKeyword)
   const [manualCompetitors, setManualCompetitors] = useState('')
   const [intent, setIntent] = useState('')
   const [analyzedCompetitors, setAnalyzedCompetitors] = useState<string[]>([])
@@ -81,7 +85,7 @@ export default function GapPageGenerator() {
           <Sparkles className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Gap Page Generator</h2>
+          <h2 className="text-xl font-bold text-slate-900">Build Tool</h2>
           <p className="text-sm text-slate-500">Analyze competitors and generate a targeted prompt for a single gap page.</p>
         </div>
       </div>
@@ -207,7 +211,7 @@ export default function GapPageGenerator() {
     <div className="max-w-5xl mx-auto mt-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">Gap Page Prompt</h3>
+          <h3 className="text-lg font-bold text-slate-900">Build Tool Prompt</h3>
           <p className="text-sm text-slate-500 mt-1">Ready to be copied into Claude Opus or any capable AI builder.</p>
         </div>
         <button
