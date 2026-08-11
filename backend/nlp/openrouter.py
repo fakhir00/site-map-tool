@@ -354,20 +354,29 @@ def filter_keyword_gap_recommendations(
         return []
 
     trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
+    primary_keyword = " ".join(seed_keywords[:4]).strip()
     prompt = f"""
-You are an expert SEO strategist filtering keyword gap recommendations.
+You are an expert SEO strategist performing STRICT keyword gap filtering.
 
-The user's target seed keywords are:
-{json.dumps(seed_keywords)}
+The user's primary keyword is: "{primary_keyword}"
+Full seed keywords: {json.dumps(seed_keywords)}
 
-Below are candidate keyword gaps extracted from top-ranking competitor sitemaps.
-Each candidate includes the original phrase, competitor page count, competitor domain count, and current type.
+STRICT RELEVANCE RULE — keep ONLY keywords that satisfy at least one:
+1. EXACT MATCH: contains the primary keyword phrase or a very close variation
+2. BROAD MATCH: a searcher looking for "{primary_keyword}" would also realistically search for this keyword
+3. TOPICAL MATCH: directly about the same product, tool, feature, or concept as "{primary_keyword}"
+
+REJECT keywords that:
+- Are about a DIFFERENT tool/product/category (e.g. "shoe size converter" is NOT related to "hex converter")
+- Share only a generic word like "converter", "tool", "maker", "online", "free" with the primary keyword
+- Are navigational, brand-only, or generic UI phrases
+- Are thin, awkward sitemap-slug fragments
+- Would NEVER appear in the same content cluster as "{primary_keyword}"
 
 Candidates:
 {json.dumps(trimmed_candidates, ensure_ascii=True)}
 
-Return ONLY a JSON array. Select up to {max_keywords} candidates that are genuinely useful content or landing-page opportunities for this site.
-Remove thin, generic, navigational, off-topic, duplicate, brand-only, and awkward sitemap-slug phrases.
+Return ONLY a JSON array. Select up to {max_keywords} candidates that pass the strict relevance test.
 You may lightly improve wording, but keep the intent grounded in the source phrase.
 
 Each returned object must include:
