@@ -78,9 +78,9 @@ def generate_gap_page_flow(keyword: str, intent: str, competitors: List[str]) ->
         "========================================================================\n\n"
         f"TARGET KEYWORD: {keyword}\n"
         f"PAGE INTENT: {intent}\n\n"
-        "Please generate a complete HTML/CSS structure and content for a single standalone page that specifically caters to the target keyword and intent above.\n"
+        "Please generate a complete structure as per the website theme and constraints and content for a single standalone page that specifically caters to the target keyword and intent above.\n"
         "The page should be highly optimized for SEO based on this keyword, provide the exact utility or information required by the intent, and follow modern web design principles.\n"
-        "Do NOT include a full website silo structure. Only output the code and content for this single page.\n"
+        "Generate the page and follow the already existing design prefrences and structure do not genrate sperately from scrach\n"
     )
 
     return {
