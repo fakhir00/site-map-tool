@@ -50,7 +50,7 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
   const [intent, setIntent] = useState<string | null>(null)
   
   const mutation = useMutation({
-    mutationFn: () => api.post<{ intent: string, competitors: string[] }>('/website-prompts/analyze-intent', { keyword: keywordPhrase }),
+    mutationFn: () => api.post<{ intent: string, competitors: string[] }>('/website-prompts/analyze-intent', { keyword: keywordPhrase, short_mode: true }),
     onSuccess: (data) => {
       setIntent(data.intent)
     }
