@@ -62,7 +62,7 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
 
   return (
     <Button 
-      variant="outline" 
+      variant="secondary" 
       size="sm" 
       className="h-6 text-[10px] px-2 py-0"
       disabled={mutation.isPending}
