@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer } from 'lucide-react'
@@ -83,7 +84,7 @@ export function ProjectDetail() {
 
   const { data: urls = [] } = useQuery({
     queryKey: ['project-urls', projectId],
-    queryFn: () => api.get<UrlItem[]>(`/projects/${projectId}/urls?page_size=8`),
+    queryFn: () => api.get<UrlItem[]>(`/projects/${projectId}/urls?page_size=100`),
     enabled: Boolean(projectId),
     refetchInterval: 7000,
   })
@@ -109,6 +110,29 @@ export function ProjectDetail() {
     mutationFn: () => api.post<ScanJob>(`/projects/${projectId}/scan/resume`),
     onSuccess: invalidateProject,
   })
+
+  const displayUrls = useMemo(() => {
+    if (!urls.length) return []
+    const grouped = new Map<string, UrlItem[]>()
+    urls.forEach((u) => {
+      const domain = u.source_domain || displayHost(u.url)
+      if (!grouped.has(domain)) grouped.set(domain, [])
+      grouped.get(domain)!.push(u)
+    })
+    
+    const result: UrlItem[] = []
+    const groups = Array.from(grouped.values())
+    
+    while (result.length < 8 && groups.some((g) => g.length > 0)) {
+      for (const group of groups) {
+        if (result.length >= 8) break
+        if (group.length > 0) {
+          result.push(group.shift()!)
+        }
+      }
+    }
+    return result
+  }, [urls])
 
   if (loadingProject && !project) {
     return <div className="h-96 animate-pulse rounded-lg border border-slate-200 bg-white" />
@@ -275,7 +299,7 @@ export function ProjectDetail() {
                     </td>
                   </tr>
                 ) : (
-                  urls.map((url) => (
+                  displayUrls.map((url) => (
                     <tr className="hover:bg-slate-50" key={url.id}>
                       <td className="max-w-[420px] px-5 py-3">
                         <a className="block truncate font-medium text-slate-800 hover:text-cyan-800" href={url.url} rel="noopener noreferrer" target="_blank">
