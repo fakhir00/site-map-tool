@@ -36,7 +36,7 @@ def search_google_via_apify(query: str, max_results: int = 10, country_code: str
         run = client.actor("apify/google-search-scraper").call(run_input=run_input)
         
         results = []
-        for item in client.dataset(run.default_dataset_id).iterate_items():
+        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
             organic_results = item.get("organicResults", [])
             for res in organic_results:
                 url = res.get("url")
@@ -76,7 +76,7 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
         run = client.actor("alizarin_refrigerator-owner/website-crawler").call(run_input=run_input)
         
         urls = []
-        for item in client.dataset(run.default_dataset_id).iterate_items():
+        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
             url = item.get("url")
             if url:
                 urls.append(url)
@@ -104,7 +104,7 @@ def extract_apify_page_content(url: str) -> Optional[ScrapedPage]:
     try:
         run = client.actor("apify/cheerio-scraper").call(run_input=run_input)
         
-        for item in client.dataset(run.default_dataset_id).iterate_items():
+        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
             if item.get("url") == url or url in item.get("url", ""):
                 text = item.get("text", "") or item.get("body", "")
                 word_count = len(text.split()) if text else 0
