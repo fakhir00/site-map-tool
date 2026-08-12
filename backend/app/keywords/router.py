@@ -164,32 +164,21 @@ async def generate_top_picks(
     if not project.target_keywords:
         raise HTTPException(status_code=400, detail="Project has no target keywords to generate from")
         
+    # 1. Fetch existing keyword phrases
+    q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id)
+    result = await db.execute(q_existing)
+    existing_phrases = [row[0] for row in result.all()]
+    
+    if len(existing_phrases) < 5:
+        raise HTTPException(status_code=400, detail="Not enough keywords found yet. Please run a competitor scan or generate keywords first.")
+
+    # 2. Ask AI to pick top keywords FROM existing phrases
     from nlp.openrouter import generate_ai_top_picks
-    ai_keywords = await generate_ai_top_picks(project.target_keywords)
+    ai_keywords = await generate_ai_top_picks(project.target_keywords, existing_phrases)
     if not ai_keywords:
         raise HTTPException(status_code=500, detail="Failed to generate AI top picks")
         
-    # Get existing keyword phrases in this project to avoid duplicates
-    q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id)
-    result = await db.execute(q_existing)
-    existing_phrases = {row[0] for row in result.all()}
-    
-    # Get own website URL-path keywords to filter out
-    topic_terms = seed_keyword_terms(project.target_keywords)
-    q_own_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
-    result = await db.execute(q_own_urls)
-    own_urls = result.scalars().all()
-    
-    from workers.pipeline import _url_keyword_candidates
-    own_phrases: set[str] = set()
-    for url in own_urls:
-        own_phrases.update(_url_keyword_candidates(url, topic_terms, include_single_terms=True))
-    
-    # Combine both sets for filtering
-    all_excluded = existing_phrases | own_phrases
-    ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
-        
-    # Get or create an AI source URL
+    # Get or create an AI source URL for Top Picks
     from nlp.openrouter import ai_generated_source
     ai_url_str, ai_source_domain = ai_generated_source()
     q_url = select(Url).where(Url.project_id == project.id, Url.url == ai_url_str)
@@ -207,40 +196,29 @@ async def generate_top_picks(
         db.add(ai_url)
         await db.flush()
         
-    added_count = 0
+    updated_count = 0
     for kw_data in ai_keywords:
         phrase = kw_data["phrase"]
-        kw_type = "top-pick"
         
+        # We know they must exist because the AI picked them from existing_phrases,
+        # but let's be safe.
         q_kw = select(Keyword).where(Keyword.project_id == project.id, Keyword.phrase == phrase)
         result = await db.execute(q_kw)
         keyword = result.scalar_one_or_none()
         
-        if not keyword:
-            keyword = Keyword(
-                project_id=project.id,
-                phrase=phrase,
-                keyword_type=kw_type,
-                frequency=1,
-            )
-            db.add(keyword)
-            await db.flush()
-            added_count += 1
-            
-        elif keyword.keyword_type != "top-pick":
+        if keyword:
             keyword.keyword_type = "top-pick"
-            db.add(keyword)
-            await db.flush()
+            updated_count += 1
             
-        # Link keyword to AI URL
-        q_link = select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)
-        result = await db.execute(q_link)
-        link = result.scalar_one_or_none()
-        if not link:
-            db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
+            # Ensure it's linked to the Top Picks URL so it shows up in the UI filter
+            q_link = select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)
+            res_link = await db.execute(q_link)
+            link = res_link.scalar_one_or_none()
+            if not link:
+                db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
             
     await db.commit()
-    return {"message": f"Generated {added_count} top picks", "generated": len(ai_keywords)}
+    return {"message": f"Identified {updated_count} existing keywords as top picks", "generated": updated_count}
 
 
 @router.get("/{project_id}/keywords/export")

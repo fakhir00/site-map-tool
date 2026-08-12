@@ -222,7 +222,9 @@ Seed keywords:
 {json.dumps(seed_keywords)}
 
 Quality rules:
-- Every phrase must be directly useful for the same search intent, audience, and topic cluster as the seed keywords.
+- Every keyword MUST be highly semantically relevant to the primary seed keywords.
+- Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
+- If a keyword does not directly relate to the user intent of the seed keyword, discard it.
 - Reject bogus, random, generic, broad, off-topic, or awkward phrases.
 - Do not invent fake brands, fake products, fake people, or fake entities.
 - Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
@@ -277,8 +279,8 @@ Each object must have:
         return []
 
 
-async def generate_ai_top_picks(seed_keywords: list[str]) -> list[dict[str, Any]]:
-    """Generate a curated list of the absolute top 5 best keywords using the configured AI provider."""
+async def generate_ai_top_picks(seed_keywords: list[str], existing_keywords: list[str]) -> list[dict[str, Any]]:
+    """Generate a curated list of the absolute top 5 best keywords using the configured AI provider, from existing keywords."""
     if not is_ai_configured():
         logger.error("AI API key not configured")
         return []
@@ -287,22 +289,24 @@ async def generate_ai_top_picks(seed_keywords: list[str]) -> list[dict[str, Any]
 
     topic_terms = seed_keyword_terms(seed_keywords)
     prompt = f"""
-You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate exactly 5 absolute top-tier, highest-value keyword opportunities that a website should target.
+You are an expert SEO keyword strategist. 
+You are provided with a list of already found keywords. Your task is to select the absolute best 5 to 10 keywords STRICTLY FROM THIS LIST that are highly relevant to the seed keywords.
 These should be the "Top Picks" - high intent, strong relevance, and maximum SEO value.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
 
+Existing keywords (choose ONLY from these):
+{json.dumps(existing_keywords)}
+
 Quality rules:
-- Every phrase must be directly useful for the same search intent, audience, and topic cluster as the seed keywords.
-- Reject bogus, random, generic, broad, off-topic, or awkward phrases.
-- Keep phrases natural, lowercase, 2 to 6 words.
-- All keywords should be of type "primary" or "long-tail".
+- Every selected phrase MUST exactly match a phrase from the Existing keywords list. Do NOT invent new phrases.
+- Every keyword MUST be highly semantically relevant to the primary seed keywords.
+- Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 
 Return ONLY a JSON array of objects. Do not include markdown formatting, explanation, or code blocks.
 Each object must have:
-- "phrase": the keyword phrase (string, lowercase)
+- "phrase": the exact keyword phrase from the list (string, lowercase)
 - "type": one of "primary" or "long-tail"
 """
     try:

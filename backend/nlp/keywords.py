@@ -55,6 +55,10 @@ GENERIC_UI_WORDS = {
 
 IGNORED_TOPIC_TERMS = {
     "and", "best", "for", "near", "online", "or", "the", "tool", "tools", "with",
+    "calculator", "calculators", "maker", "makers", "converter", "converters",
+    "generator", "generators", "creator", "creators", "software", "app", "apps",
+    "builder", "builders", "service", "services", "agency", "agencies",
+    "company", "companies", "free", "cheap", "guide", "tutorial", "tutorials",
 }
 
 
