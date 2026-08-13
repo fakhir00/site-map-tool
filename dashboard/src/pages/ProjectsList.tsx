@@ -211,7 +211,43 @@ export function ProjectsList() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input className="pl-9" onChange={(event) => setSearch(event.target.value)} placeholder="Search projects" value={search} />
         </div>
-        {totals.running > 0 && <Badge variant="indigo">{totals.running} running</Badge>}
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {isSelectionMode ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (selectedIds.size === filteredProjects.length) {
+                    setSelectedIds(new Set())
+                  } else {
+                    setSelectedIds(new Set(filteredProjects.map(p => p.id)))
+                  }
+                }}
+              >
+                {selectedIds.size === filteredProjects.length ? 'Deselect All' : 'Select All'}
+              </Button>
+              <Button 
+                variant="destructive"
+                size="sm"
+                disabled={selectedIds.size === 0 || isDeletingBulk}
+                onClick={handleBulkDelete}
+              >
+                {isDeletingBulk ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Delete ({selectedIds.size})
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setIsSelectionMode(true)}>
+              Select
+            </Button>
+          )}
+          {totals.running > 0 && <Badge variant="indigo">{totals.running} running</Badge>}
+        </div>
       </section>
 
       {isLoading ? (
@@ -237,8 +273,27 @@ export function ProjectsList() {
           {filteredProjects.map((project) => {
             const completed = project.urls_found ? Math.round(((project.urls_processed + project.urls_failed) / project.urls_found) * 100) : 0
             return (
-              <Card className="flex min-h-56 flex-col" key={project.id}>
-                <div className="flex items-start justify-between gap-3">
+              <Card 
+                className={`flex min-h-56 flex-col relative ${isSelectionMode && selectedIds.has(project.id) ? 'ring-2 ring-cyan-500 border-cyan-500' : ''}`} 
+                key={project.id}
+              >
+                {isSelectionMode && (
+                  <div className="absolute top-6 left-6 z-10">
+                    <input 
+                      type="checkbox"
+                      className="h-5 w-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer"
+                      checked={selectedIds.has(project.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedIds)
+                        if (e.target.checked) newSet.add(project.id)
+                        else newSet.delete(project.id)
+                        setSelectedIds(newSet)
+                      }}
+                    />
+                  </div>
+                )}
+                
+                <div className={`flex items-start justify-between gap-3 ${isSelectionMode ? 'pl-8' : ''}`}>
                   <div className="min-w-0">
                     <Link className="block truncate text-lg font-semibold text-slate-950 hover:text-cyan-800" to={`/projects/${project.id}`}>
                       {project.name}
@@ -254,21 +309,23 @@ export function ProjectsList() {
                     </a>
                     <p className="mt-2 truncate text-sm font-medium text-slate-700">{primaryKeyword(project)}</p>
                   </div>
-                  <button
-                    aria-label={`Delete ${project.name}`}
-                    className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
-                    disabled={deleteMutation.isPending}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (window.confirm(`Delete ${project.name}?`)) {
-                        deleteMutation.mutate(project.id)
-                      }
-                    }}
-                    type="button"
-                  >
-                    {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  </button>
+                  {!isSelectionMode && (
+                    <button
+                      aria-label={`Delete ${project.name}`}
+                      className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                      disabled={deleteMutation.isPending}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        if (window.confirm(`Delete ${project.name}?`)) {
+                          deleteMutation.mutate(project.id)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  )}
                 </div>
 
                 <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
