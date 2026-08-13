@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
@@ -16,15 +16,20 @@ type KeywordBankItem = {
   frequency: number
   notes: string | null
   saved_at: string
+  is_done?: boolean
 }
 
 export default function WriteBlog() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  
+  const initialKeyword = searchParams.get('keyword') || ''
+
   const [writingKeywordId, setWritingKeywordId] = useState<string | null>(null)
   const [articleError, setArticleError] = useState<string>('')
   
-  const [mainKeyword, setMainKeyword] = useState('')
+  const [mainKeyword, setMainKeyword] = useState(initialKeyword)
   const [keywordCluster, setKeywordCluster] = useState('')
   const [selectedKeyword, setSelectedKeyword] = useState<KeywordBankItem | null>(null)
 
@@ -32,6 +37,13 @@ export default function WriteBlog() {
     queryKey: ['keyword-bank'],
     queryFn: () => api.get<KeywordBankItem[]>('/keyword-bank'),
   })
+
+  useEffect(() => {
+    if (initialKeyword && allKeywords.length > 0 && !selectedKeyword) {
+      const match = allKeywords.find(kw => kw.phrase === initialKeyword)
+      if (match) setSelectedKeyword(match)
+    }
+  }, [initialKeyword, allKeywords, selectedKeyword])
 
   const keywords = allKeywords.filter(kw => kw.notes === '#blog')
 

@@ -26,6 +26,14 @@ export default function SavedKeywords() {
       <SavedKeywordsTable
         keywords={keywordBank}
         isLoading={isLoading}
+        actionIcon="both"
+        onAction={(kw, actionType) => {
+          if (actionType === 'write') {
+            navigate(`/write-blog/${kw.project_id}?keyword=${encodeURIComponent(kw.phrase)}`)
+          } else {
+            navigate(`/gap-page-prompts?keyword=${encodeURIComponent(kw.phrase)}`)
+          }
+        }}
       />
     </div>
   )

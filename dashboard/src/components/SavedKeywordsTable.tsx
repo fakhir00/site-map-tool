@@ -8,8 +8,8 @@ import { Card } from './ui/Card'
 export type SavedKeywordsTableProps = {
   keywords: KeywordBankEntry[]
   isLoading: boolean
-  actionIcon?: 'write' | 'build'
-  onAction?: (keyword: KeywordBankEntry) => void
+  actionIcon?: 'write' | 'build' | 'both'
+  onAction?: (keyword: KeywordBankEntry, actionType: 'write' | 'build') => void
 }
 
 export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }: SavedKeywordsTableProps) {
@@ -146,15 +146,30 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
                   </td>
                   {onAction && (
                     <td className="px-5 py-4 text-right">
-                      <Button
-                        onClick={() => onAction(kw)}
-                        size="sm"
-                        variant="secondary"
-                        disabled={kw.is_done}
-                      >
-                        {actionIcon === 'write' ? <FilePenLine className="h-4 w-4 mr-2" /> : <Search className="h-4 w-4 mr-2" />}
-                        {actionIcon === 'write' ? 'Write' : 'Build'}
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        {(actionIcon === 'write' || actionIcon === 'both') && (
+                          <Button
+                            onClick={() => onAction(kw, 'write')}
+                            size="sm"
+                            variant="secondary"
+                            disabled={kw.is_done}
+                          >
+                            <FilePenLine className="h-4 w-4 mr-2" />
+                            Write
+                          </Button>
+                        )}
+                        {(actionIcon === 'build' || actionIcon === 'both') && (
+                          <Button
+                            onClick={() => onAction(kw, 'build')}
+                            size="sm"
+                            variant="secondary"
+                            disabled={kw.is_done}
+                          >
+                            <Search className="h-4 w-4 mr-2" />
+                            Build
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>

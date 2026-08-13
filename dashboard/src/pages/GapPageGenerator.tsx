@@ -1,23 +1,10 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { api } from '../lib/api'
+import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
-import { Check, Copy, Loader2, Sparkles, FileText, Search } from 'lucide-react'
+import { Check, Copy, Loader2, Sparkles } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
-
-type KeywordBankItem = {
-  id: string
-  keyword_id: string
-  project_id: string
-  phrase: string
-  keyword_type: string
-  frequency: number
-  notes: string | null
-  saved_at: string
-}
-
 
 type IntentResponse = {
   intent: string
@@ -46,7 +33,7 @@ export default function GapPageGenerator() {
 
   const { data: allKeywords = [], isLoading } = useQuery({
     queryKey: ['keyword-bank'],
-    queryFn: () => api.get<KeywordBankItem[]>('/keyword-bank'),
+    queryFn: () => api.get<KeywordBankEntry[]>('/keyword-bank'),
   })
 
   const keywords = allKeywords.filter(kw => kw.notes === '#tool')
@@ -99,7 +86,7 @@ export default function GapPageGenerator() {
   }
 
   const renderStep1 = () => (
-    <Card className="max-w-3xl mx-auto mt-8 p-6">
+    <Card className="p-6">
       <div className="flex items-center gap-3 mb-6">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
           <Sparkles className="h-5 w-5" />
@@ -163,7 +150,7 @@ export default function GapPageGenerator() {
   )
 
   const renderStep2 = () => (
-    <Card className="max-w-3xl mx-auto mt-8 p-6">
+    <Card className="p-6">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-slate-900 mb-2">Verify Intent</h2>
         <p className="text-sm text-slate-500">
@@ -228,7 +215,7 @@ export default function GapPageGenerator() {
   )
 
   const renderStep3 = () => (
-    <div className="max-w-5xl mx-auto mt-8">
+    <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Build Tool Prompt</h3>
@@ -292,11 +279,11 @@ export default function GapPageGenerator() {
           {generatedPrompt?.prompt}
         </div>
       </Card>
-    </div>
+    </Card>
   )
 
   return (
-    <div className="p-6 space-y-8 max-w-5xl mx-auto">
+    <div className="mx-auto max-w-3xl py-8 space-y-8">
       <div>
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
