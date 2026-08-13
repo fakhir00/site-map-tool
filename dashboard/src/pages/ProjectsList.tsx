@@ -229,7 +229,7 @@ export function ProjectsList() {
                 {selectedIds.size === filteredProjects.length ? 'Deselect All' : 'Select All'}
               </Button>
               <Button 
-                variant="destructive"
+                variant="danger"
                 size="sm"
                 disabled={selectedIds.size === 0 || isDeletingBulk}
                 onClick={handleBulkDelete}
@@ -237,7 +237,7 @@ export function ProjectsList() {
                 {isDeletingBulk ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
                 Delete ({selectedIds.size})
               </Button>
-              <Button variant="outline" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
+              <Button variant="secondary" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
                 Cancel
               </Button>
             </>

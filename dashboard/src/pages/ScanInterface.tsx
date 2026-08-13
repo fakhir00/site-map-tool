@@ -1,22 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Project } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
-import { FileText, Search } from 'lucide-react'
-
-type KeywordBankItem = {
-  id: string
-  keyword_id: string
-  project_id: string
-  phrase: string
-  keyword_type: string
-  frequency: number
-  notes: string | null
-  saved_at: string
-}
 
 function displayHost(value: string) {
   try {
@@ -36,13 +24,6 @@ export default function ScanInterface() {
     primary_keyword: '',
     search_locale: 'us',
   })
-
-  const { data: allKeywords = [], isLoading } = useQuery({
-    queryKey: ['keyword-bank'],
-    queryFn: () => api.get<KeywordBankItem[]>('/keyword-bank'),
-  })
-
-  const keywords = allKeywords.filter(kw => kw.notes === '#tool')
 
   const createMutation = useMutation({
     mutationFn: (body: any) => api.post<Project>('/projects', body),

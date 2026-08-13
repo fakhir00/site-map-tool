@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
-import { Search, Loader2, ArrowRight, Clock, Plus } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Search, Loader2, Clock, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -25,17 +25,23 @@ export function GoldHunter() {
   const queryClient = useQueryClient()
   const [url, setUrl] = useState('')
 
-  const { data: history = [], isLoading: isLoadingHistory } = useQuery({
+  const [error, setError] = useState<string | null>(null)
+
+  const { data: history = [] } = useQuery({
     queryKey: ['goldhunter_history'],
     queryFn: () => api.get<GoldHunterScan[]>('/goldhunter/history'),
   })
 
   const scanMutation = useMutation({
     mutationFn: (targetUrl: string) => api.post<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }),
+    onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goldhunter_history'] })
       setUrl('')
     },
+    onError: (err: any) => {
+      setError(err.message || 'Failed to mine gold from URL')
+    }
   })
 
   const handleScan = (e: React.FormEvent) => {
@@ -56,6 +62,12 @@ export function GoldHunter() {
           Mine high-value seed keywords from any of your URLs.
         </p>
       </section>
+
+      {error && (
+        <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <Card className="p-6">
         <form onSubmit={handleScan} className="flex gap-4">

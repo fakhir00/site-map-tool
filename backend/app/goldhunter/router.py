@@ -56,11 +56,16 @@ async def scan_gold_hunter(
     if not result:
         raise HTTPException(status_code=500, detail="AI generation failed.")
         
+    audit_summary = result.get("audit_summary", "")
+    if isinstance(audit_summary, dict):
+        import json
+        audit_summary = json.dumps(audit_summary, indent=2)
+
     # 3. Save to database
     scan = GoldHunterScan(
         user_id=current_user.id,
         input_url=target_url,
-        audit_summary=result.get("audit_summary", ""),
+        audit_summary=audit_summary,
         seeds=result.get("seeds", [])
     )
     db.add(scan)
