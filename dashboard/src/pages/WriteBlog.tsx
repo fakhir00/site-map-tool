@@ -1,41 +1,27 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../lib/api'
+import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { FilePenLine, FileText, Loader2 } from 'lucide-react'
+import { FilePenLine, Loader2 } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
-
-type KeywordBankItem = {
-  id: string
-  keyword_id: string
-  project_id: string
-  phrase: string
-  keyword_type: string
-  frequency: number
-  notes: string | null
-  saved_at: string
-  is_done?: boolean
-}
 
 export default function WriteBlog() {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   
   const initialKeyword = searchParams.get('keyword') || ''
 
-  const [writingKeywordId, setWritingKeywordId] = useState<string | null>(null)
   const [articleError, setArticleError] = useState<string>('')
   
   const [mainKeyword, setMainKeyword] = useState(initialKeyword)
   const [keywordCluster, setKeywordCluster] = useState('')
-  const [selectedKeyword, setSelectedKeyword] = useState<KeywordBankItem | null>(null)
+  const [selectedKeyword, setSelectedKeyword] = useState<KeywordBankEntry | null>(null)
 
   const { data: allKeywords = [], isLoading } = useQuery({
     queryKey: ['keyword-bank'],
-    queryFn: () => api.get<KeywordBankItem[]>('/keyword-bank'),
+    queryFn: () => api.get<KeywordBankEntry[]>('/keyword-bank'),
   })
 
   useEffect(() => {
@@ -50,18 +36,15 @@ export default function WriteBlog() {
   const articleMutation = useMutation({
     mutationFn: ({ keywordId, projectId }: { keywordId: string, projectId: string }) => 
       api.postArticle(`/projects/${projectId}/keywords/${keywordId}/article/generate`, {}),
-    onMutate: ({ keywordId }) => {
-      setWritingKeywordId(keywordId)
+    onMutate: () => {
       setArticleError('')
     },
     onSuccess: (_, { projectId }) => {
       queryClient.invalidateQueries({ queryKey: ['project-articles', projectId] })
       window.open(`/write-blog/${projectId}`, '_blank')
-      setWritingKeywordId(null)
     },
     onError: (err) => {
       setArticleError(err instanceof Error ? err.message : 'Article generation failed')
-      setWritingKeywordId(null)
     },
   })
 

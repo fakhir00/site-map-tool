@@ -18,6 +18,9 @@ type DemoUserRecord = User & {
 type DemoKeywordBankRecord = KeywordBankEntry & {
   user_id: string
   keyword_id: string
+  project_id: string | null
+  is_done: boolean
+  done_at: string | null
 }
 
 type DemoProjectRecord = Project & {
@@ -403,11 +406,14 @@ function saveKeywordToBank(state: DemoState, user: User, project: DemoProjectRec
     id: crypto.randomUUID(),
     user_id: user.id,
     keyword_id: keyword.id,
+    project_id: project.id,
     phrase: keyword.phrase,
     keyword_type: keyword.keyword_type,
     frequency: keyword.frequency,
     notes: null,
     saved_at: isoNow(),
+    is_done: false,
+    done_at: null,
   } satisfies DemoKeywordBankRecord
 
   state.keywordBank.unshift(entry)
