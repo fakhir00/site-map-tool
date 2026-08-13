@@ -1,9 +1,22 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
-import { Check, Copy, Loader2, Sparkles } from 'lucide-react'
+import { Button } from '../components/ui/Button'
+import { Check, Copy, Loader2, Sparkles, FileText, Search } from 'lucide-react'
+import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
+
+type KeywordBankItem = {
+  id: string
+  keyword_id: string
+  project_id: string
+  phrase: string
+  keyword_type: string
+  frequency: number
+  notes: string | null
+  saved_at: string
+}
 
 
 type IntentResponse = {
@@ -30,6 +43,13 @@ export default function GapPageGenerator() {
   
   const [copied, setCopied] = useState(false)
   const [step, setStep] = useState<1 | 2 | 3>(1)
+
+  const { data: allKeywords = [], isLoading } = useQuery({
+    queryKey: ['keyword-bank'],
+    queryFn: () => api.get<KeywordBankItem[]>('/keyword-bank'),
+  })
+
+  const keywords = allKeywords.filter(kw => kw.notes === '#tool')
 
   const analyzeIntentMutation = useMutation({
     mutationFn: async () => {
@@ -276,10 +296,23 @@ export default function GapPageGenerator() {
   )
 
   return (
-    <div className="p-6">
-      {step === 1 && renderStep1()}
-      {step === 2 && renderStep2()}
-      {step === 3 && renderStep3()}
+    <div className="p-6 space-y-8 max-w-5xl mx-auto">
+      <div>
+        {step === 1 && renderStep1()}
+        {step === 2 && renderStep2()}
+        {step === 3 && renderStep3()}
+      </div>
+
+      {/* Saved Keywords from Gap Hunter */}
+      <SavedKeywordsTable
+        keywords={keywords}
+        isLoading={isLoading}
+        actionIcon="build"
+        onAction={(kw) => {
+          setKeyword(kw.phrase)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
     </div>
   )
 }

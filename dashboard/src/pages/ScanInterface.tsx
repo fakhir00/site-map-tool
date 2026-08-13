@@ -1,10 +1,22 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { api, type Project } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { FileText, Search } from 'lucide-react'
+
+type KeywordBankItem = {
+  id: string
+  keyword_id: string
+  project_id: string
+  phrase: string
+  keyword_type: string
+  frequency: number
+  notes: string | null
+  saved_at: string
+}
 
 function displayHost(value: string) {
   try {
@@ -25,13 +37,20 @@ export default function ScanInterface() {
     search_locale: 'us',
   })
 
+  const { data: allKeywords = [], isLoading } = useQuery({
+    queryKey: ['keyword-bank'],
+    queryFn: () => api.get<KeywordBankItem[]>('/keyword-bank'),
+  })
+
+  const keywords = allKeywords.filter(kw => kw.notes === '#tool')
+
   const createMutation = useMutation({
     mutationFn: (body: any) => api.post<Project>('/projects', body),
-    onSuccess: async (project) => {
+    onSuccess: async (project: Project) => {
       try {
         await api.post(`/projects/${project.id}/scan/start`)
       } catch (err) {
-        console.error('Failed to auto-start scan', err)
+        console.error('Failed to auto-start scan:', err)
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       navigate(`/projects/${project.id}`)
@@ -54,7 +73,7 @@ export default function ScanInterface() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl py-8">
+    <div className="mx-auto max-w-3xl py-8 space-y-8">
       <Card className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-950">New Gap Hunter</h1>

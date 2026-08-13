@@ -121,11 +121,15 @@ export type UrlItem = {
 
 export type KeywordBankEntry = {
   id: string
+  keyword_id: string
+  project_id: string
   phrase: string
   keyword_type: Keyword['keyword_type']
   frequency: number
   notes: string | null
   saved_at: string
+  is_done: boolean
+  done_at: string | null
 }
 
 export type ArticleDraft = {

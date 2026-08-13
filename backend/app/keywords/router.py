@@ -7,9 +7,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import csv
+from datetime import datetime, timedelta
 from app.database import get_db
 from app.models import User, Project, Keyword, KeywordUrl, Url, KeywordBank
-from app.schemas import KeywordOut, KeywordListResponse, KeywordSourceOut, SaveKeywordRequest
+from app.schemas import KeywordOut, KeywordListResponse, KeywordSourceOut, SaveKeywordRequest, KeywordBulkSaveRequest, KeywordBankBulkActionRequest
 from app.auth.jwt import get_current_user
 from nlp.keywords import is_publishable_keyword, seed_keyword_terms
 from nlp.openrouter import ai_generated_source, generate_ai_keywords
@@ -301,16 +302,59 @@ async def save_keyword(
     db.add(entry)
     return {"message": "Keyword saved to bank"}
 
+@router.post("/{project_id}/keywords/bulk-save", status_code=201)
+async def bulk_save_keywords(
+    project_id: uuid.UUID,
+    body: KeywordBulkSaveRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _assert_owns_project(project_id, current_user.id, db)
+
+    # Filter out keywords that don't exist in the project
+    kw_result = await db.execute(
+        select(Keyword.id).where(Keyword.id.in_(body.keyword_ids), Keyword.project_id == project_id)
+    )
+    valid_ids = [row[0] for row in kw_result.all()]
+
+    if not valid_ids:
+        return {"message": "No valid keywords found"}
+
+    # Find already saved keywords
+    existing_result = await db.execute(
+        select(KeywordBank.keyword_id).where(
+            KeywordBank.user_id == current_user.id,
+            KeywordBank.keyword_id.in_(valid_ids)
+        )
+    )
+    existing_ids = {row[0] for row in existing_result.all()}
+
+    # Create new entries
+    new_entries = [
+        KeywordBank(user_id=current_user.id, keyword_id=kw_id, notes=body.notes)
+        for kw_id in valid_ids if kw_id not in existing_ids
+    ]
+    
+    if new_entries:
+        db.add_all(new_entries)
+        
+    return {"message": f"{len(new_entries)} keywords saved to bank"}
+
 
 @bank_router.get("")
 async def get_keyword_bank(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    two_days_ago = datetime.utcnow() - timedelta(days=2)
+    
     result = await db.execute(
         select(KeywordBank, Keyword)
         .join(Keyword, Keyword.id == KeywordBank.keyword_id)
-        .where(KeywordBank.user_id == current_user.id)
+        .where(
+            KeywordBank.user_id == current_user.id,
+            ~((KeywordBank.is_done == True) & (KeywordBank.done_at < two_days_ago))
+        )
         .order_by(KeywordBank.saved_at.desc())
     )
     rows = result.all()
@@ -324,9 +368,46 @@ async def get_keyword_bank(
             "frequency": kw.frequency,
             "notes": bank.notes,
             "saved_at": bank.saved_at.isoformat(),
+            "is_done": bank.is_done,
+            "done_at": bank.done_at.isoformat() if bank.done_at else None,
         }
         for bank, kw in rows
     ]
+
+from sqlalchemy import update, delete
+
+@bank_router.post("/bulk-action")
+async def bulk_action_keyword_bank(
+    body: KeywordBankBulkActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not body.keyword_bank_ids:
+        return {"message": "No keywords selected"}
+        
+    if body.action == "delete":
+        await db.execute(
+            delete(KeywordBank).where(
+                KeywordBank.id.in_(body.keyword_bank_ids),
+                KeywordBank.user_id == current_user.id
+            )
+        )
+    elif body.action == "mark_done":
+        await db.execute(
+            update(KeywordBank).where(
+                KeywordBank.id.in_(body.keyword_bank_ids),
+                KeywordBank.user_id == current_user.id
+            ).values(is_done=True, done_at=datetime.utcnow())
+        )
+    elif body.action == "mark_not_done":
+        await db.execute(
+            update(KeywordBank).where(
+                KeywordBank.id.in_(body.keyword_bank_ids),
+                KeywordBank.user_id == current_user.id
+            ).values(is_done=False, done_at=None)
+        )
+        
+    return {"message": f"Action {body.action} completed successfully"}
 
 
 def _is_displayable_keyword(keyword: Keyword, topic_terms: set[str]) -> bool:

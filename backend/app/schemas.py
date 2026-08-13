@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from urllib.parse import urlparse
 
@@ -188,6 +188,14 @@ class KeywordListResponse(BaseModel):
 
 class SaveKeywordRequest(BaseModel):
     notes: Optional[str] = None
+
+class KeywordBulkSaveRequest(BaseModel):
+    keyword_ids: List[uuid.UUID]
+    notes: Optional[str] = None
+
+class KeywordBankBulkActionRequest(BaseModel):
+    keyword_bank_ids: List[uuid.UUID]
+    action: Literal["mark_done", "mark_not_done", "delete"]
 
 
 class ArticleDraftOut(BaseModel):

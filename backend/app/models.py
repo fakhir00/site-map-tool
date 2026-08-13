@@ -134,6 +134,8 @@ class KeywordBank(Base):
     keyword_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    is_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    done_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship("User", back_populates="keyword_bank")
     keyword: Mapped["Keyword"] = relationship("Keyword", back_populates="bank_entries")

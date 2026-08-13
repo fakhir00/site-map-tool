@@ -122,6 +122,23 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
     },
   })
 
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  const bulkSaveMutation = useMutation({
+    mutationFn: ({ tag }: { tag: string }) => 
+      api.post(`/projects/${projectId}/keywords/bulk-save`, { 
+        keyword_ids: Array.from(selectedIds), 
+        notes: tag 
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['keyword-bank'] })
+      setIsSelectionMode(false)
+      setSelectedIds(new Set())
+      alert(data.message)
+    }
+  })
+
   const articleMutation = useMutation({
     mutationFn: (keywordId: string) => api.postArticle(`/projects/${projectId}/keywords/${keywordId}/article/generate`, {}),
     onMutate: (keywordId) => {
@@ -197,7 +214,48 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {isSelectionMode ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (selectedIds.size === keywords.length) {
+                    setSelectedIds(new Set())
+                  } else {
+                    setSelectedIds(new Set(keywords.map(k => k.id)))
+                  }
+                }}
+              >
+                {selectedIds.size === keywords.length ? 'Deselect All' : 'Select All'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={selectedIds.size === 0 || bulkSaveMutation.isPending}
+                onClick={() => bulkSaveMutation.mutate({ tag: '#tool' })}
+              >
+                Tool Page
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={selectedIds.size === 0 || bulkSaveMutation.isPending}
+                onClick={() => bulkSaveMutation.mutate({ tag: '#blog' })}
+              >
+                Blog
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setIsSelectionMode(true)}>
+              Select
+            </Button>
+          )}
+
           <Button 
             disabled={topPicksMutation.isPending} 
             onClick={() => topPicksMutation.mutate()} 
@@ -254,6 +312,19 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                 <tr className="hover:bg-slate-50" key={keyword.id}>
                   <td className="max-w-[360px] px-5 py-4">
                     <div className="flex items-center gap-2">
+                      {isSelectionMode && (
+                        <input 
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer flex-shrink-0"
+                          checked={selectedIds.has(keyword.id)}
+                          onChange={(e) => {
+                            const newSet = new Set(selectedIds)
+                            if (e.target.checked) newSet.add(keyword.id)
+                            else newSet.delete(keyword.id)
+                            setSelectedIds(newSet)
+                          }}
+                        />
+                      )}
                       <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline">
                         {keyword.phrase}
                       </a>
