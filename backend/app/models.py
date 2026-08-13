@@ -25,6 +25,7 @@ class User(Base):
 
     projects: Mapped[List["Project"]] = relationship("Project", back_populates="user", cascade="all, delete-orphan")
     keyword_bank: Mapped[List["KeywordBank"]] = relationship("KeywordBank", back_populates="user", cascade="all, delete-orphan")
+    goldhunter_scans: Mapped[List["GoldHunterScan"]] = relationship("GoldHunterScan", back_populates="user", cascade="all, delete-orphan")
 
 
 class Project(Base):
@@ -162,3 +163,15 @@ class ArticleDraft(Base):
     __table_args__ = (
         Index("ix_article_drafts_project_created_at", "project_id", "created_at"),
     )
+
+class GoldHunterScan(Base):
+    __tablename__ = "goldhunter_scans"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    input_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    audit_summary: Mapped[Optional[str]] = mapped_column(Text)
+    seeds: Mapped[Optional[list]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="goldhunter_scans")

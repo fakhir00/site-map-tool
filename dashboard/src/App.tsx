@@ -11,6 +11,7 @@ import ScanInterface from './pages/ScanInterface'
 import WriteBlog from './pages/WriteBlog'
 import WriteBlogArticle from './pages/WriteBlogArticle'
 import SavedKeywords from './pages/SavedKeywords'
+import { GoldHunter } from './pages/GoldHunter'
 import { auth } from './lib/api'
 
 function PrivateRoute() {
@@ -50,6 +51,7 @@ function App() {
             <Route path="write-blog/:projectId" element={<WriteBlogArticle />} />
             <Route path="gap-page-prompts" element={<GapPageGenerator />} />
             <Route path="saved-keywords" element={<SavedKeywords />} />
+            <Route path="gold-hunter" element={<GoldHunter />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Route>

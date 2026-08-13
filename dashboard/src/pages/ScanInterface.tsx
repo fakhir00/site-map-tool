@@ -27,7 +27,12 @@ export default function ScanInterface() {
 
   const createMutation = useMutation({
     mutationFn: (body: any) => api.post<Project>('/projects', body),
-    onSuccess: (project) => {
+    onSuccess: async (project) => {
+      try {
+        await api.post(`/projects/${project.id}/scan/start`)
+      } catch (err) {
+        console.error('Failed to auto-start scan', err)
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       navigate(`/projects/${project.id}`)
     },

@@ -1,5 +1,5 @@
-import { type FormEvent, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { type FormEvent, useMemo, useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
 import { api, type Project } from '../lib/api'
@@ -57,10 +57,27 @@ function statusBadge(status: Project['status']) {
 
 export function ProjectsList() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const [showNewModal, setShowNewModal] = useState(false)
   const [search, setSearch] = useState('')
   const [form, setForm] = useState<ProjectForm>(initialProject)
+
+  useEffect(() => {
+    const newKeyword = searchParams.get('new_keyword')
+    const siteUrl = searchParams.get('site_url')
+    
+    if (newKeyword) {
+      setForm((prev) => ({ 
+        ...prev, 
+        primary_keyword: newKeyword,
+        ...(siteUrl ? { site_url: siteUrl } : {})
+      }))
+      setShowNewModal(true)
+      // clear param so it doesn't stay open if they refresh
+      setSearchParams(new URLSearchParams())
+    }
+  }, [searchParams, setSearchParams])
 
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
@@ -93,7 +110,12 @@ export function ProjectsList() {
 
   const createMutation = useMutation({
     mutationFn: (payload: ProjectCreate) => api.post<Project>('/projects', payload),
-    onSuccess: (project: Project) => {
+    onSuccess: async (project: Project) => {
+      try {
+        await api.post(`/projects/${project.id}/scan/start`)
+      } catch (err) {
+        console.error('Failed to auto-start scan', err)
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setShowNewModal(false)
       setForm(initialProject)
@@ -107,6 +129,30 @@ export function ProjectsList() {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
   })
+
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false)
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!window.confirm(`Delete ${selectedIds.size} projects?`)) return
+    
+    setIsDeletingBulk(true)
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id => api.delete(`/projects/${id}`))
+      )
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setSelectedIds(new Set())
+      setIsSelectionMode(false)
+    } catch (err) {
+      console.error('Failed to bulk delete', err)
+      alert('Failed to delete some projects.')
+    } finally {
+      setIsDeletingBulk(false)
+    }
+  }
 
   const handleCreate = (event: FormEvent) => {
     event.preventDefault()

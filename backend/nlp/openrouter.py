@@ -980,3 +980,81 @@ Evaluation rules:
     except Exception as exc:
         logger.warning("Article audit failed: %s", exc)
         return None
+
+
+async def generate_gold_hunter_seeds(url: str, url_content: str) -> dict[str, Any] | None:
+    """Generate 3 high-value seed keywords using the Gold Nugget Agent prompt."""
+    if not is_ai_configured():
+        logger.error("AI API key not configured")
+        return None
+
+    prompt = f"""
+[SYSTEM COMMANDS]
+
+You are the Gold Nugget Agent. Your purpose is to mine 3 high-value seed keywords from any given URL.
+
+INPUT URL: {url}
+URL CONTENT:
+{url_content[:10000]}
+
+PHASE 1: SITE AUDIT
+Audit the URL's visible content (Title, H1, Meta, Features, Copy). Extract:
+- Primary Keyword
+- Industry / Niche
+- Core Action (the exact transformation the tool performs)
+- Target Audience
+- Capabilities (DOES)
+- Hard Boundaries (DOES NOT)
+
+PHASE 2: DOMAIN FENCING
+Ban umbrella terms (general, basic, professional, engineering). Block adjacent misaligned domains (e.g., IT for an electronics site). If the Primary Keyword is vague, force-inject the strongest specific anchor discovered during the audit to kill ambiguity.
+
+PHASE 3: GAP DISCOVERY
+Identify missing elements. Classify into:
+- Tool Gaps (missing features, sub-tools, variations)
+- Content Gaps (missing educational guides, comparisons, use-case tutorials)
+Generate a pool of 5-6 candidate seeds that directly relate to the Core Action.
+
+PHASE 4: THE TRIPLE GATE FILTER (MANDATORY)
+Reject any seed that fails any single gate.
+
+Gate A (Volume): Must imply 1,000+ monthly searches. Reject unnatural, forum-style, or zero-volume phrases.
+Gate B (Sitemap Depth): The Top 10 results must be content-heavy sites with deep sitemaps (Wikipedia, Verywell Mind, Edutopia, TechCrunch, DataCamp, established educational or media domains). Reject seeds whose Top 10 are shallow personal blogs, app stores, Quora, or single-page tools.
+Gate C (Thematic Relevance): The seed must explicitly tie back to the site's Core Action. If the tool spins a wheel, the seed must contain "wheel", "spin", "random picker", or a direct use-case of that mechanic. Reject pure psychology, fitness, or engineering drifts that do not anchor to the tool's specific mechanic.
+
+PHASE 5: USE-CASE BROADENING (THE PIVOT)
+If the Primary Keyword is a short head-term (e.g., "yes or no wheel", "dot plot maker") that fails the Sitemap Gate due to shallow tool competitors, do NOT output the head-term. Do NOT drift into adjacent fields. Instead, force-inject a high-volume, content-rich use-case modifier (e.g., "for classroom", "best [category] websites", "how to make [tool] for [purpose]") to pivot the search toward educational, review, or tutorial sites while keeping the mechanic intact.
+
+PHASE 6: FINAL OUTPUT
+Select the 3 strongest seeds that pass all three gates. Provide your full audit summary and the final 3 seeds, each with a one-sentence justification covering why it passed the Volume Gate, Sitemap Gate, and Relevance Gate.
+
+Return ONLY a JSON object in this exact format:
+{{
+  "audit_summary": "Your detailed audit summary from Phase 1-5.",
+  "seeds": [
+    {{
+      "keyword": "seed phrase 1",
+      "justification": "Why it passed..."
+    }},
+    {{
+      "keyword": "seed phrase 2",
+      "justification": "Why it passed..."
+    }},
+    {{
+      "keyword": "seed phrase 3",
+      "justification": "Why it passed..."
+    }}
+  ]
+}}
+"""
+    try:
+        payload = await _achat_json(
+            system_prompt="You output only valid JSON. You are the Gold Nugget Agent.",
+            user_prompt=prompt,
+            temperature=0.3,
+            max_tokens=2500,
+        )
+        return payload if isinstance(payload, dict) else None
+    except Exception as exc:
+        logger.warning("Gold hunter failed: %s", exc)
+        return None

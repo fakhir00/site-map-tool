@@ -118,6 +118,7 @@ from app.keywords.router import bank_router as keyword_bank_router
 from app.keywords.router import router as keywords_router
 from app.content.router import router as content_router
 from app.website_prompts.router import router as website_prompts_router
+from app.goldhunter.router import router as goldhunter_router
 
 app.include_router(auth_router)
 app.include_router(projects_router)
@@ -126,6 +127,7 @@ app.include_router(keywords_router)
 app.include_router(keyword_bank_router)
 app.include_router(content_router)
 app.include_router(website_prompts_router)
+app.include_router(goldhunter_router, prefix="/api")
 
 
 @app.get("/api/health")
