@@ -1182,6 +1182,8 @@ def _build_ai_refined_accumulator(
         source_phrase = clean_phrase(str(item.get("source_phrase", "")))
         phrase = clean_phrase(str(item.get("phrase", "")))
         keyword_type = normalize_keyword_type(item.get("type"))
+        volume_str = str(item.get("volume", "")).strip().lower()
+
         if source_phrase not in source_lookup and phrase in source_lookup:
             source_phrase = phrase
         source_data = source_lookup.get(source_phrase)
@@ -1195,6 +1197,7 @@ def _build_ai_refined_accumulator(
                 "url_ids": set(),
                 "score": float(len(ai_recommendations) - index),
                 "source": "sitemap_ai",
+                "volume_str": volume_str,
             }
         refined[phrase]["count"] += int(source_data.get("count", 1))
         refined[phrase]["url_ids"].update(source_data.get("url_ids", set()))
@@ -1235,17 +1238,27 @@ def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, d
             keyword = db.execute(
                 select(Keyword).where(Keyword.project_id == project_id, Keyword.phrase == phrase)
             ).scalar_one_or_none()
+            
+            volume_str = data.get("volume_str", "")
+            search_volume = None
+            if volume_str == "high": search_volume = 10000
+            elif volume_str == "medium": search_volume = 1000
+            elif volume_str == "low": search_volume = 100
+
             if not keyword:
                 keyword = Keyword(
                     project_id=project_id,
                     phrase=phrase,
                     keyword_type=data["type"],
                     frequency=data["count"],
+                    search_volume=search_volume,
                 )
                 db.add(keyword)
                 db.flush()
             else:
                 keyword.frequency += data["count"]
+                if search_volume is not None:
+                    keyword.search_volume = search_volume
                 keyword.updated_at = datetime.utcnow()
 
             for url_id in data["url_ids"]:
