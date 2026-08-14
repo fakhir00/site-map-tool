@@ -359,25 +359,41 @@ def filter_keyword_gap_recommendations(
 
     trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
     prompt = f"""
-You are an expert SEO strategist filtering keyword gap recommendations.
+[SYSTEM COMMAND — FINAL KEYWORD SANITY FILTER]
+
+You are a Keyword Sanity Filter. You have received a raw list of topics, headings, and labels extracted from competitor sitemaps.
 
 The user's target seed keywords are:
 {json.dumps(seed_keywords)}
 
-Below are candidate keyword gaps extracted from top-ranking competitor sitemaps.
-Each candidate includes the original phrase, competitor page count, competitor domain count, and current type.
-
 Candidates:
 {json.dumps(trimmed_candidates, ensure_ascii=True)}
 
-Return ONLY a JSON array. Select up to {max_keywords} candidates that are genuinely useful content or landing-page opportunities for this site.
-Remove thin, generic, navigational, off-topic, duplicate, brand-only, and awkward sitemap-slug phrases.
-You may lightly improve wording, but keep the intent grounded in the source phrase.
+**Step 0: NATURAL LANGUAGE NORMALIZATION (NEW — CRITICAL)**
+For every raw label, rewrite it into a natural human search query:
+- Reverse awkward structures: "board games using spin wheel" -> "spin the wheel board game".
+- Remove redundant words: "games using spin wheel" -> "spin the wheel games".
+- Use common search patterns: "spin wheel for instagram" -> "instagram spin wheel".
+- Prioritize shorter, standard collocations (3-4 words) over longer descriptive phrases.
+- If the normalized query sounds unnatural, rewrite it again until it passes the "Would a real human type this?" test.
 
-Each returned object must include:
-- "source_phrase": exact original phrase from the candidates
-- "phrase": improved lowercase keyword phrase
-- "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
+**Step 1: Volume Gate**
+- For the normalized query, estimate monthly search volume.
+- Keep if 500+ per month.
+- Reject if below 500.
+
+**Step 2: Intent Clustering (Anti-Cannibalization)**
+- Group normalized queries that share the same user intent.
+- For each cluster, select the highest-volume query as PRIMARY.
+- Merge secondary queries into the primary content piece.
+
+**Step 3: Final Output**
+- Output ONLY one keyword per intent cluster (maximum 5-7 total).
+- Return ONLY a JSON array. Each returned object must include:
+  - "source_phrase": exact original phrase from the candidates (CRITICAL for matching)
+  - "phrase": the normalized search query
+  - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
+  - "volume": Estimated volume (High/Medium/Low)
 """
 
     try:
