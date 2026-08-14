@@ -38,7 +38,7 @@ COMMON_SITEMAP_PATHS = [
 ]
 
 MAX_SITEMAP_DEPTH = 6
-MAX_FETCH_RETRIES = 2
+MAX_FETCH_RETRIES = 1
 DEFAULT_MAX_SITEMAPS = 30
 DEFAULT_MAX_PAGE_URLS = 1000
 
@@ -181,11 +181,12 @@ def discover_sitemaps(
                 break
 
     # 2. Try common sitemap paths
-    for path in COMMON_SITEMAP_PATHS:
-        sm_url = urljoin(base_url, path)
-        _walk_sitemap(sm_url)
-        if max_sitemaps is not None and len(found_sitemaps) >= max_sitemaps:
-            break
+    if not found_sitemaps:
+        for path in COMMON_SITEMAP_PATHS:
+            sm_url = urljoin(base_url, path)
+            _walk_sitemap(sm_url)
+            if found_sitemaps:
+                break
 
     # Deduplicate
     return list(dict.fromkeys(found_sitemaps))

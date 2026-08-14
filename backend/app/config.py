@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     ARTICLE_GENERATION_MAX_ATTEMPTS: int = 5
     SCRAPE_DELAY_MIN: float = 1.0
     SCRAPE_DELAY_MAX: float = 3.0
-    REQUEST_TIMEOUT: int = 15
+    REQUEST_TIMEOUT: int = 5
     MAX_RETRIES: int = 3
     ENABLE_KEYBERT: bool = False
     ENABLE_SPACY: bool = True
