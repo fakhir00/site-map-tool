@@ -288,13 +288,12 @@ export function ProjectDetail() {
                   <th className="px-5 py-3 font-semibold">URL</th>
                   <th className="px-5 py-3 font-semibold">Source</th>
                   <th className="px-5 py-3 font-semibold">Status</th>
-                  <th className="px-5 py-3 font-semibold text-right">Words</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {urls.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-8 text-center text-slate-500" colSpan={4}>
+                    <td className="px-5 py-8 text-center text-slate-500" colSpan={3}>
                       No URLs have been queued yet.
                     </td>
                   </tr>
@@ -313,7 +312,6 @@ export function ProjectDetail() {
                         </Badge>
                       </td>
                       <td className="px-5 py-3">{statusBadge(url.status)}</td>
-                      <td className="px-5 py-3 text-right font-mono text-slate-700">{url.word_count?.toLocaleString() || '-'}</td>
                     </tr>
                   ))
                 )}

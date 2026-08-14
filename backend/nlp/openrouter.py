@@ -420,14 +420,19 @@ For every raw label, rewrite it into a natural human search query:
             source_phrase = str(item.get("source_phrase") or item.get("source") or "").strip().lower()
             phrase = str(item.get("phrase") or "").strip().lower()
             keyword_type = normalize_keyword_type(item.get("type"))
+            volume_str = str(item.get("volume", "")).strip().lower()
+            
             if not source_phrase and phrase in candidate_phrases:
                 source_phrase = phrase
-            if not source_phrase or source_phrase not in candidate_phrases or not phrase:
+                
+            if not phrase:
                 continue
+                
             valid.append({
                 "source_phrase": source_phrase,
                 "phrase": phrase,
                 "type": keyword_type,
+                "volume": volume_str,
             })
             if len(valid) >= max_keywords:
                 break

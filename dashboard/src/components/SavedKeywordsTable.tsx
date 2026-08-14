@@ -130,16 +130,17 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
                   <td className="px-5 py-4">
                     <input
                       type="checkbox"
-                      className={`h-4 w-4 rounded border-slate-300 cursor-pointer ${
-                        kw.is_done 
-                          ? 'text-emerald-600 focus:ring-emerald-600' 
-                          : 'text-cyan-600 focus:ring-cyan-600'
-                      }`}
+                      className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer"
                       checked={selectedIds.has(kw.id)}
                       onChange={() => toggleOne(kw.id)}
                     />
                   </td>
-                  <td className="px-5 py-4 font-medium text-slate-900">{kw.phrase}</td>
+                  <td className="px-5 py-4 font-medium text-slate-900">
+                    <div className="flex items-center gap-2">
+                      <span className={kw.is_done ? 'line-through text-slate-500' : ''}>{kw.phrase}</span>
+                      {kw.is_done && <CheckSquare className="h-4 w-4 text-emerald-500" />}
+                    </div>
+                  </td>
                   <td className="px-5 py-4 text-slate-500 capitalize">{kw.keyword_type}</td>
                   <td className="px-5 py-4 text-slate-500">
                     {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(kw.saved_at))}

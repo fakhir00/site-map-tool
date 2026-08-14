@@ -1187,7 +1187,8 @@ def _build_ai_refined_accumulator(
         if source_phrase not in source_lookup and phrase in source_lookup:
             source_phrase = phrase
         source_data = source_lookup.get(source_phrase)
-        if not source_data or not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+        
+        if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
             continue
 
         if phrase not in refined:
@@ -1199,8 +1200,12 @@ def _build_ai_refined_accumulator(
                 "source": "sitemap_ai",
                 "volume_str": volume_str,
             }
-        refined[phrase]["count"] += int(source_data.get("count", 1))
-        refined[phrase]["url_ids"].update(source_data.get("url_ids", set()))
+        
+        if source_data:
+            refined[phrase]["count"] += int(source_data.get("count", 1))
+            refined[phrase]["url_ids"].update(source_data.get("url_ids", set()))
+        else:
+            refined[phrase]["count"] += 1
 
     return refined
 

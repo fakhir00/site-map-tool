@@ -111,7 +111,8 @@ def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
             has_digit = bool(re.search(r"\d", part))
             if has_alpha and has_digit and part not in COMMON_SHORT_TOKENS:
                 noisy_parts += 1
-                severe_noise_parts += 1
+                if len(part) > 5:
+                    severe_noise_parts += 1
                 continue
             if has_digit and part not in COMMON_SHORT_TOKENS:
                 noisy_parts += 1
