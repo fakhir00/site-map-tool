@@ -83,7 +83,7 @@ def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
     words = phrase.split()
     if len(words) < min_words:
         return False
-    if len(words) > 6:
+    if len(words) > 12:
         return False
     # All words are stopwords
     if all(w in STOPWORDS for w in words):
@@ -126,7 +126,7 @@ def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
                 noisy_parts += 1
                 severe_noise_parts += 1
                 continue
-            if len(part) <= 2 and part not in COMMON_SHORT_TOKENS:
+            if len(part) <= 2 and part not in COMMON_SHORT_TOKENS and part not in STOPWORDS:
                 noisy_parts += 1
                 continue
             if re.search(r"[bcdfghjklmnpqrstvwxz]{4,}", part) and part not in COMMON_SHORT_TOKENS:
