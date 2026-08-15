@@ -99,66 +99,6 @@ def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
     if re.search(r"(.)\1{4,}", phrase):
         return False
 
-    noisy_parts = 0
-    severe_noise_parts = 0
-    checked_parts = 0
-    for word in words:
-        for part in word.split("-"):
-            if not part:
-                continue
-            checked_parts += 1
-            has_alpha = bool(re.search(r"[a-z]", part))
-            has_digit = bool(re.search(r"\d", part))
-            if has_alpha and has_digit and part not in COMMON_SHORT_TOKENS:
-                noisy_parts += 1
-                if len(part) > 5:
-                    severe_noise_parts += 1
-                continue
-            if has_digit and part not in COMMON_SHORT_TOKENS:
-                noisy_parts += 1
-                if not re.fullmatch(r"(19|20)\d{2}", part):
-                    severe_noise_parts += 1
-                continue
-            if re.fullmatch(r"[a-f0-9]{7,}", part) and part not in COMMON_SHORT_TOKENS:
-                noisy_parts += 1
-                severe_noise_parts += 1
-                continue
-            if len(part) > 24:
-                noisy_parts += 1
-                severe_noise_parts += 1
-                continue
-            if len(part) <= 2 and part not in COMMON_SHORT_TOKENS and part not in STOPWORDS:
-                noisy_parts += 1
-                continue
-            if re.search(r"[bcdfghjklmnpqrstvwxz]{4,}", part) and part not in COMMON_SHORT_TOKENS:
-                noisy_parts += 1
-                continue
-            if (
-                len(part) >= 4
-                and re.match(r"^[bcdfghjklmnpqrstvwxz]{2}", part)
-                and part[:2] not in ALLOWED_INITIAL_CLUSTERS
-                and part not in COMMON_SHORT_TOKENS
-            ):
-                noisy_parts += 1
-                continue
-            if len(part) >= 4 and not re.search(r"[aeiou]", part) and part not in COMMON_SHORT_TOKENS:
-                noisy_parts += 1
-                if len(part) >= 7:
-                    severe_noise_parts += 1
-
-    if severe_noise_parts:
-        return False
-    if checked_parts and noisy_parts / checked_parts >= 0.25:
-        return False
-
-    meaningful_lengths = [len(word.strip("-")) for word in words if word not in STOPWORDS]
-    if meaningful_lengths and max(meaningful_lengths) < 4 and len(words) == 1 and not any(word in COMMON_SHORT_TOKENS for word in words):
-        return False
-
-    meaningful_words = [word for word in words if word not in STOPWORDS]
-    if meaningful_words and all(word in GENERIC_UI_WORDS for word in meaningful_words):
-        return False
-
     return True
 
 

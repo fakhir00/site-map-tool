@@ -283,7 +283,7 @@ export default function GapPageGenerator() {
   )
 
   return (
-    <div className="mx-auto max-w-4xl py-8 space-y-8">
+    <div className="mx-auto max-w-3xl py-8 space-y-8">
       <div>
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
