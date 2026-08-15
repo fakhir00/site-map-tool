@@ -465,7 +465,7 @@ def judge_competitor_domains(
     own_domain: str,
     candidates: list[dict[str, Any]],
     max_domains: int,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | None:
     """Use the LLM as the final gatekeeper for whether a domain is a true competitor."""
     if not is_ai_configured() or not candidates:
         return []

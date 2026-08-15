@@ -356,7 +356,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
         [candidate_signals[domain] for domain in competitor_domains if domain in candidate_signals],
         competitor_limit,
     )
-    if llm_domains:
+    if llm_domains is not None:
         return llm_domains
 
     return competitor_domains[:competitor_limit]
@@ -853,9 +853,9 @@ def _llm_filter_competitor_domains(
     own_domain: str,
     candidates: list[dict[str, Any]],
     competitor_limit: int,
-) -> list[str]:
+) -> list[str] | None:
     if not candidates or not (settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY):
-        return []
+        return None
     try:
         from nlp.openrouter import judge_competitor_domains
 
@@ -865,9 +865,11 @@ def _llm_filter_competitor_domains(
             candidates[: settings.MAX_COMPETITOR_JUDGE_CANDIDATES],
             max_domains=competitor_limit,
         )
+        if judged is None:
+            return None
     except Exception as exc:
         logger.warning("Competitor LLM judge failed before request: %s", exc)
-        return []
+        return None
 
     accepted: list[str] = []
     for item in judged:
@@ -876,6 +878,8 @@ def _llm_filter_competitor_domains(
             accepted.append(domain)
     if accepted:
         logger.info("Competitor LLM judge accepted %s domains", len(accepted))
+    else:
+        logger.info("Competitor LLM judge rejected ALL candidates!")
     return accepted[:competitor_limit]
 
 
