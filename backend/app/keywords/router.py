@@ -222,6 +222,58 @@ async def generate_top_picks(
     return {"message": f"Identified {updated_count} existing keywords as top picks", "generated": updated_count}
 
 
+@router.post("/{project_id}/keywords/hub-spoke")
+async def generate_hub_spoke(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await _assert_owns_project(project_id, current_user.id, db)
+    
+    q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id).order_by(Keyword.frequency.desc())
+    result = await db.execute(q_existing)
+    existing_phrases = [row[0] for row in result.all()]
+    
+    if not existing_phrases:
+        raise HTTPException(status_code=400, detail="No keywords found to cluster.")
+
+    from nlp.openrouter import cluster_hub_and_spoke
+    clusters = await cluster_hub_and_spoke(existing_phrases)
+    if not clusters:
+        raise HTTPException(status_code=500, detail="Failed to cluster keywords")
+
+    from app.models import HubSpokeCluster
+    q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
+    res_cluster = await db.execute(q_cluster)
+    cluster_record = res_cluster.scalar_one_or_none()
+    
+    if cluster_record:
+        cluster_record.mapping_data = clusters
+    else:
+        cluster_record = HubSpokeCluster(project_id=project.id, mapping_data=clusters)
+        db.add(cluster_record)
+        
+    await db.commit()
+    return {"message": "Clustered successfully", "clusters": clusters}
+
+
+@router.get("/{project_id}/keywords/hub-spoke")
+async def get_hub_spoke(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await _assert_owns_project(project_id, current_user.id, db)
+    
+    from app.models import HubSpokeCluster
+    q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
+    res_cluster = await db.execute(q_cluster)
+    cluster_record = res_cluster.scalar_one_or_none()
+    
+    return {"clusters": cluster_record.mapping_data if cluster_record else None}
+
+
+
 @router.get("/{project_id}/keywords/export")
 async def export_keywords(
     project_id: uuid.UUID,

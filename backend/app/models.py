@@ -143,6 +143,17 @@ class KeywordBank(Base):
     __table_args__ = (UniqueConstraint("user_id", "keyword_id", name="uq_user_keyword"),)
 
 
+class HubSpokeCluster(Base):
+    __tablename__ = "hub_spoke_clusters"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True)
+    mapping_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    project: Mapped["Project"] = relationship("Project")
+
+
 class ArticleDraft(Base):
     __tablename__ = "article_drafts"
 

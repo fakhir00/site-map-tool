@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, FilePenLine, Search, Sparkles } from 'lucide-react'
+import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, FilePenLine, Search, Sparkles, Network } from 'lucide-react'
 import { api, type Keyword, type KeywordListResponse } from '../lib/api'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Input } from './ui/Input'
+import { HubSpokeView } from './HubSpokeView'
 
 function keywordBadge(type: Keyword['keyword_type']) {
   if (type === 'top-pick') return <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-bold px-2 py-0.5" variant="amber"><Sparkles className="mr-1 inline-block h-3 w-3" /> Top Pick</Badge>
@@ -124,6 +125,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
 
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isHubSpokeMode, setIsHubSpokeMode] = useState(false)
 
   const bulkSaveMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => 
@@ -257,6 +259,15 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
           )}
 
           <Button 
+            onClick={() => setIsHubSpokeMode(!isHubSpokeMode)} 
+            size="sm" 
+            variant="secondary"
+            className={isHubSpokeMode ? "bg-cyan-100 text-cyan-800 border-cyan-300" : ""}
+          >
+            <Network className="h-4 w-4" />
+            {isHubSpokeMode ? 'Table View' : 'Hub Spoke'}
+          </Button>
+          <Button 
             disabled={topPicksMutation.isPending} 
             onClick={() => topPicksMutation.mutate()} 
             size="sm" 
@@ -286,7 +297,10 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
       {exportError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{exportError}</div>}
       {articleError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{articleError}</div>}
 
-      <div className="overflow-x-auto">
+      {isHubSpokeMode ? (
+        <HubSpokeView projectId={projectId} />
+      ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
             <tr>

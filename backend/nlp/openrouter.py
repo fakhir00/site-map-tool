@@ -1092,3 +1092,42 @@ Return ONLY a JSON object in this exact format:
     except Exception as exc:
         logger.warning("Gold hunter failed: %s", exc)
         return None
+
+
+async def cluster_hub_and_spoke(keywords: list[str]) -> dict[str, list[str]] | None:
+    """Cluster keywords into a Hub and Spoke architecture."""
+    if not is_ai_configured() or not keywords:
+        return None
+
+    trimmed = keywords[:500]
+    prompt = f"""
+You are an expert SEO architect. You have received a list of keyword phrases.
+Group them into a Hub and Spoke structure to maximize topical authority.
+
+**Rules:**
+1. Identify 3-8 broad "Hub" topics that encompass the provided keywords.
+2. Assign each keyword to the most relevant Hub as a "Spoke".
+3. A Hub phrase should ideally be one of the keywords, or a very clear umbrella term.
+4. Return ONLY a JSON object where the keys are the Hub phrases and the values are lists of Spoke keyword phrases.
+
+Keywords to cluster:
+{json.dumps(trimmed)}
+"""
+    try:
+        payload = await _achat_json(
+            system_prompt="You output only valid JSON objects mapping strings to lists of strings.",
+            user_prompt=prompt,
+            temperature=0.1,
+            max_tokens=2500,
+        )
+        if isinstance(payload, dict):
+            # Ensure values are lists of strings
+            result = {}
+            for k, v in payload.items():
+                if isinstance(v, list):
+                    result[str(k)] = [str(x) for x in v]
+            return result
+        return None
+    except Exception as exc:
+        logger.error("Failed to cluster hub and spoke via %s: %s", ai_provider_name(), exc)
+        return None
