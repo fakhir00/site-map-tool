@@ -7,16 +7,48 @@ interface HubSpokeViewProps {
   projectId: string
 }
 
+type SpokeList = string[]
+type HubToSpokes = Record<string, SpokeList>
+type CategoryToHubs = Record<string, HubToSpokes>
+type ClusterData = HubToSpokes | CategoryToHubs
+
+function isCategorized(clusters: ClusterData): clusters is CategoryToHubs {
+  const firstKey = Object.keys(clusters)[0]
+  if (!firstKey) return false
+  return !Array.isArray(clusters[firstKey])
+}
+
+function HubCard({ hub, spokes }: { hub: string; spokes: string[] }) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <h5 className="font-bold text-slate-900">{hub}</h5>
+        <div className="mt-1 text-xs font-medium text-slate-500">Hub / Pillar Page</div>
+      </div>
+      <div className="flex-1 p-4">
+        <ul className="flex flex-col gap-2">
+          {spokes.map((spoke, idx) => (
+            <li key={idx} className="flex items-start text-sm text-slate-700">
+              <span className="mr-2 text-slate-300">↳</span>
+              {spoke}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['hub-spoke', projectId],
-    queryFn: () => api.get<{ clusters: Record<string, string[]> | null }>(`/projects/${projectId}/keywords/hub-spoke`),
+    queryFn: () => api.get<{ clusters: ClusterData | null }>(`/projects/${projectId}/keywords/hub-spoke`),
   })
 
   const clusterMutation = useMutation({
-    mutationFn: () => api.post<{ clusters: Record<string, string[]> }>(`/projects/${projectId}/keywords/hub-spoke`),
+    mutationFn: () => api.post<{ clusters: ClusterData }>(`/projects/${projectId}/keywords/hub-spoke`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hub-spoke', projectId] })
     },
@@ -59,7 +91,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h4 className="text-lg font-bold text-slate-900">Content Architecture</h4>
-          <p className="text-sm text-slate-500">Your keywords grouped by pillar topics</p>
+          <p className="text-sm text-slate-500">Your keywords grouped by semantic categories</p>
         </div>
         <Button 
           variant="secondary" 
@@ -72,26 +104,26 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
         </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {Object.entries(clusters).map(([hub, spokes]) => (
-          <div key={hub} className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-              <h5 className="font-bold text-slate-900">{hub}</h5>
-              <div className="mt-1 text-xs font-medium text-slate-500">Hub / Pillar Page</div>
-            </div>
-            <div className="flex-1 p-4">
-              <ul className="flex flex-col gap-2">
-                {spokes.map((spoke, idx) => (
-                  <li key={idx} className="flex items-start text-sm text-slate-700">
-                    <span className="mr-2 text-slate-300">↳</span>
-                    {spoke}
-                  </li>
+      {isCategorized(clusters) ? (
+        <div className="flex flex-col gap-10">
+          {Object.entries(clusters).map(([category, hubs]) => (
+            <div key={category}>
+              <h3 className="mb-4 text-lg font-bold text-slate-800 border-b border-slate-200 pb-2">{category}</h3>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {Object.entries(hubs).map(([hub, spokes]) => (
+                  <HubCard key={hub} hub={hub} spokes={spokes} />
                 ))}
-              </ul>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {Object.entries(clusters as Record<string, string[]>).map(([hub, spokes]) => (
+            <HubCard key={hub} hub={hub} spokes={spokes} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

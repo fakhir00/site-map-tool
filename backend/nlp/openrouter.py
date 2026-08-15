@@ -1094,39 +1094,43 @@ Return ONLY a JSON object in this exact format:
         return None
 
 
-async def cluster_hub_and_spoke(keywords: list[str]) -> dict[str, list[str]] | None:
-    """Cluster keywords into a Hub and Spoke architecture."""
+async def cluster_hub_and_spoke(keywords: list[str]) -> dict[str, Any] | None:
+    """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
     if not is_ai_configured() or not keywords:
         return None
 
     trimmed = keywords[:500]
     prompt = f"""
 You are an expert SEO architect. You have received a list of keyword phrases.
-Group them into a Hub and Spoke structure to maximize topical authority.
+Group them into a semantic Hub and Spoke structure, prioritizing the strict avoidance of keyword cannibalization.
 
-**Rules:**
-1. Identify 3-8 broad "Hub" topics that encompass the provided keywords.
-2. Assign each keyword to the most relevant Hub as a "Spoke".
-3. A Hub phrase should ideally be one of the keywords, or a very clear umbrella term.
-4. Return ONLY a JSON object where the keys are the Hub phrases and the values are lists of Spoke keyword phrases.
+**Task Requirements:**
+1. **Categorize**: Group the keywords into logical high-level categories (e.g., Core Concepts, How-To Guides, Materials/Products, Professionals/Services, Specific Use-Cases, Commercial/Best Of).
+2. **Identify Hubs**: Inside each Category, identify broad "Hub" topics.
+3. **Assign Spokes & Prevent Cannibalization**: Assign each keyword to a Hub as a "Spoke". YOU MUST aggressively merge duplicate or overlapping intents into a single, stronger Spoke keyword. (e.g., "0dte trading techniques", "0dte trading methods", and "advanced 0dte trading tips" MUST be merged into a single keyword like "advanced 0dte trading techniques"). Do NOT output multiple spokes that satisfy the same search intent.
+4. **Inject Commercial Intents**: If the list lacks commercial keywords ("best", "top", "review", "vs"), artificially add 1-3 high-value commercial Spokes naturally relevant to the Hubs.
+5. **Output Format**: Return ONLY a valid JSON object with the following nested structure:
+{{
+  "Category Name": {{
+    "Hub Phrase": ["Spoke Phrase 1", "Spoke Phrase 2"],
+    "Another Hub": ["Spoke Phrase 3"]
+  }}
+}}
 
 Keywords to cluster:
 {json.dumps(trimmed)}
 """
     try:
         payload = await _achat_json(
-            system_prompt="You output only valid JSON objects mapping strings to lists of strings.",
+            system_prompt="You output only valid JSON objects mapping Category Strings to Hub/Spoke dictionaries.",
             user_prompt=prompt,
             temperature=0.1,
             max_tokens=2500,
         )
         if isinstance(payload, dict):
-            # Ensure values are lists of strings
-            result = {}
-            for k, v in payload.items():
-                if isinstance(v, list):
-                    result[str(k)] = [str(x) for x in v]
-            return result
+            # We accept the nested dictionary as-is, but we could do minor type validation.
+            # Assuming payload is dict[str, dict[str, list[str]]]
+            return payload
         return None
     except Exception as exc:
         logger.error("Failed to cluster hub and spoke via %s: %s", ai_provider_name(), exc)
