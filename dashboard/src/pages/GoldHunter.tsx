@@ -22,7 +22,8 @@ type GoldHunterScan = {
 
 const renderAuditSummary = (summary: string) => {
   try {
-    const parsed = JSON.parse(summary)
+    const cleaned = summary.replace(/^```json\n?/i, '').replace(/\n?```$/i, '').trim()
+    const parsed = JSON.parse(cleaned)
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return (
         <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
