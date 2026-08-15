@@ -300,177 +300,102 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
       {isHubSpokeMode ? (
         <HubSpokeView projectId={projectId} />
       ) : (
-        <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-5 py-3 font-semibold">Keyword gap</th>
-              <th className="px-5 py-3 font-semibold">Intent</th>
-              <th className="px-5 py-3 font-semibold">Type</th>
-              <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
-              <th className="px-5 py-3 font-semibold">Sources</th>
-              <th className="px-5 py-3 text-right font-semibold">Write</th>
-              <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
-              <th className="px-5 py-3 text-right font-semibold">Save</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {keywords.length === 0 ? (
-              <tr>
-                <td className="px-5 py-10 text-center text-slate-500" colSpan={7}>
-                  No keyword gaps found yet.
-                </td>
-              </tr>
-            ) : (
-              keywords.map((keyword) => (
-                <tr className="hover:bg-slate-50" key={keyword.id}>
-                  <td className="max-w-[360px] px-5 py-4">
-                    <div className="flex items-center gap-2">
-                      {isSelectionMode && (
-                        <input 
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer flex-shrink-0"
-                          checked={selectedIds.has(keyword.id)}
-                          onChange={(e) => {
-                            const newSet = new Set(selectedIds)
-                            if (e.target.checked) newSet.add(keyword.id)
-                            else newSet.delete(keyword.id)
-                            setSelectedIds(newSet)
-                          }}
-                        />
-                      )}
-                      <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline">
-                        {keyword.phrase}
-                      </a>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4">
-                    <KeywordIntentBadge keywordPhrase={keyword.phrase} />
-                  </td>
-                  <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
-                  <td className="px-5 py-4 text-right font-mono text-slate-700">{keyword.frequency}</td>
-                  <td className="px-5 py-4">
-                    <div className="flex max-w-[360px] flex-wrap gap-1.5">
-                      {sourceDomains(keyword).slice(0, 4).map((source) => (
-                        <a
-                          className={`inline-flex max-w-[160px] items-center truncate rounded-md border px-2 py-1 text-xs font-medium ${
-                            source.sourceType === 'own'
-                              ? 'border-slate-200 bg-slate-50 text-slate-700'
-                              : 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                          }`}
-                          href={source.href}
-                          key={source.label}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                          title={source.href}
-                        >
-                          {source.label}
-                        </a>
-                      ))}
-                      {sourceDomains(keyword).length > 4 && (
-                        <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-500">
-                          +{sourceDomains(keyword).length - 4}
-                        </span>
-                      )}
-                    </div>
-                      <div className="mt-2 flex gap-1">
-                        {keywordSources(keyword).slice(0, 5).map((source) => (
-                        <a
-                          aria-label={source.url}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-800"
-                          href={source.url}
-                          key={source.url}
-                          rel="noopener noreferrer"
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-5 py-4 font-semibold">Keyword Gap</th>
-                  <th className="px-5 py-4 font-semibold">Type</th>
-                  <th className="px-5 py-4 font-semibold">Competitor Pages</th>
-                  <th className="px-5 py-4 font-semibold">Source Domains</th>
-                  <th className="px-5 py-4 font-semibold text-right">Draft Action</th>
-                  <th className="px-5 py-4 text-right"></th>
-                  <th className="px-5 py-4 text-right"></th>
+                  <th className="px-5 py-3 font-semibold">Keyword gap</th>
+                  <th className="px-5 py-3 font-semibold">Intent</th>
+                  <th className="px-5 py-3 font-semibold">Type</th>
+                  <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
+                  <th className="px-5 py-3 font-semibold">Sources</th>
+                  <th className="px-5 py-3 text-right font-semibold">Write</th>
+                  <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
+                  <th className="px-5 py-3 text-right font-semibold">Save</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {isLoading ? (
+              <tbody className="divide-y divide-slate-100">
+                {keywords.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
-                      Loading keyword gaps...
-                    </td>
-                  </tr>
-                ) : keywords.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
-                      No keyword gaps found. Wait for the initial scan to complete, or generate AI keywords.
+                    <td className="px-5 py-10 text-center text-slate-500" colSpan={7}>
+                      No keyword gaps found yet.
                     </td>
                   </tr>
                 ) : (
                   keywords.map((keyword) => (
-                    <tr key={keyword.id} className="hover:bg-slate-50/50">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
+                    <tr className="hover:bg-slate-50" key={keyword.id}>
+                      <td className="max-w-[360px] px-5 py-4">
+                        <div className="flex items-center gap-2">
                           {isSelectionMode && (
-                            <input
+                            <input 
                               type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer flex-shrink-0"
                               checked={selectedIds.has(keyword.id)}
                               onChange={(e) => {
-                                const newIds = new Set(selectedIds)
-                                if (e.target.checked) newIds.add(keyword.id)
-                                else newIds.delete(keyword.id)
-                                setSelectedIds(newIds)
+                                const newSet = new Set(selectedIds)
+                                if (e.target.checked) newSet.add(keyword.id)
+                                else newSet.delete(keyword.id)
+                                setSelectedIds(newSet)
                               }}
-                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600"
                             />
                           )}
-                          <div>
-                            <div className="font-medium text-slate-900">{keyword.phrase}</div>
-                            {keyword.search_volume !== null && keyword.search_volume !== undefined && (
-                              <div className="mt-0.5 text-xs text-slate-500">
-                                Vol: {keyword.search_volume.toLocaleString()}
-                                {keyword.difficulty !== null && ` · KD: ${keyword.difficulty}`}
-                              </div>
-                            )}
-                          </div>
+                          <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline">
+                            {keyword.phrase}
+                          </a>
                         </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <KeywordIntentBadge keywordPhrase={keyword.phrase} />
                       </td>
                       <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
-                      <td className="px-5 py-4 text-slate-600">{keyword.frequency} pages</td>
-                      <td className="px-5 py-4 text-slate-600">
-                        <div className="flex -space-x-2">
-                          {keyword.urls.slice(0, 3).map((url) => {
-                            let domain = 'unknown'
-                            try {
-                              domain = new URL(url).hostname.replace('www.', '')
-                            } catch (e) {
-                              // ignore
-                            }
-                            return (
-                              <div
-                                key={url}
-                                className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-xs font-bold text-slate-600 shadow-sm"
-                                title={url}
-                              >
-                                {domain.charAt(0).toUpperCase()}
-                              </div>
-                            )
-                          })}
-                          {keyword.urls.length > 3 && (
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-50 text-xs font-bold text-slate-500 shadow-sm">
-                              +{keyword.urls.length - 3}
-                            </div>
+                      <td className="px-5 py-4 text-right font-mono text-slate-700">{keyword.frequency}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex max-w-[360px] flex-wrap gap-1.5">
+                          {sourceDomains(keyword).slice(0, 4).map((source) => (
+                            <a
+                              className={`inline-flex max-w-[160px] items-center truncate rounded-md border px-2 py-1 text-xs font-medium ${
+                                source.sourceType === 'own'
+                                  ? 'border-slate-200 bg-slate-50 text-slate-700'
+                                  : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                              }`}
+                              href={source.href}
+                              key={source.label}
+                              rel="noopener noreferrer"
+                              target="_blank"
+                              title={source.href}
+                            >
+                              {source.label}
+                            </a>
+                          ))}
+                          {sourceDomains(keyword).length > 4 && (
+                            <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-500">
+                              +{sourceDomains(keyword).length - 4}
+                            </span>
                           )}
                         </div>
-                      </td>
+                          <div className="mt-2 flex gap-1">
+                            {keywordSources(keyword).slice(0, 5).map((source) => (
+                            <a
+                              aria-label={source.url}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-800"
+                              href={source.url}
+                              key={source.url}
+                              rel="noopener noreferrer"
+                              target="_blank"
+                              title={source.url}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                            ))}
+                          </div>
+                        </td>
                       <td className="px-5 py-4 text-right">
-                        <Button 
-                          onClick={() => articleMutation.mutate(keyword.id)} 
-                          size="sm" 
+                        <Button
+                          disabled={articleMutation.isPending}
+                          onClick={() => articleMutation.mutate(keyword.id)}
+                          size="sm"
                           variant="secondary"
-                          disabled={articleMutation.isPending && writingKeywordId === keyword.id}
                         >
                           <FilePenLine className="h-4 w-4" />
                           {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
