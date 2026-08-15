@@ -56,7 +56,7 @@ export function GoldHunter() {
   })
 
   const scanMutation = useMutation({
-    mutationFn: (targetUrl: string) => api.post<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }),
+    mutationFn: (targetUrl: string) => api.post<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }, { timeoutMs: 60000 }),
     onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goldhunter_history'] })
