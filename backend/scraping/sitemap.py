@@ -180,10 +180,19 @@ def discover_sitemaps(
             if max_sitemaps is not None and len(found_sitemaps) >= max_sitemaps:
                 break
 
-    # 2. Try common sitemap paths
+    # 2. Try common sitemap paths concurrently
     if not found_sitemaps:
-        for path in COMMON_SITEMAP_PATHS:
+        from concurrent.futures import ThreadPoolExecutor
+        def _check_path(path: str) -> str | None:
             sm_url = urljoin(base_url, path)
+            if fetch_url(sm_url, timeout=min(timeout, 5)):
+                return sm_url
+            return None
+            
+        with ThreadPoolExecutor(max_workers=len(COMMON_SITEMAP_PATHS)) as executor:
+            valid_urls = [url for url in executor.map(_check_path, COMMON_SITEMAP_PATHS) if url]
+            
+        for sm_url in valid_urls:
             _walk_sitemap(sm_url)
             if found_sitemaps:
                 break

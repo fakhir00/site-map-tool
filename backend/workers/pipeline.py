@@ -102,24 +102,32 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 [(url, "own", own_domain) for url in own_urls],
             )
 
-            for competitor_domain in competitor_domains:
-                domain_urls = _discover_content_urls(
-                    competitor_domain,
-                    project.url_filter_patterns,
-                    extract_all_urls_from_domain,
-                    filter_blog_urls,
-                    crawl_limit,
-                    required_terms,
-                    ranking_terms,
-                    source_type="competitor",
-                )
-                _queue_discovered_urls(
-                    db,
-                    project,
-                    project_uuid,
-                    job_uuid,
-                    [(url, "competitor", competitor_domain) for url in domain_urls],
-                )
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            def _crawl_domain(comp_domain: str) -> list[tuple[str, str, str]]:
+                try:
+                    d_urls = _discover_content_urls(
+                        comp_domain,
+                        project.url_filter_patterns,
+                        extract_all_urls_from_domain,
+                        filter_blog_urls,
+                        crawl_limit,
+                        required_terms,
+                        ranking_terms,
+                        source_type="competitor",
+                    )
+                    return [(u, "competitor", comp_domain) for u in d_urls]
+                except Exception as e:
+                    logger.warning("Error crawling competitor %s: %s", comp_domain, e)
+                    return []
+
+            if competitor_domains:
+                with ThreadPoolExecutor(max_workers=len(competitor_domains)) as executor:
+                    futures = [executor.submit(_crawl_domain, dom) for dom in competitor_domains]
+                    for future in as_completed(futures):
+                        domain_urls_to_queue = future.result()
+                        if domain_urls_to_queue:
+                            _queue_discovered_urls(db, project, project_uuid, job_uuid, domain_urls_to_queue)
 
             logger.info("[%s] Queued %s URLs", project_id, project.urls_found)
 
