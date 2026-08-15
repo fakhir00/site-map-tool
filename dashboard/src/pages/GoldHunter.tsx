@@ -22,8 +22,7 @@ type GoldHunterScan = {
 
 const renderAuditSummary = (summary: string) => {
   try {
-    const cleaned = summary.replace(/^```json\n?/i, '').replace(/\n?```$/i, '').trim()
-    const parsed = JSON.parse(cleaned)
+    const parsed = JSON.parse(summary)
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return (
         <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
@@ -56,7 +55,7 @@ export function GoldHunter() {
   })
 
   const scanMutation = useMutation({
-    mutationFn: (targetUrl: string) => api.post<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }, { timeoutMs: 60000 }),
+    mutationFn: (targetUrl: string) => api.post<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }),
     onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goldhunter_history'] })

@@ -184,7 +184,6 @@ export class ApiError extends Error {
     super(message)
     this.name = 'ApiError'
     this.status = status
-    Object.setPrototypeOf(this, ApiError.prototype)
   }
 }
 
@@ -366,11 +365,11 @@ export const api = {
   },
 
   get<T>(endpoint: string, options: ApiRequestInit = {}) {
-    return api.fetch<T>(endpoint, { ...options, method: 'GET' })
+    return this.fetch<T>(endpoint, { ...options, method: 'GET' })
   },
 
   post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}) {
-    return api.fetch<T>(endpoint, {
+    return this.fetch<T>(endpoint, {
       ...options,
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -378,10 +377,10 @@ export const api = {
   },
 
   delete<T>(endpoint: string, options: ApiRequestInit = {}) {
-    return api.fetch<T>(endpoint, { ...options, method: 'DELETE' })
+    return this.fetch<T>(endpoint, { ...options, method: 'DELETE' })
   },
 
   postArticle<T>(endpoint: string, body?: unknown) {
-    return api.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
+    return this.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
   },
 }
