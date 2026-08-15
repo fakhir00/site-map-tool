@@ -33,6 +33,13 @@ def _provider_config(use_writing_model: bool = False) -> tuple[str, str, str, st
             settings.TOKENROUTER_API_KEY,
             model,
         )
+    if settings.DEEPSEEK_API_KEY:
+        return (
+            "DeepSeek",
+            "https://api.deepseek.com",
+            settings.DEEPSEEK_API_KEY,
+            settings.DEEPSEEK_MODEL,
+        )
     if settings.GROQ_API_KEY:
         return (
             "Groq",
@@ -481,7 +488,8 @@ Primary keyword set:
 Candidate competitors:
 {json.dumps(candidates, ensure_ascii=True)}
 
-Choose only domains that are real search competitors for the target keywords. Accept sites that directly compete for the same search intent, audience, and topic cluster. Reject dictionaries, marketplaces, social networks, forums, docs portals, tool directories, unrelated apps, and generic informational sites unless they clearly rank as direct alternatives for the same use case.
+Choose only domains that are real search competitors for the target keywords. 
+Reject dictionaries, marketplaces, social networks, forums, docs portals, and generic informational sites.
 
 Return ONLY a JSON array with up to {max_domains} objects.
 Each object must include:

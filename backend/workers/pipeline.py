@@ -276,6 +276,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
     own_root = _registered_domain(project.own_domain or project.domain)
     required_terms = _search_required_terms(seed_keywords)
     competitor_limit = max(10, settings.MAX_COMPETITOR_DOMAINS)
+    candidate_limit = max(competitor_limit * 2, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
     search_locale = getattr(project, 'search_locale', 'us') or 'us'
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
@@ -316,14 +317,14 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
         for res in apify_results:
             add_domain(res["url"], require_relevance=False, query=primary_query, source="apify_page_1")
             primary_results_added = True
-            if len(competitor_domains) >= competitor_limit:
+            if len(competitor_domains) >= candidate_limit:
                 break
                 
-    if not primary_results_added and len(competitor_domains) < competitor_limit:
+    if not primary_results_added and len(competitor_domains) < candidate_limit:
         logger.info(f"Falling back to local search for primary query: {primary_query}")
         for href in _search_result_urls(primary_query, include_google=True, locale=search_locale):
             add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
-            if len(competitor_domains) >= competitor_limit:
+            if len(competitor_domains) >= candidate_limit:
                 break
 
     for query in _competitor_search_queries(seed_keywords):
@@ -333,20 +334,20 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
             for res in apify_results:
                 add_domain(res["url"], query=query)
                 query_results_added = True
-                if len(competitor_domains) >= competitor_limit:
+                if len(competitor_domains) >= candidate_limit:
                     break
                     
-        if not query_results_added and len(competitor_domains) < competitor_limit:
+        if not query_results_added and len(competitor_domains) < candidate_limit:
             for href in _search_result_urls(query, include_google=True, locale=search_locale):
                 add_domain(href, query=query)
-                if len(competitor_domains) >= competitor_limit:
+                if len(competitor_domains) >= candidate_limit:
                     break
-        if len(competitor_domains) >= competitor_limit:
+        if len(competitor_domains) >= candidate_limit:
             break
 
     for domain in _fallback_competitor_domains(seed_keywords):
         add_domain(domain, require_relevance=False, source="fallback")
-        if len(competitor_domains) >= competitor_limit:
+        if len(competitor_domains) >= candidate_limit:
             break
 
     llm_domains = _llm_filter_competitor_domains(
