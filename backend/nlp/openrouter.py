@@ -270,7 +270,23 @@ Each object must have:
                     "type": kw_type,
                 })
                 seen_phrases.add(phrase)
-        return valid_keywords
+        
+        if valid_keywords:
+            import asyncio
+            filtered = await asyncio.to_thread(
+                filter_keyword_gap_recommendations,
+                seed_keywords,
+                valid_keywords,
+                25
+            )
+            # Ensure phrase fallback
+            for kw in filtered:
+                if not kw.get("phrase") and kw.get("source_phrase"):
+                    kw["phrase"] = kw["source_phrase"]
+                if not kw.get("phrase"):
+                    continue
+            return [kw for kw in filtered if kw.get("phrase")]
+        return []
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse JSON from %s: %s", ai_provider_name(), exc)
         return []
@@ -359,25 +375,41 @@ def filter_keyword_gap_recommendations(
 
     trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
     prompt = f"""
-You are an expert SEO strategist filtering keyword gap recommendations.
+[SYSTEM COMMAND — FINAL KEYWORD SANITY FILTER]
+
+You are a Keyword Sanity Filter. You have received a raw list of topics, headings, and labels extracted from competitor sitemaps.
+
+**Step 0: NATURAL LANGUAGE NORMALIZATION (NEW — CRITICAL)**
+For every raw label, rewrite it into a natural human search query:
+- Reverse awkward structures: "board games using spin wheel" → "spin the wheel board game".
+- Remove redundant words: "games using spin wheel" → "spin the wheel games".
+- Use common search patterns: "spin wheel for instagram" → "instagram spin wheel".
+- If the normalized query sounds unnatural, rewrite it again until it passes the "Would a real human type this?" test.
+
+**Step 1: Volume Gate**
+- For the normalized query, estimate monthly search volume.
+- Keep if 500+ per month.
+- Reject if below 500.
+
+**Step 2: Intent Clustering (Anti-Cannibalization)**
+- Group normalized queries that share the same user intent.
+- For each cluster, select the highest-volume query as PRIMARY.
+- Merge secondary queries into the primary content piece.
+
+**Step 3: Final Output**
+- Output ONLY one keyword per intent cluster (maximum of {max_keywords} total).
+- Return ONLY a JSON array of objects. Do not include markdown formatting or explanations.
+- Each returned object must include:
+  - "source_phrase": exact original phrase from the candidates
+  - "phrase": the normalized search query
+  - "volume": Estimated volume (High/Medium/Low)
+  - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
 
 The user's target seed keywords are:
 {json.dumps(seed_keywords)}
 
-Below are candidate keyword gaps extracted from top-ranking competitor sitemaps.
-Each candidate includes the original phrase, competitor page count, competitor domain count, and current type.
-
 Candidates:
 {json.dumps(trimmed_candidates, ensure_ascii=True)}
-
-Return ONLY a JSON array. Select up to {max_keywords} candidates that are genuinely useful content or landing-page opportunities for this site.
-Remove thin, generic, navigational, off-topic, duplicate, brand-only, and awkward sitemap-slug phrases.
-You may lightly improve wording, but keep the intent grounded in the source phrase.
-
-Each returned object must include:
-- "source_phrase": exact original phrase from the candidates
-- "phrase": improved lowercase keyword phrase
-- "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
 """
 
     try:
@@ -404,6 +436,7 @@ Each returned object must include:
             source_phrase = str(item.get("source_phrase") or item.get("source") or "").strip().lower()
             phrase = str(item.get("phrase") or "").strip().lower()
             keyword_type = normalize_keyword_type(item.get("type"))
+            volume = str(item.get("volume") or "")
             if not source_phrase and phrase in candidate_phrases:
                 source_phrase = phrase
             if not source_phrase or source_phrase not in candidate_phrases or not phrase:
@@ -412,6 +445,7 @@ Each returned object must include:
                 "source_phrase": source_phrase,
                 "phrase": phrase,
                 "type": keyword_type,
+                "volume": volume,
             })
             if len(valid) >= max_keywords:
                 break
