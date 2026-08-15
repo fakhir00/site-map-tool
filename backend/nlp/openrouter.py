@@ -43,7 +43,7 @@ def _provider_config(use_writing_model: bool = False) -> tuple[str, str, str, st
     if settings.OPENROUTER_API_KEY:
         return (
             "OpenRouter",
-            "https://openrouter.ai/api/v1",
+            "https://api.hcnsec.cn/v1",
             settings.OPENROUTER_API_KEY,
             settings.OPENROUTER_MODEL,
         )
