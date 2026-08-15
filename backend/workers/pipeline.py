@@ -37,10 +37,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
     Run a scan. Fresh scans clear old URL/keyword results; resumed scans continue
     pending URL rows from the previous paused run.
     """
-    from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
-    from nlp.keywords import extract_keywords_from_page
+    from app.models import Project, ScanJob
     from scraping.filters import filter_blog_urls
-    from scraping.crawler import scrape_page
     from scraping.sitemap import extract_all_urls_from_domain
 
     project_uuid = uuid.UUID(project_id)

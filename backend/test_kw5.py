@@ -1,5 +1,5 @@
 import re
-from nlp.keywords import STOPWORDS, COMMON_SHORT_TOKENS, ALLOWED_INITIAL_CLUSTERS, GENERIC_UI_WORDS
+from nlp.keywords import STOPWORDS, COMMON_SHORT_TOKENS, ALLOWED_INITIAL_CLUSTERS
 
 def check(phrase):
     words = phrase.split()

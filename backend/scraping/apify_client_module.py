@@ -3,7 +3,6 @@ from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
 from app.config import settings
 from scraping.crawler import ScrapedPage
-from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 

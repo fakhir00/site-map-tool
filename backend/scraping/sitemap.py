@@ -9,8 +9,6 @@ Handles:
 """
 
 import gzip
-import re
-import io
 import logging
 import time
 from typing import List, Optional

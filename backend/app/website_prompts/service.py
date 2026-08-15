@@ -2,9 +2,7 @@ import os
 import logging
 from typing import List, Dict, Any
 
-from app.config import settings
 from nlp.website_prompts import analyze_website_intent, generate_website_prompt, audit_website_prompt
-from scraping.apify_client_module import search_google_via_apify, extract_apify_page_content
 
 logger = logging.getLogger(__name__)
 

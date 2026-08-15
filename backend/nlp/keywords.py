@@ -5,7 +5,7 @@ Extracts primary keywords, LSI phrases, named entities, and heading keywords.
 
 import re
 import logging
-from typing import List, Dict, Iterable, Tuple
+from typing import List, Iterable, Tuple
 from collections import Counter
 
 logger = logging.getLogger(__name__)

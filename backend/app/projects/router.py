@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from app.database import get_db
-from app.models import User, Project, Url, Keyword, ScanJob
+from app.models import User, Project, Url, Keyword
 from app.schemas import ProjectCreate, ProjectOut, ProjectSourceOut, ProjectStats
 from app.auth.jwt import get_current_user
 

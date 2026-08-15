@@ -6,9 +6,8 @@ Handles: politeness delays, retries, robots.txt compliance, text extraction.
 import time
 import random
 import logging
-import re
 from datetime import date
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 import requests

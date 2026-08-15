@@ -10,7 +10,6 @@ from app.database import get_db
 from app.auth.jwt import get_current_user
 from app.models import User, GoldHunterScan
 from app.goldhunter.scraper import fetch_url_content
-from scraping.apify_client_module import search_google_via_apify
 from nlp.openrouter import generate_gold_hunter_seeds
 import logging
 
