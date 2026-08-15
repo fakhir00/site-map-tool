@@ -78,13 +78,12 @@ def _async_client(use_writing_model: bool = False) -> AsyncOpenAI:
     )
 
 
-def _strip_code_fences(content: str) -> str:
-    value = (content or "").strip()
-    if value.startswith("```json"):
-        return value[7:-3].strip()
-    if value.startswith("```"):
-        return value[3:-3].strip()
-    return value
+def _strip_code_fences(value: str) -> str:
+    value = value.strip()
+    import re
+    value = re.sub(r'^```(?:json)?\s*', '', value)
+    value = re.sub(r'\s*```$', '', value)
+    return value.strip()
 
 
 def _parse_json_payload(content: str) -> Any:
@@ -230,6 +229,7 @@ Quality rules:
 - Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
 - Every phrase must include at least one meaningful seed keyword term exactly, so the app can safely reject unrelated junk.
 - For LSI keywords, include the seed term plus a semantic modifier instead of drifting to a broad synonym-only phrase.
+- You MUST aggressively avoid keyword cannibalization. Do not output multiple phrases that satisfy the exact same user search intent (e.g. "0dte techniques" and "0dte methods" are the same intent).
 
 Type definitions:
 - primary: core target phrases that match the main search intent.
@@ -391,10 +391,13 @@ For every raw label, rewrite it into a natural human search query:
 - Keep if 500+ per month.
 - Reject if below 500.
 
-**Step 2: Intent Clustering (Anti-Cannibalization)**
-- Group normalized queries that share the same user intent.
-- For each cluster, select the highest-volume query as PRIMARY.
-- Merge secondary queries into the primary content piece.
+**Step 2: Intent Clustering (AGGRESSIVE Anti-Cannibalization)**
+- You must AVOID KEYWORD CANNIBALIZATION AT ALL COSTS.
+- If two queries could be answered by the SAME blog post or page, they are the SAME INTENT. You MUST group them together.
+- For example: "0dte trading strategies", "0dte trading strategies explained", "0dte trading techniques" all belong to ONE single intent.
+- For each cluster, select the single most natural, high-volume query as the PRIMARY keyword.
+- Discard ALL OTHER variations in that cluster. Do NOT output them.
+- IMPORTANT: Each returned keyword will be turned into its OWN STANDALONE ARTICLE. If you return variations, you will cause SEO cannibalization. ONLY return ONE keyword per topic/intent.
 
 **Step 3: Final Output**
 - Output ONLY one keyword per intent cluster (maximum of {max_keywords} total).
@@ -403,7 +406,7 @@ For every raw label, rewrite it into a natural human search query:
   - "source_phrase": exact original phrase from the candidates
   - "phrase": the normalized search query
   - "volume": Estimated volume (High/Medium/Low)
-  - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
+  - "type": "primary" (all should be primary standalone topics)
 
 The user's target seed keywords are:
 {json.dumps(seed_keywords)}
