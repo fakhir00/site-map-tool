@@ -250,11 +250,11 @@ async def generate_hub_spoke(
     if cluster_record:
         cluster_record.mapping_data = clusters
     else:
-        db.add(HubSpokeCluster(project_id=project.id, mapping_data=clusters))
-    
+        cluster_record = HubSpokeCluster(project_id=project.id, mapping_data=clusters)
+        db.add(cluster_record)
+        
     await db.commit()
-    
-    return {"clusters": clusters}
+    return {"message": "Clustered successfully", "clusters": clusters}
 
 
 @router.get("/{project_id}/keywords/hub-spoke")
@@ -263,14 +263,14 @@ async def get_hub_spoke(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models import HubSpokeCluster
     project = await _assert_owns_project(project_id, current_user.id, db)
     
-    q = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
-    res = await db.execute(q)
-    cluster_record = res.scalar_one_or_none()
+    from app.models import HubSpokeCluster
+    q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
+    res_cluster = await db.execute(q_cluster)
+    cluster_record = res_cluster.scalar_one_or_none()
     
-    return {"clusters": cluster_record.mapping_data if cluster_record else {}}
+    return {"clusters": cluster_record.mapping_data if cluster_record else None}
 
 
 

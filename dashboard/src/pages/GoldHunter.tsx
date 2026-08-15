@@ -22,23 +22,18 @@ type GoldHunterScan = {
 
 const renderAuditSummary = (summary: string) => {
   try {
-    const firstBrace = summary.indexOf('{');
-    const lastBrace = summary.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      const jsonStr = summary.slice(firstBrace, lastBrace + 1);
-      const parsed = JSON.parse(jsonStr);
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        return (
-          <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
-            {Object.entries(parsed).map(([key, value]) => (
-              <div key={key} className="flex flex-col">
-                <span className="font-semibold text-slate-900">{key}</span>
-                <span>{String(value)}</span>
-              </div>
-            ))}
-          </div>
-        )
-      }
+    const parsed = JSON.parse(summary)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return (
+        <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
+          {Object.entries(parsed).map(([key, value]) => (
+            <div key={key} className="flex flex-col">
+              <span className="font-semibold text-slate-900">{key}</span>
+              <span>{String(value)}</span>
+            </div>
+          ))}
+        </div>
+      )
     }
   } catch (e) {
     // Fall back to raw text if parsing fails

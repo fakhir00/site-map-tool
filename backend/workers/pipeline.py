@@ -37,8 +37,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
     Run a scan. Fresh scans clear old URL/keyword results; resumed scans continue
     pending URL rows from the previous paused run.
     """
-    from app.models import Project, ScanJob
+    from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
+    from nlp.keywords import extract_keywords_from_page
     from scraping.filters import filter_blog_urls
+    from scraping.crawler import scrape_page
     from scraping.sitemap import extract_all_urls_from_domain
 
     project_uuid = uuid.UUID(project_id)
@@ -100,32 +102,24 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 [(url, "own", own_domain) for url in own_urls],
             )
 
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            
-            def _crawl_domain(comp_domain: str) -> list[tuple[str, str, str]]:
-                try:
-                    d_urls = _discover_content_urls(
-                        comp_domain,
-                        project.url_filter_patterns,
-                        extract_all_urls_from_domain,
-                        filter_blog_urls,
-                        crawl_limit,
-                        required_terms,
-                        ranking_terms,
-                        source_type="competitor",
-                    )
-                    return [(u, "competitor", comp_domain) for u in d_urls]
-                except Exception as e:
-                    logger.warning("Error crawling competitor %s: %s", comp_domain, e)
-                    return []
-
-            if competitor_domains:
-                with ThreadPoolExecutor(max_workers=len(competitor_domains)) as executor:
-                    futures = [executor.submit(_crawl_domain, dom) for dom in competitor_domains]
-                    for future in as_completed(futures):
-                        domain_urls_to_queue = future.result()
-                        if domain_urls_to_queue:
-                            _queue_discovered_urls(db, project, project_uuid, job_uuid, domain_urls_to_queue)
+            for competitor_domain in competitor_domains:
+                domain_urls = _discover_content_urls(
+                    competitor_domain,
+                    project.url_filter_patterns,
+                    extract_all_urls_from_domain,
+                    filter_blog_urls,
+                    crawl_limit,
+                    required_terms,
+                    ranking_terms,
+                    source_type="competitor",
+                )
+                _queue_discovered_urls(
+                    db,
+                    project,
+                    project_uuid,
+                    job_uuid,
+                    [(url, "competitor", competitor_domain) for url in domain_urls],
+                )
 
             logger.info("[%s] Queued %s URLs", project_id, project.urls_found)
 
@@ -315,40 +309,39 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
 
     primary_query = _primary_competitor_search_query(seed_keywords)
     
-    search_limit = 20  # User requested up to 2 pages (20 results) to find good competitors
     primary_results_added = False
     if is_apify_configured():
         logger.info(f"Using Apify for primary query: {primary_query}")
-        apify_results = search_google_via_apify(primary_query, max_results=20, country_code=search_locale)
+        apify_results = search_google_via_apify(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
         for res in apify_results:
             add_domain(res["url"], require_relevance=False, query=primary_query, source="apify_page_1")
             primary_results_added = True
-            if len(competitor_domains) >= search_limit:
+            if len(competitor_domains) >= competitor_limit:
                 break
                 
-    if not primary_results_added and len(competitor_domains) < search_limit:
+    if not primary_results_added and len(competitor_domains) < competitor_limit:
         logger.info(f"Falling back to local search for primary query: {primary_query}")
-        for href in _search_result_urls(primary_query, include_google=True, locale=search_locale, max_results=20):
+        for href in _search_result_urls(primary_query, include_google=True, locale=search_locale):
             add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
-            if len(competitor_domains) >= search_limit:
+            if len(competitor_domains) >= competitor_limit:
                 break
 
     for query in _competitor_search_queries(seed_keywords):
         query_results_added = False
         if is_apify_configured():
-            apify_results = search_google_via_apify(query, max_results=20, country_code=search_locale)
+            apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
             for res in apify_results:
                 add_domain(res["url"], query=query)
                 query_results_added = True
-                if len(competitor_domains) >= search_limit:
+                if len(competitor_domains) >= competitor_limit:
                     break
                     
-        if not query_results_added and len(competitor_domains) < search_limit:
-            for href in _search_result_urls(query, include_google=True, locale=search_locale, max_results=20):
+        if not query_results_added and len(competitor_domains) < competitor_limit:
+            for href in _search_result_urls(query, include_google=True, locale=search_locale):
                 add_domain(href, query=query)
-                if len(competitor_domains) >= search_limit:
+                if len(competitor_domains) >= competitor_limit:
                     break
-        if len(competitor_domains) >= search_limit:
+        if len(competitor_domains) >= competitor_limit:
             break
 
     for domain in _fallback_competitor_domains(seed_keywords):
@@ -393,11 +386,11 @@ def _fallback_competitor_domains(seed_keywords: list[str]) -> list[str]:
     return []
 
 
-def _search_result_urls(query: str, include_google: bool = False, locale: str = "us", max_results: int = 10) -> list[str]:
+def _search_result_urls(query: str, include_google: bool = False, locale: str = "us") -> list[str]:
     urls: list[str] = []
 
     if include_google:
-        urls.extend(_search_google_result_urls(query, max_results=max_results, locale=locale))
+        urls.extend(_search_google_result_urls(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, locale=locale))
     urls.extend(_search_bing_result_urls(query))
     urls.extend(_search_duckduckgo_html_urls(query))
     return list(dict.fromkeys(urls))
