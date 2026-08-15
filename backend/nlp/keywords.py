@@ -268,34 +268,60 @@ def _get_spacy_model():
 
 
 def _intent_stem(word: str) -> str:
-    """Very basic stemming for intent deduplication."""
-    if len(word) <= 3:
-        return word
-    if word.endswith("ies"):
-        return word[:-3] + "y"
-    if word.endswith("ing"):
-        return word[:-3]
-    if word.endswith("ed"):
-        return word[:-2]
-    if word.endswith("es"):
-        return word[:-2]
-    if word.endswith("s") and not word.endswith("ss"):
-        return word[:-1]
-    return word
+    # Handle common SEO pluralizations/gerunds natively without heavy libraries
+    w = word.lower()
+    if w.endswith("ies"): return w[:-3] + "y"
+    if w.endswith("ing"): return w[:-3]
+    if w.endswith("es"): return w[:-2]
+    if w.endswith("s"): return w[:-1]
+    return w
 
 
 def generate_intent_hash(phrase: str) -> str:
     """
-    Generates a normalized intent hash for a keyword phrase.
-    e.g., '0dte options strategies' -> '0dte option strategy'
-    Sorting ensures 'options trading' == 'trading options'
+    Strips stop words and normalizes the phrase into an alphabetically sorted 
+    string of stemmed root words. This guarantees that "options trading strategies" 
+    and "trading option strategy" hash to the exact same intent!
     """
-    words = phrase.lower().split()
-    filtered = [w for w in words if w not in STOPWORDS]
-    if not filtered:
-        filtered = words
+    words = re.findall(r'[a-z0-9]+', phrase.lower())
+    filtered = [w for w in words if w not in STOPWORDS and w not in GENERIC_UI_WORDS]
     stemmed = [_intent_stem(w) for w in filtered]
-    return " ".join(sorted(stemmed))
+    
+    # Sort alphabetically to ignore word order
+    stemmed.sort()
+    return " ".join(stemmed)
+
+
+def get_intent_word_set(phrase: str) -> set[str]:
+    """Returns the set of stemmed words for a phrase, ignoring stop words."""
+    words = re.findall(r'[a-z0-9]+', phrase.lower())
+    return {_intent_stem(w) for w in words if w not in STOPWORDS and w not in GENERIC_UI_WORDS}
+
+
+def check_intent_cannibalization(phrase1: str, phrase2: str) -> bool:
+    """
+    Checks if two phrases mathematically cannibalize each other using 
+    Set Subsets and Jaccard Similarity on their stemmed word bases.
+    """
+    set1 = get_intent_word_set(phrase1)
+    set2 = get_intent_word_set(phrase2)
+    
+    if not set1 or not set2:
+        return False
+        
+    # Check if one is a perfect mathematical subset of the other
+    if set1.issubset(set2) or set2.issubset(set1):
+        return True
+        
+    # Jaccard Similarity (Intersection over Union)
+    intersection = set1.intersection(set2)
+    union = set1.union(set2)
+    jaccard = len(intersection) / len(union)
+    
+    if jaccard >= 0.6:
+        return True
+        
+    return False
 
 
 def extract_heading_keywords(h1: str, h2s: List[str], h3s: List[str]) -> List[str]:

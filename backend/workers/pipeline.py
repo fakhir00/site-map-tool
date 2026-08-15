@@ -1181,12 +1181,12 @@ def _build_ai_refined_accumulator(
     ai_recommendations: list[dict[str, Any]],
     topic_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
-    from nlp.keywords import clean_phrase, is_publishable_keyword, generate_intent_hash
+    from nlp.keywords import clean_phrase, is_publishable_keyword, check_intent_cannibalization
     from nlp.openrouter import normalize_keyword_type
 
     source_lookup = {clean_phrase(phrase): data for phrase, data in accumulator.items()}
     refined: dict[str, dict[str, Any]] = {}
-    seen_intents = set()
+    seen_phrases: list[str] = []
 
     for index, item in enumerate(ai_recommendations):
         source_phrase = clean_phrase(str(item.get("source_phrase", "")))
@@ -1200,10 +1200,22 @@ def _build_ai_refined_accumulator(
         if not source_data or not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
             continue
 
-        intent_hash = generate_intent_hash(phrase)
-        if intent_hash in seen_intents:
+        # Check against all previously seen phrases for cannibalization (subsets or high jaccard)
+        is_cannibalized = False
+        target_merge_phrase = None
+        for seen in seen_phrases:
+            if check_intent_cannibalization(phrase, seen):
+                is_cannibalized = True
+                target_merge_phrase = seen
+                break
+
+        if is_cannibalized and target_merge_phrase:
+            # Merge this item's metrics into the existing approved phrase
+            refined[target_merge_phrase]["count"] += int(source_data.get("count", 1))
+            refined[target_merge_phrase]["url_ids"].update(source_data.get("url_ids", set()))
             continue
-        seen_intents.add(intent_hash)
+
+        seen_phrases.append(phrase)
 
         if phrase not in refined:
             refined[phrase] = {

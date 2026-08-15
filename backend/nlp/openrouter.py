@@ -386,24 +386,21 @@ def filter_keyword_gap_recommendations(
 
 You are a Keyword Sanity Filter. You have received a raw list of topics, headings, and labels extracted from competitor sitemaps.
 
-**Step 0: NATURAL LANGUAGE NORMALIZATION (NEW — CRITICAL)**
-For every raw label, rewrite it into a natural human search query:
-- Reverse awkward structures: "board games using spin wheel" → "spin the wheel board game".
-- Remove redundant words: "games using spin wheel" → "spin the wheel games".
-- Use common search patterns: "spin wheel for instagram" → "instagram spin wheel".
-- If the normalized query sounds unnatural, rewrite it again until it passes the "Would a real human type this?" test.
+**Step 0: NATURAL LANGUAGE NORMALIZATION**
+For every raw label, rewrite it into a natural human search query. Remove awkward structures and redundant words.
 
-**Step 1: Volume Gate**
-- For the normalized query, estimate monthly search volume.
-- Keep if 500+ per month.
-- Reject if below 500.
+**Step 1: STRICT SEED RELEVANCE GATE (CRITICAL)**
+Compare the normalized query against the seed keyword set: {json.dumps(seed_keywords)}
+If the query is completely unrelated to the core topic, primary intent, or specific use case of the seed keywords, REJECT IT IMMEDIATELY. For example, if the seed keyword is highly technical or niche, aggressively reject generic terms, unrelated tutorials, or broad software/IT terms that do not directly address the seed's specific context.
 
-**Step 2: Intent Clustering (Anti-Cannibalization)**
-- Group normalized queries that share the same user intent.
+**Step 2: Volume Gate**
+- For the normalized query, estimate monthly search volume. Keep if 500+ per month. Reject if below 500.
+
+**Step 3: Intent Clustering (Anti-Cannibalization)**
+- Group normalized queries that share the exact same user intent. Strictly merge subset phrases (e.g., merge "large data" and "large data sets").
 - For each cluster, select the highest-volume query as PRIMARY.
-- Merge secondary queries into the primary content piece.
 
-**Step 3: Final Output**
+**Step 4: Final Output**
 - Output ONLY one keyword per intent cluster (maximum of {max_keywords} total).
 - Return ONLY a JSON array of objects. Do not include markdown formatting or explanations.
 - Each returned object must include:
@@ -411,9 +408,6 @@ For every raw label, rewrite it into a natural human search query:
   - "phrase": the normalized search query
   - "volume": Estimated volume (High/Medium/Low)
   - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
-
-The user's target seed keywords are:
-{json.dumps(seed_keywords)}
 
 Candidates:
 {json.dumps(trimmed_candidates, ensure_ascii=True)}
@@ -490,6 +484,7 @@ Candidate competitors:
 
 Choose only domains that are real search competitors for the target keywords. 
 Reject dictionaries, marketplaces, social networks, forums, docs portals, and generic informational sites.
+STRICT TOPICAL NICHE MATCH: Reject any domain that belongs to a different industry or topical niche than the target site and keywords. For example, if the seed keyword is about a highly specialized niche, aggressively reject generic software tutorial blogs, broad IT support websites, or generic directories that cover unrelated topics.
 
 Return ONLY a JSON array with up to {max_domains} objects.
 Each object must include:
