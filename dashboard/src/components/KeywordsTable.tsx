@@ -381,62 +381,140 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                           href={source.url}
                           key={source.url}
                           rel="noopener noreferrer"
-                          target="_blank"
-                          title={source.url}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                        ))}
-                      </div>
-                    </td>
-                  <td className="px-5 py-4 text-right">
-                    <Button
-                      disabled={articleMutation.isPending}
-                      onClick={() => articleMutation.mutate(keyword.id)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      <FilePenLine className="h-4 w-4" />
-                      {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
-                    </Button>
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <Button
-                      onClick={() => navigate(`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </Button>
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(keyword.id)} size="sm" variant="ghost">
-                      <BookmarkPlus className="h-4 w-4" />
-                    </Button>
-                  </td>
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-5 py-4 font-semibold">Keyword Gap</th>
+                  <th className="px-5 py-4 font-semibold">Type</th>
+                  <th className="px-5 py-4 font-semibold">Competitor Pages</th>
+                  <th className="px-5 py-4 font-semibold">Source Domains</th>
+                  <th className="px-5 py-4 font-semibold text-right">Draft Action</th>
+                  <th className="px-5 py-4 text-right"></th>
+                  <th className="px-5 py-4 text-right"></th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {data && data.pages > 1 && (
-        <div className="flex flex-col gap-3 border-t border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-500">
-            Page {page} of {data.pages} · {data.total.toLocaleString()} keywords
-          </p>
-          <div className="flex gap-2">
-            <Button disabled={page === 1} onClick={() => setPage((current) => current - 1)} size="sm" variant="secondary">
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </Button>
-            <Button disabled={page === data.pages} onClick={() => setPage((current) => current + 1)} size="sm" variant="secondary">
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
+                      Loading keyword gaps...
+                    </td>
+                  </tr>
+                ) : keywords.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
+                      No keyword gaps found. Wait for the initial scan to complete, or generate AI keywords.
+                    </td>
+                  </tr>
+                ) : (
+                  keywords.map((keyword) => (
+                    <tr key={keyword.id} className="hover:bg-slate-50/50">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          {isSelectionMode && (
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(keyword.id)}
+                              onChange={(e) => {
+                                const newIds = new Set(selectedIds)
+                                if (e.target.checked) newIds.add(keyword.id)
+                                else newIds.delete(keyword.id)
+                                setSelectedIds(newIds)
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600"
+                            />
+                          )}
+                          <div>
+                            <div className="font-medium text-slate-900">{keyword.phrase}</div>
+                            {keyword.search_volume !== null && keyword.search_volume !== undefined && (
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                Vol: {keyword.search_volume.toLocaleString()}
+                                {keyword.difficulty !== null && ` · KD: ${keyword.difficulty}`}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
+                      <td className="px-5 py-4 text-slate-600">{keyword.frequency} pages</td>
+                      <td className="px-5 py-4 text-slate-600">
+                        <div className="flex -space-x-2">
+                          {keyword.urls.slice(0, 3).map((url) => {
+                            let domain = 'unknown'
+                            try {
+                              domain = new URL(url).hostname.replace('www.', '')
+                            } catch (e) {
+                              // ignore
+                            }
+                            return (
+                              <div
+                                key={url}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-xs font-bold text-slate-600 shadow-sm"
+                                title={url}
+                              >
+                                {domain.charAt(0).toUpperCase()}
+                              </div>
+                            )
+                          })}
+                          {keyword.urls.length > 3 && (
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-50 text-xs font-bold text-slate-500 shadow-sm">
+                              +{keyword.urls.length - 3}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Button 
+                          onClick={() => articleMutation.mutate(keyword.id)} 
+                          size="sm" 
+                          variant="secondary"
+                          disabled={articleMutation.isPending && writingKeywordId === keyword.id}
+                        >
+                          <FilePenLine className="h-4 w-4" />
+                          {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
+                        </Button>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Button
+                          onClick={() => navigate(`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`)}
+                          size="sm"
+                          variant="secondary"
+                        >
+                          <Sparkles className="h-4 w-4" />
+                        </Button>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(keyword.id)} size="sm" variant="ghost">
+                          <BookmarkPlus className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+
+          {data && data.pages > 1 && (
+            <div className="flex flex-col gap-3 border-t border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">
+                Page {page} of {data.pages} · {data.total.toLocaleString()} keywords
+              </p>
+              <div className="flex gap-2">
+                <Button disabled={page === 1} onClick={() => setPage((current) => current - 1)} size="sm" variant="secondary">
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <Button disabled={page === data.pages} onClick={() => setPage((current) => current + 1)} size="sm" variant="secondary">
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </Card>
   )
