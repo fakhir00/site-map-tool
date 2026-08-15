@@ -1180,20 +1180,29 @@ def _build_ai_refined_accumulator(
     ai_recommendations: list[dict[str, Any]],
     topic_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
-    from nlp.keywords import clean_phrase, is_publishable_keyword
+    from nlp.keywords import clean_phrase, is_publishable_keyword, generate_intent_hash
     from nlp.openrouter import normalize_keyword_type
 
     source_lookup = {clean_phrase(phrase): data for phrase, data in accumulator.items()}
     refined: dict[str, dict[str, Any]] = {}
+    seen_intents = set()
+
     for index, item in enumerate(ai_recommendations):
         source_phrase = clean_phrase(str(item.get("source_phrase", "")))
         phrase = clean_phrase(str(item.get("phrase", "")))
         keyword_type = normalize_keyword_type(item.get("type"))
+        
         if source_phrase not in source_lookup and phrase in source_lookup:
             source_phrase = phrase
+            
         source_data = source_lookup.get(source_phrase)
         if not source_data or not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
             continue
+
+        intent_hash = generate_intent_hash(phrase)
+        if intent_hash in seen_intents:
+            continue
+        seen_intents.add(intent_hash)
 
         if phrase not in refined:
             refined[phrase] = {

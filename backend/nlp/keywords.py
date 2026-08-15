@@ -267,6 +267,37 @@ def _get_spacy_model():
     return _SPACY_MODEL
 
 
+def _intent_stem(word: str) -> str:
+    """Very basic stemming for intent deduplication."""
+    if len(word) <= 3:
+        return word
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    if word.endswith("ing"):
+        return word[:-3]
+    if word.endswith("ed"):
+        return word[:-2]
+    if word.endswith("es"):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def generate_intent_hash(phrase: str) -> str:
+    """
+    Generates a normalized intent hash for a keyword phrase.
+    e.g., '0dte options strategies' -> '0dte option strategy'
+    Sorting ensures 'options trading' == 'trading options'
+    """
+    words = phrase.lower().split()
+    filtered = [w for w in words if w not in STOPWORDS]
+    if not filtered:
+        filtered = words
+    stemmed = [_intent_stem(w) for w in filtered]
+    return " ".join(sorted(stemmed))
+
+
 def extract_heading_keywords(h1: str, h2s: List[str], h3s: List[str]) -> List[str]:
     """Extract keywords from page headings."""
     keywords = []
