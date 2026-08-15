@@ -309,27 +309,34 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
 
     primary_query = _primary_competitor_search_query(seed_keywords)
     
+    primary_results_added = False
     if is_apify_configured():
         logger.info(f"Using Apify for primary query: {primary_query}")
         apify_results = search_google_via_apify(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
         for res in apify_results:
             add_domain(res["url"], require_relevance=False, query=primary_query, source="apify_page_1")
+            primary_results_added = True
             if len(competitor_domains) >= competitor_limit:
                 break
-    else:
-        for href in _search_google_result_urls(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, locale=search_locale):
+                
+    if not primary_results_added and len(competitor_domains) < competitor_limit:
+        logger.info(f"Falling back to local search for primary query: {primary_query}")
+        for href in _search_result_urls(primary_query, include_google=True, locale=search_locale):
             add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
             if len(competitor_domains) >= competitor_limit:
                 break
 
     for query in _competitor_search_queries(seed_keywords):
+        query_results_added = False
         if is_apify_configured():
             apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
             for res in apify_results:
                 add_domain(res["url"], query=query)
+                query_results_added = True
                 if len(competitor_domains) >= competitor_limit:
                     break
-        else:
+                    
+        if not query_results_added and len(competitor_domains) < competitor_limit:
             for href in _search_result_urls(query, include_google=True, locale=search_locale):
                 add_domain(href, query=query)
                 if len(competitor_domains) >= competitor_limit:
