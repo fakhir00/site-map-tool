@@ -20,6 +20,28 @@ type GoldHunterScan = {
   created_at: string
 }
 
+const renderAuditSummary = (summary: string) => {
+  try {
+    const parsed = JSON.parse(summary)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return (
+        <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
+          {Object.entries(parsed).map(([key, value]) => (
+            <div key={key} className="flex flex-col">
+              <span className="font-semibold text-slate-900">{key}</span>
+              <span>{String(value)}</span>
+            </div>
+          ))}
+        </div>
+      )
+    }
+  } catch (e) {
+    // Fall back to raw text if parsing fails
+  }
+
+  return <p className="text-sm text-slate-700 whitespace-pre-wrap">{summary}</p>
+}
+
 export function GoldHunter() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -39,7 +61,7 @@ export function GoldHunter() {
       queryClient.invalidateQueries({ queryKey: ['goldhunter_history'] })
       setUrl('')
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       setError(err.message || 'Failed to mine gold from URL')
     }
   })
@@ -109,7 +131,7 @@ export function GoldHunter() {
 
                 <div className="mb-6 rounded-lg bg-slate-50 p-4 border border-slate-100">
                   <h4 className="text-sm font-semibold text-slate-900 mb-2">Agent Audit Summary</h4>
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{scan.audit_summary}</p>
+                  {renderAuditSummary(scan.audit_summary)}
                 </div>
 
                 <div>
