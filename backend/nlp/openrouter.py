@@ -302,6 +302,97 @@ Each object must have:
         return []
 
 
+def generate_ai_keywords_sync(seed_keywords: list[str]) -> list[dict[str, Any]]:
+    """Synchronous version of generate_ai_keywords for background worker pipelines."""
+    if not is_ai_configured():
+        logger.error("AI API key not configured")
+        return []
+
+    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
+
+    topic_terms = seed_keyword_terms(seed_keywords)
+    prompt = f"""
+You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
+Generate exactly 25 high-quality keyword opportunities: exactly 5 primary, 5 LSI, 5 long-tail, 5 entity, and 5 heading keywords.
+
+Seed keywords:
+{json.dumps(seed_keywords)}
+
+Quality rules:
+- Every keyword MUST be highly semantically relevant to the primary seed keywords.
+- Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
+- If a keyword does not directly relate to the user intent of the seed keyword, discard it.
+- Reject bogus, random, generic, broad, off-topic, or awkward phrases.
+- Do not invent fake brands, fake products, fake people, or fake entities.
+- Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
+- Every phrase must include at least one meaningful seed keyword term exactly, so the app can safely reject unrelated junk.
+- For LSI keywords, include the seed term plus a semantic modifier instead of drifting to a broad synonym-only phrase.
+
+Type definitions:
+- primary: core target phrases that match the main search intent.
+- lsi: semantically related support phrases users naturally search around the topic, while still containing the seed term.
+- long-tail: specific question, comparison, problem, or use-case phrases.
+- entity: named concepts, categories, tools, standards, products, or recognized terms in the topic.
+- heading: article section or page heading ideas that would make useful H2/H3 sections.
+
+Return ONLY a JSON array of objects. Do not include markdown formatting, explanation, or code blocks.
+Each object must have:
+- "phrase": the keyword phrase (string, lowercase)
+- "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
+"""
+    try:
+        payload = _chat_json(
+            system_prompt="You output only valid JSON arrays.",
+            user_prompt=prompt,
+            temperature=0.35,
+            max_tokens=1600,
+        )
+        if isinstance(payload, dict) and "keywords" in payload:
+            payload = payload["keywords"]
+        if not isinstance(payload, list):
+            return []
+
+        valid_keywords = []
+        seen_phrases: set[str] = set()
+        for kw in payload:
+            if isinstance(kw, dict) and kw.get("phrase"):
+                phrase = clean_phrase(str(kw["phrase"]))
+                kw_type = normalize_keyword_type(kw.get("type"))
+                if phrase in seen_phrases:
+                    continue
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                    continue
+                valid_keywords.append({
+                    "phrase": phrase,
+                    "type": kw_type,
+                })
+                seen_phrases.add(phrase)
+        
+        if valid_keywords:
+            filtered = filter_keyword_gap_recommendations(
+                seed_keywords,
+                valid_keywords,
+                25
+            )
+            if not filtered:
+                return []
+            # Ensure phrase fallback
+            for kw in filtered:
+                if not kw.get("phrase") and kw.get("source_phrase"):
+                    kw["phrase"] = kw["source_phrase"]
+                if not kw.get("phrase"):
+                    continue
+            return [kw for kw in filtered if kw.get("phrase")]
+        return []
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse JSON from %s: %s", ai_provider_name(), exc)
+        return []
+    except Exception as exc:
+        logger.error("Failed to generate keywords via %s: %s", ai_provider_name(), exc)
+        return []
+
+
+
 async def generate_ai_top_picks(seed_keywords: list[str], existing_keywords: list[str]) -> list[dict[str, Any]]:
     """Generate a curated list of the absolute top 5 best keywords using the configured AI provider, from existing keywords."""
     if not is_ai_configured():

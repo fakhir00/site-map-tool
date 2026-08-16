@@ -116,13 +116,6 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
     },
   })
 
-  const generateMutation = useMutation({
-    mutationFn: () => api.post<{ message: string, generated: number }>(`/projects/${projectId}/keywords/generate`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
-    },
-  })
-
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isHubSpokeMode, setIsHubSpokeMode] = useState(false)
@@ -277,16 +270,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
             <Sparkles className="h-4 w-4" />
             {topPicksMutation.isPending ? 'Generating...' : 'Top Picks'}
           </Button>
-          <Button 
-            disabled={generateMutation.isPending} 
-            onClick={() => generateMutation.mutate()} 
-            size="sm" 
-            variant="secondary"
-            className="text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border-cyan-200"
-          >
-            <Sparkles className="h-4 w-4" />
-            {generateMutation.isPending ? 'Generating...' : 'Generate AI Keywords'}
-          </Button>
+
           <Button onClick={handleExport} size="sm" variant="secondary">
             <Download className="h-4 w-4" />
             Export CSV

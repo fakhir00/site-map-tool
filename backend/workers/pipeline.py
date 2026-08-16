@@ -167,6 +167,51 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
         logger.info("[%s] Storing %s keyword gaps", project_id, len(kw_accumulator))
         _store_keywords(db, project_uuid, kw_accumulator)
+
+        from nlp.openrouter import generate_ai_keywords_sync, ai_generated_source
+        ai_keywords = generate_ai_keywords_sync(seed_keywords)
+        if ai_keywords:
+            from app.models import Keyword, Url, KeywordUrl
+            
+            existing_phrases = {row[0] for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_uuid)).all()}
+            all_excluded = existing_phrases | own_keyword_phrases
+            ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
+            
+            if ai_keywords:
+                ai_url_str, ai_source_domain = ai_generated_source()
+                ai_url = db.execute(select(Url).where(Url.project_id == project_uuid, Url.url == ai_url_str)).scalar_one_or_none()
+                if not ai_url:
+                    ai_url = Url(
+                        project_id=project_uuid,
+                        url=ai_url_str,
+                        source_type="ai",
+                        source_domain=ai_source_domain,
+                        status="scraped",
+                    )
+                    db.add(ai_url)
+                    db.flush()
+                
+                for kw_data in ai_keywords:
+                    phrase = kw_data["phrase"]
+                    kw_type = kw_data["type"]
+                    
+                    keyword = db.execute(select(Keyword).where(Keyword.project_id == project_uuid, Keyword.phrase == phrase)).scalar_one_or_none()
+                    if not keyword:
+                        keyword = Keyword(
+                            project_id=project_uuid,
+                            phrase=phrase,
+                            keyword_type=kw_type,
+                            frequency=1,
+                        )
+                        db.add(keyword)
+                        db.flush()
+                    
+                    link = db.execute(select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)).scalar_one_or_none()
+                    if not link:
+                        db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
+                db.commit()
+                logger.info("[%s] Stored %s AI-generated keywords", project_id, len(ai_keywords))
+
         _sync_project_counts(db, project)
         _mark_complete(db, project, job, "complete")
         logger.info("[%s] Scan complete with %s keywords", project_id, project.total_keywords)
