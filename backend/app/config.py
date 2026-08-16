@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     TOKENROUTER_WRITING_MODEL: str = "moonshotai/kimi-k3-free"
 
     # Scraping
-    MAX_URLS_PER_SCAN: int = 500
+    MAX_URLS_PER_SCAN: int = 5000
     MAX_COMPETITOR_DOMAINS: int = 10
     GOOGLE_SERP_RESULT_LIMIT: int = 10
     MAX_CONTENT_URLS_PER_DOMAIN: int = 8

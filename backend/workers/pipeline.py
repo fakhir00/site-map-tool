@@ -72,7 +72,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             required_terms = _search_required_terms(seed_keywords)
             ranking_terms = _search_ranking_terms(seed_keywords)
             per_domain_url_limit = max(1, settings.MAX_URLS_PER_SCAN // max(1, len(competitor_domains) + 1))
-            crawl_limit = min(per_domain_url_limit, max(1, settings.MAX_CONTENT_URLS_PER_DOMAIN))
+            crawl_limit = per_domain_url_limit
             logger.info("[%s] Own domain: %s", project_id, own_domain)
             logger.info("[%s] Competitor domains: %s", project_id, competitor_domains)
 
@@ -270,10 +270,7 @@ def _discover_content_urls(
         patterns=patterns,
         domain=domain,
     )
-    relevant_urls = [url for url in all_urls if _is_relevant_content_url(url, required_terms or set())]
-    relevant_urls.sort(key=lambda url: _url_relevance_score(url, ranking_terms or set()), reverse=True)
-    if relevant_urls:
-        content_urls = relevant_urls
+    content_urls.sort(key=lambda url: _url_relevance_score(url, ranking_terms or set()), reverse=True)
     if include_homepage:
         homepage = _origin(domain)
         if homepage:
