@@ -85,7 +85,7 @@ export function SemanticMetrics({ isActive = false }: { isActive?: boolean }) {
         </div>
 
         {/* Terminal Log */}
-        <div className="bg-slate-900 rounded-lg p-3 font-mono text-[10px] text-emerald-400 h-24 overflow-hidden relative">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-[10px] text-slate-500 h-24 overflow-hidden relative">
           <style dangerouslySetInnerHTML={{__html: `
             @keyframes terminalScroll {
               0% { transform: translateY(0); }
@@ -95,30 +95,30 @@ export function SemanticMetrics({ isActive = false }: { isActive?: boolean }) {
               animation: terminalScroll 10s linear infinite;
             }
           `}} />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900 z-10 pointer-events-none"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-50 z-10 pointer-events-none"></div>
           {isActive ? (
-            <div className="space-y-1 animate-terminal">
-              <p className="opacity-50">&gt; Initializing neural subnet...</p>
-              <p className="opacity-60">&gt; Mapping competitor domain vectors...</p>
-              <p className="opacity-70">&gt; Extracting semantic entities...</p>
-              <p className="opacity-80">&gt; Aligning intent clusters...</p>
-              <p className="opacity-90 text-cyan-400">&gt; Ontology framework compiled.</p>
-              <p className="opacity-50">&gt; Verifying keyword gaps...</p>
-              <p className="opacity-60">&gt; Correlating SERP resonance...</p>
-              <p className="opacity-70">&gt; Generating predictive scores...</p>
-              <p className="opacity-80">&gt; Optimizing LSI density...</p>
-              <p className="opacity-90 text-cyan-400">&gt; Cycle complete. Awaiting next command.</p>
+            <div className="space-y-1 animate-terminal text-slate-500">
+              <p className="opacity-60">&gt; Initializing neural subnet...</p>
+              <p className="opacity-70">&gt; Mapping competitor domain vectors...</p>
+              <p className="opacity-80">&gt; Extracting semantic entities...</p>
+              <p className="opacity-90">&gt; Aligning intent clusters...</p>
+              <p className="font-semibold text-cyan-700">&gt; Ontology framework compiled.</p>
+              <p className="opacity-60">&gt; Verifying keyword gaps...</p>
+              <p className="opacity-70">&gt; Correlating SERP resonance...</p>
+              <p className="opacity-80">&gt; Generating predictive scores...</p>
+              <p className="opacity-90">&gt; Optimizing LSI density...</p>
+              <p className="font-semibold text-cyan-700">&gt; Cycle complete. Awaiting next command.</p>
               {/* Duplicate for seamless scrolling */}
-              <p className="opacity-50">&gt; Initializing neural subnet...</p>
-              <p className="opacity-60">&gt; Mapping competitor domain vectors...</p>
-              <p className="opacity-70">&gt; Extracting semantic entities...</p>
-              <p className="opacity-80">&gt; Aligning intent clusters...</p>
-              <p className="opacity-90 text-cyan-400">&gt; Ontology framework compiled.</p>
+              <p className="opacity-60">&gt; Initializing neural subnet...</p>
+              <p className="opacity-70">&gt; Mapping competitor domain vectors...</p>
+              <p className="opacity-80">&gt; Extracting semantic entities...</p>
+              <p className="opacity-90">&gt; Aligning intent clusters...</p>
+              <p className="font-semibold text-cyan-700">&gt; Ontology framework compiled.</p>
             </div>
           ) : (
-            <div className="space-y-1 mt-4">
-              <p className="opacity-50">&gt; System idle.</p>
-              <p className="opacity-60">&gt; Waiting for next scan request...</p>
+            <div className="space-y-1 mt-4 text-slate-400">
+              <p>&gt; System idle.</p>
+              <p>&gt; Waiting for next scan request...</p>
             </div>
           )}
         </div>
