@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer } from 'lucide-react'
@@ -83,12 +83,7 @@ export function ProjectDetail() {
     refetchInterval: 5000,
   })
 
-  const { data: urls = [] } = useQuery({
-    queryKey: ['project-urls', projectId],
-    queryFn: () => api.get<UrlItem[]>(`/projects/${projectId}/urls?page_size=100`),
-    enabled: Boolean(projectId),
-    refetchInterval: 7000,
-  })
+
 
   const { data: sources = [] } = useQuery({
     queryKey: ['project-sources', projectId],
