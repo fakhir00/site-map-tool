@@ -1092,13 +1092,20 @@ def _refine_keyword_gap_recommendations(
         )
     except Exception as exc:
         logger.warning("AI keyword gap filter failed before request: %s", exc)
-        ai_recommendations = []
+        ai_recommendations = None
 
-    if ai_recommendations:
-        refined = _build_ai_refined_accumulator(accumulator, ai_recommendations, topic_terms)
+    if ai_recommendations is not None:
+        refined = _build_ai_refined_accumulator(
+            accumulator,
+            ai_recommendations,
+            topic_terms,
+        )
         if refined:
             logger.info("AI keyword gap filter kept %s of %s candidates", len(refined), len(accumulator))
             return refined
+        else:
+            logger.info("AI keyword gap filter correctly rejected all %s candidates", len(accumulator))
+            return {}
 
     fallback = _build_heuristic_gap_accumulator(accumulator, candidate_rows, topic_terms)
     logger.info("Heuristic keyword gap filter kept %s of %s candidates", len(fallback), len(accumulator))

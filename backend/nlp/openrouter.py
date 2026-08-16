@@ -372,13 +372,10 @@ def filter_keyword_gap_recommendations(
     seed_keywords: list[str],
     candidates: list[dict[str, Any]],
     max_keywords: int = 60,
-) -> list[dict[str, Any]]:
-    """Use AI to keep and improve the strongest competitor sitemap gap keywords."""
-    if not is_ai_configured():
-        logger.info("AI API key not configured; skipping AI keyword gap filter")
-        return []
-    if not candidates:
-        return []
+) -> list[dict[str, Any]] | None:
+    """Uses LLM to aggressively filter and deduplicate keyword gap candidates."""
+    if not is_ai_configured() or not candidates:
+        return None
 
     trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
     prompt = f"""
@@ -417,13 +414,13 @@ Candidates:
         payload = _chat_json(
             system_prompt="You output only valid JSON arrays.",
             user_prompt=prompt,
-            temperature=0.2,
-            max_tokens=2200,
+            temperature=0.1,
+            max_tokens=2500,
         )
         if isinstance(payload, dict) and "keywords" in payload:
             payload = payload["keywords"]
         if not isinstance(payload, list):
-            return []
+            return None
 
         valid: list[dict[str, Any]] = []
         candidate_phrases = {
@@ -454,10 +451,10 @@ Candidates:
         return valid
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse JSON from %s gap filter: %s", ai_provider_name(), exc)
-        return []
+        return None
     except Exception as exc:
         logger.error("Failed to filter keyword gaps via %s: %s", ai_provider_name(), exc)
-        return []
+        return None
 
 
 def judge_competitor_domains(
