@@ -193,6 +193,9 @@ class KeywordBulkSaveRequest(BaseModel):
     keyword_ids: List[uuid.UUID]
     notes: Optional[str] = None
 
+class KeywordBulkDeleteRequest(BaseModel):
+    keyword_ids: List[uuid.UUID]
+
 class KeywordBankBulkActionRequest(BaseModel):
     keyword_bank_ids: List[uuid.UUID]
     action: Literal["mark_done", "mark_not_done", "delete"]

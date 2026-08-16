@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
 import { KeywordsTable } from '../components/KeywordsTable'
+import { CompetitorGraph } from '../components/CompetitorGraph'
 
 function statusBadge(status: Project['status'] | string) {
   if (status === 'complete') return <Badge variant="teal">Complete</Badge>
@@ -110,29 +111,6 @@ export function ProjectDetail() {
     mutationFn: () => api.post<ScanJob>(`/projects/${projectId}/scan/resume`),
     onSuccess: invalidateProject,
   })
-
-  const displayUrls = useMemo(() => {
-    if (!urls.length) return []
-    const grouped = new Map<string, UrlItem[]>()
-    urls.forEach((u) => {
-      const domain = u.source_domain || displayHost(u.url)
-      if (!grouped.has(domain)) grouped.set(domain, [])
-      grouped.get(domain)!.push(u)
-    })
-    
-    const result: UrlItem[] = []
-    const groups = Array.from(grouped.values())
-    
-    while (result.length < 8 && groups.some((g) => g.length > 0)) {
-      for (const group of groups) {
-        if (result.length >= 8) break
-        if (group.length > 0) {
-          result.push(group.shift()!)
-        }
-      }
-    }
-    return result
-  }, [urls])
 
   if (loadingProject && !project) {
     return <div className="h-96 animate-pulse rounded-lg border border-slate-200 bg-white" />
@@ -277,50 +255,7 @@ export function ProjectDetail() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="p-0">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <h3 className="font-semibold text-slate-950">Sitemap URLs</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">URL</th>
-                  <th className="px-5 py-3 font-semibold">Source</th>
-                  <th className="px-5 py-3 font-semibold">Status</th>
-                  <th className="px-5 py-3 font-semibold text-right">Words</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {urls.length === 0 ? (
-                  <tr>
-                    <td className="px-5 py-8 text-center text-slate-500" colSpan={4}>
-                      No URLs have been queued yet.
-                    </td>
-                  </tr>
-                ) : (
-                  displayUrls.map((url) => (
-                    <tr className="hover:bg-slate-50" key={url.id}>
-                      <td className="max-w-[420px] px-5 py-3">
-                        <a className="block truncate font-medium text-slate-800 hover:text-cyan-800" href={url.url} rel="noopener noreferrer" target="_blank">
-                          {url.h1 || url.url}
-                        </a>
-                        <p className="truncate text-xs text-slate-500">{url.url}</p>
-                      </td>
-                      <td className="px-5 py-3">
-                        <Badge variant={url.source_type === 'own' ? 'slate' : 'indigo'}>
-                          {url.source_type === 'own' ? 'Your site' : displayHost(url.source_domain || url.url)}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-3">{statusBadge(url.status)}</td>
-                      <td className="px-5 py-3 text-right font-mono text-slate-700">{url.word_count?.toLocaleString() || '-'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <CompetitorGraph sources={sources} />
 
         <div className="space-y-4">
           <Card className="p-0">

@@ -134,6 +134,20 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
     }
   })
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => 
+      api.post(`/projects/${projectId}/keywords/bulk-delete`, { 
+        keyword_ids: Array.from(selectedIds)
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
+      setIsSelectionMode(false)
+      setSelectedIds(new Set())
+      alert(data.message)
+    }
+  })
+
   const articleMutation = useMutation({
     mutationFn: (keywordId: string) => api.postArticle(`/projects/${projectId}/keywords/${keywordId}/article/generate`, {}),
     onMutate: (keywordId) => {
@@ -240,6 +254,18 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                 onClick={() => bulkSaveMutation.mutate({ tag: '#blog' })}
               >
                 Blog
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={selectedIds.size === 0 || bulkDeleteMutation.isPending}
+                onClick={() => {
+                  if (confirm('Are you sure you want to permanently delete these keywords?')) {
+                    bulkDeleteMutation.mutate()
+                  }
+                }}
+              >
+                Delete
               </Button>
               <Button variant="secondary" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
                 Cancel
