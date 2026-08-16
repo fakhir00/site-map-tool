@@ -443,32 +443,27 @@ async def bulk_delete_keywords(
         cluster_record = res_cluster.scalar_one_or_none()
         
         if cluster_record and cluster_record.mapping_data:
-            clusters = copy.deepcopy(cluster_record.mapping_data)
+            data = copy.deepcopy(cluster_record.mapping_data)
             
-            # Determine if it's categorized (dict of dicts) or flat (dict of lists)
-            is_categorized = False
-            first_key = next(iter(clusters.keys()), None) if isinstance(clusters, dict) else None
-            if first_key and isinstance(clusters[first_key], dict):
-                is_categorized = True
-                
-            def clean_hub_spokes(hub_map):
-                for hub in list(hub_map.keys()):
-                    if hub in phrases_to_remove:
-                        del hub_map[hub]
-                    else:
-                        hub_map[hub] = [s for s in hub_map[hub] if s not in phrases_to_remove]
-                        if not hub_map[hub]:
-                            del hub_map[hub]
+            # Handle new 3-Layer Schema
+            if isinstance(data, dict) and "hubs" in data:
+                for hub_item in data["hubs"]:
+                    layers = hub_item.get("layers", {})
+                    for layer_name, spokes in list(layers.items()):
+                        # Keep spokes that DO NOT contain any of the deleted phrases
+                        new_spokes = []
+                        for spoke in spokes:
+                            should_delete = any(f"(Target Keyword: {phrase})" in spoke for phrase in phrases_to_remove)
+                            if not should_delete:
+                                new_spokes.append(spoke)
+                        
+                        if new_spokes:
+                            layers[layer_name] = new_spokes
+                        else:
+                            # If a layer is completely empty, keep the layer key but empty array
+                            layers[layer_name] = []
                             
-            if is_categorized:
-                for category in list(clusters.keys()):
-                    clean_hub_spokes(clusters[category])
-                    if not clusters[category]:
-                        del clusters[category]
-            else:
-                clean_hub_spokes(clusters)
-                
-            cluster_record.mapping_data = clusters
+            cluster_record.mapping_data = data
             
     await db.commit()
     

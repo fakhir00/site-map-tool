@@ -1281,20 +1281,42 @@ async def cluster_hub_and_spoke(keywords: list[str]) -> dict[str, Any] | None:
 
     trimmed = keywords[:500]
     prompt = f"""
-You are an expert SEO architect. You have received a list of keyword phrases.
-Group them into a semantic Hub and Spoke structure, prioritizing the strict avoidance of keyword cannibalization.
+Take a raw, flat Hub-and-Spoke list and transform it into a visually optimized, layered, ranking-ready SEO architecture.
 
-**Task Requirements:**
-1. **Categorize**: Group the keywords into logical high-level categories (e.g., Core Concepts, How-To Guides, Materials/Products, Professionals/Services, Specific Use-Cases, Commercial/Best Of).
-2. **Identify Hubs**: Inside each Category, identify broad "Hub" topics.
-3. **Assign Spokes & Prevent Cannibalization**: Assign each keyword to a Hub as a "Spoke". YOU MUST aggressively merge duplicate or overlapping intents into a single, stronger Spoke keyword. (e.g., "0dte trading techniques", "0dte trading methods", and "advanced 0dte trading tips" MUST be merged into a single keyword like "advanced 0dte trading techniques"). Do NOT output multiple spokes that satisfy the same search intent.
-4. **Inject Commercial Intents**: If the list lacks commercial keywords ("best", "top", "review", "vs"), artificially add 1-3 high-value commercial Spokes naturally relevant to the Hubs.
-5. **Output Format**: Return ONLY a valid JSON object with the following nested structure:
+[TASK - STRICT ENFORCEMENT]
+
+*Rule 1: Fix the Hub.*
+•  If the Hub contains generic words ("Fundamentals", "Basics", "Intro"), strip them.
+•  Replace with the exact high-volume core entity.
+•  Title Format: "The Ultimate Guide to [Core Entity]".
+
+*Rule 2: Kill Synonyms & Merge Components.*
+•  Merge all singular/plural and synonym spokes into ONE spoke: "What Is [Core Entity]?".
+•  If a spoke is a single part/component (e.g., "leg", "wheel"), DO NOT keep it alone. Merge it into a broader "Complete Guide to Parts & Accessories".
+
+*Rule 3: Enforce the 3-Layer Stack.*
+You MUST build these 3 layers for each Hub. If missing, invent them based on the niche:
+1. *Foundation Spokes (Informational)*: "What Is X?", "X vs Y".
+2. *Action Spokes (How-To)*: "How to Set Up X", "How to Choose X".
+3. *Money Spokes (Commercial)*: "Best X Brands", "X for Sale", "X for [Niche]".
+
+*Rule 4: Visually Optimized JSON Output.*
+•  Output MUST be a valid JSON object matching the schema below exactly.
+•  DO NOT USE markdown ticks for the JSON output. Return pure JSON.
+•  Display the Target Keyword from the provided list in parentheses next to each Spoke. Example: "What Is a Portable Stage Platform? (Target Keyword: portable stage)"
+
+EXPECTED JSON SCHEMA:
 {{
-  "Category Name": {{
-    "Hub Phrase": ["Spoke Phrase 1", "Spoke Phrase 2"],
-    "Another Hub": ["Spoke Phrase 3"]
-  }}
+  "hubs": [
+    {{
+      "hub_title": "The Ultimate Guide to Portable Stage Platforms",
+      "layers": {{
+        "Foundation Spokes (Informational)": ["What Is a Portable Stage Platform? (Target Keyword: portable stage)"],
+        "Action Spokes (How-To)": ["How to Set Up a Portable Stage (Target Keyword: portable stage setup)"],
+        "Money Spokes (Commercial)": ["Best Portable Stage Brands (Target Keyword: best portable stage brands)"]
+      }}
+    }}
+  ]
 }}
 
 Keywords to cluster:
@@ -1302,7 +1324,7 @@ Keywords to cluster:
 """
     try:
         payload = await _achat_json(
-            system_prompt="You output only valid JSON objects mapping Category Strings to Hub/Spoke dictionaries.",
+            system_prompt="You output only valid JSON objects matching the 3-Layer SEO Stack schema.",
             user_prompt=prompt,
             temperature=0.1,
             max_tokens=2500,

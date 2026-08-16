@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Network, RefreshCw } from 'lucide-react'
+import { Network, RefreshCw, BookOpen, Settings, DollarSign } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from './ui/Button'
 
@@ -7,18 +7,83 @@ interface HubSpokeViewProps {
   projectId: string
 }
 
-type SpokeList = string[]
-type HubToSpokes = Record<string, SpokeList>
-type CategoryToHubs = Record<string, HubToSpokes>
-type ClusterData = HubToSpokes | CategoryToHubs
-
-function isCategorized(clusters: ClusterData): clusters is CategoryToHubs {
-  const firstKey = Object.keys(clusters)[0]
-  if (!firstKey) return false
-  return !Array.isArray(clusters[firstKey])
+interface NewSchemaLayer {
+  [layerName: string]: string[]
 }
 
-function HubCard({ hub, spokes }: { hub: string; spokes: string[] }) {
+interface NewSchemaHub {
+  hub_title: string
+  layers: NewSchemaLayer
+}
+
+interface NewSchema {
+  hubs: NewSchemaHub[]
+}
+
+type OldSchema = Record<string, any>
+type ClusterData = NewSchema | OldSchema
+
+function LayerIcon({ name }: { name: string }) {
+  if (name.includes('Foundation') || name.includes('Informational')) return <BookOpen className="h-4 w-4 text-indigo-500" />
+  if (name.includes('Action') || name.includes('How-To')) return <Settings className="h-4 w-4 text-emerald-500" />
+  if (name.includes('Money') || name.includes('Commercial')) return <DollarSign className="h-4 w-4 text-amber-500" />
+  return <Network className="h-4 w-4 text-slate-400" />
+}
+
+function NewHubCard({ hub }: { hub: NewSchemaHub }) {
+  const layerEntries = Object.entries(hub.layers || {})
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
+      <div className="border-b border-slate-200 bg-white px-5 py-4">
+        <h5 className="text-lg font-bold text-slate-900">{hub.hub_title}</h5>
+        <div className="mt-1 text-xs font-semibold text-cyan-600 uppercase tracking-wider">SEO Hub / Pillar Page</div>
+      </div>
+      <div className="flex-1 p-5">
+        {layerEntries.length === 0 ? (
+          <p className="text-sm text-slate-500">No spokes generated for this hub.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {layerEntries.map(([layerName, spokes], idx) => (
+              <div key={idx} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2.5">
+                  <LayerIcon name={layerName} />
+                  <h6 className="font-semibold text-slate-800 text-sm">{layerName}</h6>
+                </div>
+                <div className="p-3">
+                  {(!spokes || spokes.length === 0) ? (
+                    <p className="text-xs text-slate-400 italic px-2">No keywords in this layer.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1.5">
+                      {spokes.map((spoke, sIdx) => {
+                        const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
+                        const displayTitle = match ? match[1] : spoke
+                        const targetKeyword = match ? match[2] : null
+
+                        return (
+                          <li key={sIdx} className="flex flex-col items-start px-2 py-1.5 rounded-md hover:bg-slate-50">
+                            <span className="text-sm font-medium text-slate-700">{displayTitle}</span>
+                            {targetKeyword && (
+                              <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                Keyword: {targetKeyword}
+                              </span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function OldHubCard({ hub, spokes }: { hub: string; spokes: string[] }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
@@ -86,6 +151,8 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
     )
   }
 
+  const isNewSchema = 'hubs' in clusters && Array.isArray((clusters as NewSchema).hubs)
+
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -100,28 +167,27 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
           disabled={clusterMutation.isPending}
         >
           <RefreshCw className={`mr-2 h-4 w-4 ${clusterMutation.isPending ? 'animate-spin' : ''}`} />
-          Re-Cluster
+          {clusterMutation.isPending ? 'Re-generating...' : 'Re-generate'}
         </Button>
       </div>
 
-      {isCategorized(clusters) ? (
-        <div className="flex flex-col gap-10">
-          {Object.entries(clusters).map(([category, hubs]) => (
-            <div key={category}>
-              <h3 className="mb-4 text-lg font-bold text-slate-800 border-b border-slate-200 pb-2">{category}</h3>
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {Object.entries(hubs).map(([hub, spokes]) => (
-                  <HubCard key={hub} hub={hub} spokes={spokes} />
-                ))}
-              </div>
-            </div>
+      {isNewSchema ? (
+        <div className="grid gap-6 md:grid-cols-2">
+          {(clusters as NewSchema).hubs.map((hub, i) => (
+            <NewHubCard key={i} hub={hub} />
           ))}
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(clusters as Record<string, string[]>).map(([hub, spokes]) => (
-            <HubCard key={hub} hub={hub} spokes={spokes} />
-          ))}
+          {Object.entries(clusters).map(([category, hubMap]) => {
+            if (Array.isArray(hubMap)) {
+              return <OldHubCard key={category} hub={category} spokes={hubMap} />
+            } else {
+              return Object.entries(hubMap).map(([hub, spokes]) => (
+                <OldHubCard key={`${category}-${hub}`} hub={hub} spokes={spokes as string[]} />
+              ))
+            }
+          })}
         </div>
       )}
     </div>
