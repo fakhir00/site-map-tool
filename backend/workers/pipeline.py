@@ -132,15 +132,12 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         own_keyword_phrases: set[str] = _own_sitemap_keyword_phrases(db, project_uuid, topic_terms)
         kw_accumulator: dict[str, dict[str, Any]] = {}
 
+        competitor_urls = []
         for index, url_row in enumerate(pending_urls, start=1):
             db.refresh(project)
             if project.status == "paused":
                 logger.info("[%s] Scan paused after %s URLs", project_id, index - 1)
                 _mark_complete(db, project, job, "paused")
-        competitor_urls = []
-        for index, url_row in enumerate(pending_urls, start=1):
-            if not job.is_running:
-                logger.info("[%s] Scan cancelled, stopping URL processing", project_id)
                 return
 
             logger.info("[%s] Analyzing sitemap URL %s/%s: %s", project_id, index, len(pending_urls), url_row.url)
