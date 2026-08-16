@@ -86,7 +86,7 @@ export function CompetitorGraph({ sources }: CompetitorGraphProps) {
                 backdropFilter: 'blur(4px)'
               }}
               itemStyle={{ color: '#06b6d4' }}
-              formatter={(value: number) => [`${value} footprint nodes`, 'Detected']}
+              formatter={(value: any) => [`${value} footprint nodes`, 'Detected']}
             />
             <Radar
               name="Detected Footprint"

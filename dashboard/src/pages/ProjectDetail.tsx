@@ -2,7 +2,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer } from 'lucide-react'
-import { api, type Project, type ProjectSource, type ProjectStats, type ScanJob, type ScanProgress, type UrlItem } from '../lib/api'
+import { api, type Project, type ProjectSource, type ProjectStats, type ScanJob, type ScanProgress } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
