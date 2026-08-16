@@ -142,6 +142,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
       queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['hub-spoke', projectId] })
       setIsSelectionMode(false)
       setSelectedIds(new Set())
       alert(data.message)

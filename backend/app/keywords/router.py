@@ -405,6 +405,12 @@ async def bulk_delete_keywords(
     if not body.keyword_ids:
         return {"message": "No keywords to delete"}
 
+    # Fetch keywords first to get their phrases so we can remove them from HubSpoke
+    q_kw = select(Keyword).where(Keyword.id.in_(body.keyword_ids))
+    res_kw = await db.execute(q_kw)
+    keywords_to_delete = res_kw.scalars().all()
+    phrases_to_remove = {k.phrase for k in keywords_to_delete}
+    
     # Keyword deletion will cascade to KeywordUrl automatically if configured, 
     # but we can manually delete from Keyword to be safe
     from sqlalchemy import delete
@@ -426,6 +432,44 @@ async def bulk_delete_keywords(
             Keyword.project_id == project_id
         )
     )
+    
+    # Update HubSpoke mapping to remove deleted phrases
+    if phrases_to_remove:
+        from app.models import HubSpokeCluster
+        import copy
+        
+        q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project_id)
+        res_cluster = await db.execute(q_cluster)
+        cluster_record = res_cluster.scalar_one_or_none()
+        
+        if cluster_record and cluster_record.mapping_data:
+            clusters = copy.deepcopy(cluster_record.mapping_data)
+            
+            # Determine if it's categorized (dict of dicts) or flat (dict of lists)
+            is_categorized = False
+            first_key = next(iter(clusters.keys()), None) if isinstance(clusters, dict) else None
+            if first_key and isinstance(clusters[first_key], dict):
+                is_categorized = True
+                
+            def clean_hub_spokes(hub_map):
+                for hub in list(hub_map.keys()):
+                    if hub in phrases_to_remove:
+                        del hub_map[hub]
+                    else:
+                        hub_map[hub] = [s for s in hub_map[hub] if s not in phrases_to_remove]
+                        if not hub_map[hub]:
+                            del hub_map[hub]
+                            
+            if is_categorized:
+                for category in list(clusters.keys()):
+                    clean_hub_spokes(clusters[category])
+                    if not clusters[category]:
+                        del clusters[category]
+            else:
+                clean_hub_spokes(clusters)
+                
+            cluster_record.mapping_data = clusters
+            
     await db.commit()
     
     return {"message": f"Successfully deleted keywords"}
