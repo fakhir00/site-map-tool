@@ -137,6 +137,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             if project.status == "paused":
                 logger.info("[%s] Scan paused after %s URLs", project_id, index - 1)
                 _mark_complete(db, project, job, "paused")
+        competitor_urls = []
+        for index, url_row in enumerate(pending_urls, start=1):
+            if not job.is_running:
+                logger.info("[%s] Scan cancelled, stopping URL processing", project_id)
                 return
 
             logger.info("[%s] Analyzing sitemap URL %s/%s: %s", project_id, index, len(pending_urls), url_row.url)
@@ -152,9 +156,26 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             if url_row.source_type == "own":
                 own_keyword_phrases.update(_url_keyword_candidates(url_row.url, topic_terms, include_single_terms=True))
             else:
-                _collect_sitemap_keywords(kw_accumulator, url_row.url, url_row.id, topic_terms)
+                competitor_urls.append(url_row)
             
             db.commit()
+
+        if competitor_urls:
+            from nlp.openrouter import extract_keywords_from_urls_ai
+            logger.info("[%s] Extracting AI keywords from %s competitor URLs", project_id, len(competitor_urls))
+            ai_extracted = extract_keywords_from_urls_ai(seed_keywords, competitor_urls)
+            for item in ai_extracted:
+                phrase = item["phrase"]
+                if phrase not in kw_accumulator:
+                    kw_accumulator[phrase] = {
+                        "type": item["type"],
+                        "count": 0,
+                        "url_ids": set(),
+                        "score": 1.0,
+                        "source": "sitemap",
+                    }
+                kw_accumulator[phrase]["count"] += len(item["url_ids"])
+                kw_accumulator[phrase]["url_ids"].update(uuid.UUID(uid) for uid in item["url_ids"])
 
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
         kw_accumulator = _refine_keyword_gap_recommendations(
@@ -165,6 +186,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             topic_terms,
         )
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
+
         logger.info("[%s] Storing %s keyword gaps", project_id, len(kw_accumulator))
         _store_keywords(db, project_uuid, kw_accumulator)
 

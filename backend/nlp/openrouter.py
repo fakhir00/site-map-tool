@@ -392,6 +392,85 @@ Each object must have:
         return []
 
 
+def extract_keywords_from_urls_ai(seed_keywords: list[str], urls: list[Any]) -> list[dict[str, Any]]:
+    """Uses LLM to intelligently extract SEO keywords from competitor URL slugs."""
+    if not is_ai_configured() or not urls:
+        return []
+
+    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
+    topic_terms = seed_keyword_terms(seed_keywords)
+    
+    all_results = []
+    chunk_size = 100
+    
+    for i in range(0, len(urls), chunk_size):
+        chunk = urls[i:i + chunk_size]
+        url_payload = [{"id": str(u.id), "url": u.url} for u in chunk]
+        
+        prompt = f"""
+[SYSTEM COMMAND — URL KEYWORD EXTRACTION]
+You are an expert SEO data analyst.
+Seed topic: {json.dumps(seed_keywords)}
+
+I will provide a JSON array of competitor URLs.
+Your job is to read the URL slugs and intelligently INFER the exact core SEO keywords those pages are targeting.
+
+Rules:
+- You must ONLY extract keywords that are highly relevant to the seed topic. Discard completely unrelated URLs.
+- Normalize keywords to a natural search phrase (lowercase, 2 to 6 words). DO NOT just output a hyphenated slug.
+- You must include the exact UUIDs of the URLs that target each keyword in the "url_ids" array.
+- "type" should be one of: primary, lsi, long-tail, entity.
+
+Input URLs:
+{json.dumps(url_payload, ensure_ascii=False)}
+
+Return ONLY a JSON array of objects. Do not include markdown or explanations.
+Example output format:
+[
+  {{
+    "phrase": "circuit diagram maker",
+    "type": "primary",
+    "url_ids": ["uuid-1", "uuid-2"]
+  }}
+]
+"""
+        try:
+            payload = _chat_json(
+                system_prompt="You output only valid JSON arrays.",
+                user_prompt=prompt,
+                temperature=0.1,
+                max_tokens=2500,
+            )
+            if isinstance(payload, dict) and "keywords" in payload:
+                payload = payload["keywords"]
+            if not isinstance(payload, list):
+                continue
+                
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                phrase = clean_phrase(str(item.get("phrase", "")))
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                    continue
+                    
+                kw_type = normalize_keyword_type(item.get("type"))
+                url_ids = item.get("url_ids", [])
+                if not isinstance(url_ids, list):
+                    continue
+                    
+                valid_ids = [uid for uid in url_ids if isinstance(uid, str)]
+                if valid_ids:
+                    all_results.append({
+                        "phrase": phrase,
+                        "type": kw_type,
+                        "url_ids": valid_ids
+                    })
+        except Exception as exc:
+            logger.error("AI URL extraction failed for chunk: %s", exc)
+            continue
+
+    return all_results
+
 
 async def generate_ai_top_picks(seed_keywords: list[str], existing_keywords: list[str]) -> list[dict[str, Any]]:
     """Generate a curated list of the absolute top 5 best keywords using the configured AI provider, from existing keywords."""
@@ -472,24 +551,32 @@ def filter_keyword_gap_recommendations(
     prompt = f"""
 [SYSTEM COMMAND — FINAL KEYWORD SANITY FILTER]
 
-You are a Keyword Sanity Filter. You have received a raw list of topics, headings, and labels extracted from competitor sitemaps.
+You are a Keyword Sanity Filter. You have received a raw list of keywords extracted from competitor sitemaps.
 
-**Step 0: NATURAL LANGUAGE NORMALIZATION**
-For every raw label, rewrite it into a natural human search query. Remove awkward structures and redundant words.
+**Step 0: NATURAL LANGUAGE NORMALIZATION (NEW — CRITICAL)**
+For every raw keyword, rewrite it into a natural human search query:
+- Reverse awkward structures: "board games using spin wheel" → "spin the wheel board game".
+- Remove redundant words: "games using spin wheel" → "spin the wheel games".
+- Use common search patterns: "spin wheel for instagram" → "instagram spin wheel".
+- Prioritize shorter, standard collocations (3-4 words) over longer descriptive phrases.
+- If the normalized query sounds unnatural, rewrite it again until it passes the "Would a real human type this?" test.
 
 **Step 1: STRICT SEED RELEVANCE GATE (CRITICAL)**
 Compare the normalized query against the seed keyword set: {json.dumps(seed_keywords)}
 If the query is completely unrelated to the core topic, primary intent, or specific use case of the seed keywords, REJECT IT IMMEDIATELY. For example, if the seed keyword is highly technical or niche, aggressively reject generic terms, unrelated tutorials, or broad software/IT terms that do not directly address the seed's specific context.
 
 **Step 2: Volume Gate**
-- For the normalized query, estimate monthly search volume. Keep if 500+ per month. Reject if below 500.
+- For the normalized query, estimate monthly search volume.
+- Keep if 500+ per month.
+- Reject if below 500.
 
 **Step 3: Intent Clustering (Anti-Cannibalization)**
-- Group normalized queries that share the exact same user intent. Strictly merge subset phrases (e.g., merge "large data" and "large data sets").
+- Group normalized queries that share the same user intent. Strictly merge subset phrases.
 - For each cluster, select the highest-volume query as PRIMARY.
+- Merge secondary queries into the primary content piece.
 
 **Step 4: Final Output**
-- Output ONLY one keyword per intent cluster (maximum of {max_keywords} total).
+- Output ONLY one keyword per intent cluster (maximum {max_keywords} total).
 - Return ONLY a JSON array of objects. Do not include markdown formatting or explanations.
 - Each returned object must include:
   - "source_phrase": exact original phrase from the candidates
