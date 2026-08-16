@@ -19,6 +19,7 @@ interface SourceData {
 
 interface CompetitorGraphProps {
   sources: SourceData[]
+  isActive?: boolean
 }
 
 const TECH_JARGON = [
@@ -34,7 +35,7 @@ const TECH_JARGON = [
   'Lexical Array'
 ]
 
-export function CompetitorGraph({ sources }: CompetitorGraphProps) {
+export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphProps) {
   // Filter out the 'own' site
   const competitors = sources.filter((s) => s.source_type !== 'own' && s.source_domain)
 
@@ -65,10 +66,10 @@ export function CompetitorGraph({ sources }: CompetitorGraphProps) {
         </div>
         <div className="flex items-center gap-2">
            <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-500"></span>
+            {isActive && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>}
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isActive ? 'bg-cyan-500' : 'bg-slate-300'}`}></span>
           </span>
-          <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Active</span>
+          <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{isActive ? 'Active' : 'Standby'}</span>
         </div>
       </div>
       

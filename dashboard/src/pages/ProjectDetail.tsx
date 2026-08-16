@@ -178,7 +178,7 @@ export function ProjectDetail() {
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{actionError.message}</div>
       )}
 
-      {(isRunning || isPaused || percent > 0) && (
+      {(isRunning || isPaused) && (
         <Card>
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
             <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700">
@@ -186,7 +186,7 @@ export function ProjectDetail() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="font-semibold text-slate-950">{isPaused ? 'Gap Hunter paused' : status === 'complete' ? 'Latest Gap Hunter run complete' : 'Gap Hunter in progress'}</p>
+                <p className="font-semibold text-slate-950">{isPaused ? 'Gap Hunter paused' : 'Gap Hunter in progress'}</p>
                 <span className="text-sm font-semibold text-indigo-700">{percent}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-slate-100">
@@ -252,8 +252,8 @@ export function ProjectDetail() {
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="flex flex-col gap-4">
-          <CompetitorGraph sources={sources} />
-          <SemanticMetrics />
+          <CompetitorGraph sources={sources} isActive={isRunning} />
+          <SemanticMetrics isActive={isRunning} />
         </div>
 
         <div className="space-y-4">
