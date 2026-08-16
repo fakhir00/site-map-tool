@@ -9,6 +9,7 @@ import { Card } from '../components/ui/Card'
 import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
 import { KeywordsTable } from '../components/KeywordsTable'
 import { CompetitorGraph } from '../components/CompetitorGraph'
+import { SemanticMetrics } from '../components/SemanticMetrics'
 
 function statusBadge(status: Project['status'] | string) {
   if (status === 'complete') return <Badge variant="teal">Complete</Badge>
@@ -250,7 +251,10 @@ export function ProjectDetail() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <CompetitorGraph sources={sources} />
+        <div className="flex flex-col gap-4">
+          <CompetitorGraph sources={sources} />
+          <SemanticMetrics />
+        </div>
 
         <div className="space-y-4">
           <Card className="p-0">
