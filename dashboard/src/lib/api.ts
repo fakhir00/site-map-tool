@@ -1,13 +1,17 @@
 import { DemoApiError, demoFetch } from './demoBackend'
 
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
-const isDev = import.meta.env.DEV
-const DEFAULT_API_URL = '/api'
+const isBrowser = typeof window !== 'undefined'
+const isLocalHost =
+  isBrowser && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+const DEFAULT_API_URL =
+  !isBrowser || isLocalHost ? 'http://localhost:8000/api' : '/api'
 const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, '')
 const REQUEST_TIMEOUT_MS = 20_000
 const ARTICLE_REQUEST_TIMEOUT_MS = 300_000
-const needsProductionApiUrl = !isDev && !configuredApiUrl
-export const DEMO_BACKEND_ENABLED = false
+const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
+export const DEMO_BACKEND_ENABLED =
+  import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true' || needsProductionApiUrl
 
 type ApiRequestInit = RequestInit & {
   timeoutMs?: number
@@ -361,11 +365,11 @@ export const api = {
   },
 
   get<T>(endpoint: string, options: ApiRequestInit = {}) {
-    return api.fetch<T>(endpoint, { ...options, method: 'GET' })
+    return this.fetch<T>(endpoint, { ...options, method: 'GET' })
   },
 
   post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}) {
-    return api.fetch<T>(endpoint, {
+    return this.fetch<T>(endpoint, {
       ...options,
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -373,10 +377,10 @@ export const api = {
   },
 
   delete<T>(endpoint: string, options: ApiRequestInit = {}) {
-    return api.fetch<T>(endpoint, { ...options, method: 'DELETE' })
+    return this.fetch<T>(endpoint, { ...options, method: 'DELETE' })
   },
 
   postArticle<T>(endpoint: string, body?: unknown) {
-    return api.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
+    return this.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
   },
 }

@@ -143,7 +143,6 @@ export default function WriteBlog() {
           setMainKeyword(kw.phrase)
           setSelectedKeyword(kw)
           window.scrollTo({ top: 0, behavior: 'smooth' })
-          articleMutation.mutate({ keywordId: kw.keyword_id, projectId: kw.project_id })
         }}
       />
     </div>
