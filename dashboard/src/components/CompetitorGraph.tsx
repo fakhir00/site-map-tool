@@ -54,26 +54,26 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
 
   return (
     <Card className="overflow-hidden p-0">
-      <div className="border-b border-slate-200 px-5 py-4 flex items-center justify-between">
+      <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4 flex items-center justify-between">
         <div>
-          <h3 className="flex items-center gap-2 font-semibold text-slate-950">
-            <Activity className="h-4 w-4 text-cyan-600" />
+          <h3 className="flex items-center gap-2 font-semibold text-slate-950 dark:text-slate-50">
+            <Activity className="h-4 w-4 text-cyan-600 dark:text-cyan-500" />
             AI Intelligence Mapping
           </h3>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             Real-time neural footprint analysis and vector distribution
           </p>
         </div>
         <div className="flex items-center gap-2">
            <span className="relative flex h-2.5 w-2.5">
             {isActive && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>}
-            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isActive ? 'bg-cyan-500' : 'bg-slate-300'}`}></span>
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isActive ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-slate-700'}`}></span>
           </span>
-          <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{isActive ? 'Active' : 'Standby'}</span>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{isActive ? 'Active' : 'Standby'}</span>
         </div>
       </div>
       
-      <div className="relative h-[400px] w-full bg-slate-50/50">
+      <div className="relative h-[400px] w-full bg-slate-50/50 dark:bg-slate-900/50">
         {/* Subtle grid background to look high-tech but light-themed */}
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px]"></div>
         

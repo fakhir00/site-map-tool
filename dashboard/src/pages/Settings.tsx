@@ -13,44 +13,44 @@ export function Settings() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-950">Settings</h2>
-        <p className="mt-1 text-sm text-slate-500">Account details, plan status, and saved keyword inventory.</p>
+        <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Settings</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Account details, plan status, and saved keyword inventory.</p>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
         <Card>
-          <div className="mb-5 flex items-center gap-4 border-b border-slate-200 pb-5">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-50 text-xl font-bold text-cyan-800">
+          <div className="mb-5 flex items-center gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-50 text-xl font-bold text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
               {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-950">{user?.full_name || 'User'}</h3>
-              <p className="text-sm text-slate-500">{user?.email}</p>
+              <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{user?.full_name || 'User'}</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{user?.email}</p>
             </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <p className="mb-1 text-sm font-medium text-slate-500">Full name</p>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+              <p className="mb-1 text-sm font-medium text-slate-500 dark:text-slate-400">Full name</p>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-300">
                 {user?.full_name || 'Not provided'}
               </div>
             </div>
             <div>
-              <p className="mb-1 text-sm font-medium text-slate-500">Email</p>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">{user?.email}</div>
+              <p className="mb-1 text-sm font-medium text-slate-500 dark:text-slate-400">Email</p>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-300">{user?.email}</div>
             </div>
           </div>
         </Card>
 
         <Card>
           <div className="mb-5 flex items-center gap-3">
-            <CreditCard className="h-5 w-5 text-indigo-700" />
-            <h3 className="text-lg font-semibold text-slate-950">Plan</h3>
+            <CreditCard className="h-5 w-5 text-indigo-700 dark:text-indigo-400" />
+            <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Plan</h3>
           </div>
-          <p className="text-sm text-slate-500">Current plan</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Current plan</p>
           <div className="mt-2 flex items-center gap-3">
-            <span className="text-2xl font-bold capitalize text-slate-950">{user?.plan || 'free'}</span>
+            <span className="text-2xl font-bold capitalize text-slate-950 dark:text-slate-50">{user?.plan || 'free'}</span>
             <Badge variant={user?.plan === 'free' ? 'slate' : 'teal'}>{user?.plan === 'free' ? 'Trial' : 'Active'}</Badge>
           </div>
         </Card>

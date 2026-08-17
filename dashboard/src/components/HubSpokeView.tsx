@@ -34,25 +34,25 @@ function NewHubCard({ hub }: { hub: NewSchemaHub }) {
   const layerEntries = Object.entries(hub.layers || {})
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
-      <div className="border-b border-slate-200 bg-white px-5 py-4">
-        <h5 className="text-lg font-bold text-slate-900">{hub.hub_title}</h5>
-        <div className="mt-1 text-xs font-semibold text-cyan-600 uppercase tracking-wider">SEO Hub / Pillar Page</div>
+    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 shadow-sm">
+      <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-5 py-4">
+        <h5 className="text-lg font-bold text-slate-900 dark:text-slate-50">{hub.hub_title}</h5>
+        <div className="mt-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">SEO Hub / Pillar Page</div>
       </div>
       <div className="flex-1 p-5">
         {layerEntries.length === 0 ? (
-          <p className="text-sm text-slate-500">No spokes generated for this hub.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">No spokes generated for this hub.</p>
         ) : (
           <div className="flex flex-col gap-4">
             {layerEntries.map(([layerName, spokes], idx) => (
-              <div key={idx} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2.5">
+              <div key={idx} className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 dark:border-slate-800/50 dark:bg-slate-800/50 px-4 py-2.5">
                   <LayerIcon name={layerName} />
-                  <h6 className="font-semibold text-slate-800 text-sm">{layerName}</h6>
+                  <h6 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{layerName}</h6>
                 </div>
                 <div className="p-3">
                   {(!spokes || spokes.length === 0) ? (
-                    <p className="text-xs text-slate-400 italic px-2">No keywords in this layer.</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No keywords in this layer.</p>
                   ) : (
                     <ul className="flex flex-col gap-1.5">
                       {spokes.map((spoke, sIdx) => {
@@ -61,10 +61,10 @@ function NewHubCard({ hub }: { hub: NewSchemaHub }) {
                         const targetKeyword = match ? match[2] : null
 
                         return (
-                          <li key={sIdx} className="flex flex-col items-start px-2 py-1.5 rounded-md hover:bg-slate-50">
-                            <span className="text-sm font-medium text-slate-700">{displayTitle}</span>
+                          <li key={sIdx} className="flex flex-col items-start px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{displayTitle}</span>
                             {targetKeyword && (
-                              <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                              <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                                 Keyword: {targetKeyword}
                               </span>
                             )}
@@ -85,16 +85,16 @@ function NewHubCard({ hub }: { hub: NewSchemaHub }) {
 
 function OldHubCard({ hub, spokes }: { hub: string; spokes: string[] }) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-        <h5 className="font-bold text-slate-900">{hub}</h5>
-        <div className="mt-1 text-xs font-medium text-slate-500">Hub / Pillar Page</div>
+    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50 dark:border-slate-800/50 dark:bg-slate-900/50 px-4 py-3">
+        <h5 className="font-bold text-slate-900 dark:text-slate-50">{hub}</h5>
+        <div className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">Hub / Pillar Page</div>
       </div>
       <div className="flex-1 p-4">
         <ul className="flex flex-col gap-2">
           {spokes.map((spoke, idx) => (
-            <li key={idx} className="flex items-start text-sm text-slate-700">
-              <span className="mr-2 text-slate-300">↳</span>
+            <li key={idx} className="flex items-start text-sm text-slate-700 dark:text-slate-300">
+              <span className="mr-2 text-slate-300 dark:text-slate-600">↳</span>
               {spoke}
             </li>
           ))}
@@ -121,8 +121,8 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-slate-500">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-cyan-600" />
+      <div className="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-cyan-600 dark:border-slate-800 dark:border-t-cyan-400" />
         <p className="mt-4 text-sm font-medium">Loading clusters...</p>
       </div>
     )
@@ -133,11 +133,11 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   if (!clusters || Object.keys(clusters).length === 0) {
     return (
       <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-          <Network className="h-6 w-6 text-slate-400" />
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+          <Network className="h-6 w-6 text-slate-400 dark:text-slate-500" />
         </div>
-        <h3 className="mb-1 text-lg font-bold text-slate-950">No Hubs & Spokes Generated</h3>
-        <p className="mb-6 max-w-sm text-sm text-slate-500">
+        <h3 className="mb-1 text-lg font-bold text-slate-950 dark:text-slate-50">No Hubs & Spokes Generated</h3>
+        <p className="mb-6 max-w-sm text-sm text-slate-500 dark:text-slate-400">
           Group your keywords into a semantic Hub and Spoke architecture to maximize topical authority.
         </p>
         <Button 
@@ -157,8 +157,8 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h4 className="text-lg font-bold text-slate-900">Content Architecture</h4>
-          <p className="text-sm text-slate-500">Your keywords grouped by semantic categories</p>
+          <h4 className="text-lg font-bold text-slate-900 dark:text-slate-50">Content Architecture</h4>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Your keywords grouped by semantic categories</p>
         </div>
         <Button 
           variant="secondary" 

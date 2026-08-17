@@ -47,7 +47,7 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
   }
 
   if (isLoading && !data) {
-    return <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white" />
+    return <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
   }
 
   const article = data?.items?.[0]
@@ -56,12 +56,12 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
     return (
       <Card>
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
             <FilePenLine className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-slate-950">AI article studio</h3>
-            <p className="mt-1 text-sm text-slate-500">Generate a blog post from any keyword gap. The writer drafts it and the auditor scores it before it lands here.</p>
+            <h3 className="font-semibold text-slate-950 dark:text-slate-50">AI article studio</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Generate a blog post from any keyword gap. The writer drafts it and the auditor scores it before it lands here.</p>
           </div>
         </div>
       </Card>
@@ -92,28 +92,28 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-bold text-slate-950">{article.title || article.keyword_phrase}</h3>
+              <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">{article.title || article.keyword_phrase}</h3>
               {articleStatusBadge(article)}
             </div>
-            <p className="mt-1 text-sm text-slate-500">Keyword: {article.keyword_phrase}</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Keyword: {article.keyword_phrase}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-slate-500">Audit</p>
-              <p className="text-lg font-bold text-slate-950">{article.audit_score ?? '-'}</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500 dark:text-slate-400">Audit</p>
+              <p className="text-lg font-bold text-slate-950 dark:text-slate-50">{article.audit_score ?? '-'}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-slate-500">Attempts</p>
-              <p className="text-lg font-bold text-slate-950">{article.generation_attempts}</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500 dark:text-slate-400">Attempts</p>
+              <p className="text-lg font-bold text-slate-950 dark:text-slate-50">{article.generation_attempts}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-slate-500">Sources</p>
-              <p className="text-lg font-bold text-slate-950">{competitorPages.length}</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500 dark:text-slate-400">Sources</p>
+              <p className="text-lg font-bold text-slate-950 dark:text-slate-50">{competitorPages.length}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-slate-500">Verdict</p>
-              <p className="text-lg font-bold text-slate-950">{(audit?.passed || (audit?.score && audit.score > 80)) ? 'Pass' : 'Retry'}</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500 dark:text-slate-400">Verdict</p>
+              <p className="text-lg font-bold text-slate-950 dark:text-slate-50">{(audit?.passed || (audit?.score && audit.score > 80)) ? 'Pass' : 'Retry'}</p>
             </div>
           </div>
         </div>
@@ -121,26 +121,26 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         {(brief?.content_gaps?.length || brief?.must_include_terms?.length) && (
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-950">
-                <Sparkles className="h-4 w-4 text-cyan-700" />
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-slate-50">
+                <Sparkles className="h-4 w-4 text-cyan-700 dark:text-cyan-400" />
                 Gap brief
               </div>
               <div className="flex flex-wrap gap-2">
                 {(brief?.content_gaps || []).slice(0, 6).map((gap: string) => (
-                  <span className="inline-flex rounded-md border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-800" key={gap}>
+                  <span className="inline-flex rounded-md border border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-800/50 dark:bg-cyan-900/30 dark:text-cyan-300 px-2.5 py-1 text-xs font-medium" key={gap}>
                     {gap}
                   </span>
                 ))}
               </div>
             </div>
             <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-950">
-                <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-slate-50">
+                <CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
                 Must-cover terms
               </div>
               <div className="flex flex-wrap gap-2">
                 {(brief?.must_include_terms || []).slice(0, 10).map((term: string) => (
-                  <span className="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800" key={term}>
+                  <span className="inline-flex rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-900/30 dark:text-emerald-300 px-2.5 py-1 text-xs font-medium" key={term}>
                     {term}
                   </span>
                 ))}
@@ -150,7 +150,7 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         )}
 
         {!audit?.passed && !!audit?.issues?.length && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300 px-4 py-3 text-sm">
             <div className="mb-2 flex items-center gap-2 font-semibold">
               <AlertCircle className="h-4 w-4" />
               Auditor Recommendations
@@ -169,17 +169,17 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         <Card className="overflow-hidden">
           <button 
             onClick={() => setPromptOpen(!promptOpen)}
-            className="flex w-full items-center justify-between bg-slate-50 px-6 py-4 text-left transition-colors hover:bg-slate-100"
+            className="flex w-full items-center justify-between bg-slate-50 dark:bg-slate-900/50 px-6 py-4 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50"
           >
             <div className="flex items-center gap-2">
-              <FilePenLine className="h-5 w-5 text-cyan-700" />
-              <h3 className="font-semibold text-slate-900">Master Prompt</h3>
+              <FilePenLine className="h-5 w-5 text-cyan-700 dark:text-cyan-400" />
+              <h3 className="font-semibold text-slate-900 dark:text-slate-50">Master Prompt</h3>
             </div>
-            <span className="text-sm font-medium text-slate-500">{promptOpen ? 'Collapse' : 'Expand'}</span>
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{promptOpen ? 'Collapse' : 'Expand'}</span>
           </button>
           
           {promptOpen && (
-            <div className="border-t border-slate-200 p-6">
+            <div className="border-t border-slate-200 dark:border-slate-800 p-6">
               <div className="mb-4 flex items-center justify-end gap-3">
                 <button
                   onClick={handleWriteArticle}
@@ -195,12 +195,12 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
 
                 <button
                   onClick={() => copyToClipboard(masterPrompt)}
-                  className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1"
+                  className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1"
                 >
                   {copied ? <><Check className="h-4 w-4 text-emerald-600" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Prompt</>}
                 </button>
               </div>
-              <div className="prose prose-slate max-w-none whitespace-pre-wrap font-mono text-sm leading-6 text-slate-800 bg-slate-50 p-4 rounded-md border border-slate-200">
+              <div className="prose prose-slate max-w-none whitespace-pre-wrap font-mono text-sm leading-6 text-slate-800 bg-slate-50 border-slate-200 dark:text-slate-300 dark:bg-slate-900/50 dark:border-slate-800 p-4 rounded-md border">
                 {masterPrompt}
               </div>
             </div>
@@ -213,32 +213,32 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
         <Card className="overflow-hidden">
           <button 
             onClick={() => setArticleOpen(!articleOpen)}
-            className="flex w-full items-center justify-between bg-slate-50 px-6 py-4 text-left transition-colors hover:bg-slate-100"
+            className="flex w-full items-center justify-between bg-slate-50 dark:bg-slate-900/50 px-6 py-4 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50"
           >
             <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-emerald-600" />
-              <h3 className="font-semibold text-slate-900">Generated Article</h3>
+              <Sparkles className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <h3 className="font-semibold text-slate-900 dark:text-slate-50">Generated Article</h3>
             </div>
-            <span className="text-sm font-medium text-slate-500">{articleOpen ? 'Collapse' : 'Expand'}</span>
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{articleOpen ? 'Collapse' : 'Expand'}</span>
           </button>
           
           {articleOpen && (
-            <div className="border-t border-slate-200 p-6">
+            <div className="border-t border-slate-200 dark:border-slate-800 p-6">
               <div className="mb-6 flex items-center justify-end gap-3">
-                <div className="flex rounded-md border border-slate-300 bg-white shadow-sm">
+                <div className="flex rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
                   <button
                     onClick={() => setViewMode('preview')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 rounded-l-md transition-colors ${
-                      viewMode === 'preview' ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50'
+                      viewMode === 'preview' ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                     }`}
                   >
                     <Eye className="h-4 w-4" /> Preview
                   </button>
-                  <div className="w-px bg-slate-300" />
+                  <div className="w-px bg-slate-300 dark:bg-slate-700" />
                   <button
                     onClick={() => setViewMode('markdown')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 rounded-r-md transition-colors ${
-                      viewMode === 'markdown' ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50'
+                      viewMode === 'markdown' ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                     }`}
                   >
                     <Code className="h-4 w-4" /> Markdown
@@ -246,18 +246,18 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
                 </div>
                 <button
                   onClick={() => copyToClipboard(article.content_markdown || '')}
-                  className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   {copied ? <><Check className="h-4 w-4 text-emerald-600" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Article</>}
                 </button>
               </div>
 
               {viewMode === 'markdown' ? (
-                <div className="prose prose-slate max-w-none whitespace-pre-wrap font-mono text-sm leading-6 text-slate-800 bg-slate-50 p-4 rounded-md border border-slate-200">
+                <div className="prose prose-slate max-w-none whitespace-pre-wrap font-mono text-sm leading-6 text-slate-800 bg-slate-50 border-slate-200 dark:text-slate-300 dark:bg-slate-900/50 dark:border-slate-800 p-4 rounded-md border">
                   {article.content_markdown}
                 </div>
               ) : (
-                <div className="prose max-w-none font-serif text-black bg-white p-8 rounded-md border border-slate-300 shadow-inner prose-headings:font-serif prose-headings:text-black prose-p:text-black prose-a:text-blue-600 prose-a:underline">
+                <div className="prose dark:prose-invert max-w-none font-serif text-black dark:text-slate-200 bg-white dark:bg-slate-900/50 p-8 rounded-md border border-slate-300 dark:border-slate-800 shadow-inner dark:shadow-none prose-headings:font-serif prose-headings:text-black dark:prose-headings:text-slate-100 prose-p:text-black dark:prose-p:text-slate-300 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline">
                   <ReactMarkdown>
                     {article.content_markdown || ''}
                   </ReactMarkdown>

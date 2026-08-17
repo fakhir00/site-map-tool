@@ -25,10 +25,10 @@ const renderAuditSummary = (summary: string) => {
     const parsed = JSON.parse(summary)
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return (
-        <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
+        <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700 dark:text-slate-300">
           {Object.entries(parsed).map(([key, value]) => (
             <div key={key} className="flex flex-col">
-              <span className="font-semibold text-slate-900">{key}</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-50">{key}</span>
               <span>{String(value)}</span>
             </div>
           ))}
@@ -39,7 +39,7 @@ const renderAuditSummary = (summary: string) => {
     // Fall back to raw text if parsing fails
   }
 
-  return <p className="text-sm text-slate-700 whitespace-pre-wrap">{summary}</p>
+  return <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{summary}</p>
 }
 
 export function GoldHunter() {
@@ -79,14 +79,14 @@ export function GoldHunter() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-2xl font-bold text-slate-950">Gold Hunter Agent</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Gold Hunter Agent</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Mine high-value seed keywords from any of your URLs.
         </p>
       </section>
 
       {error && (
-        <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       )}
@@ -113,35 +113,35 @@ export function GoldHunter() {
 
       {history.length > 0 && (
         <div className="space-y-6">
-          <h3 className="text-xl font-bold text-slate-900">Scan History</h3>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-50">Scan History</h3>
           
           <div className="grid gap-6">
             {history.map((scan) => (
               <Card key={scan.id} className="p-6">
                 <div className="flex items-center gap-2 mb-4">
-                  <Clock className="h-4 w-4 text-slate-400" />
-                  <span className="text-sm text-slate-500">
+                  <Clock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                  <span className="text-sm text-slate-500 dark:text-slate-400">
                     {new Date(scan.created_at).toLocaleString()}
                   </span>
-                  <span className="text-slate-300">|</span>
-                  <a href={scan.input_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-cyan-700 hover:underline">
+                  <span className="text-slate-300 dark:text-slate-700">|</span>
+                  <a href={scan.input_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:underline">
                     {scan.input_url}
                   </a>
                 </div>
 
-                <div className="mb-6 rounded-lg bg-slate-50 p-4 border border-slate-100">
-                  <h4 className="text-sm font-semibold text-slate-900 mb-2">Agent Audit Summary</h4>
+                <div className="mb-6 rounded-lg bg-slate-50 dark:bg-slate-900/50 p-4 border border-slate-100 dark:border-slate-800">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-2">Agent Audit Summary</h4>
                   {renderAuditSummary(scan.audit_summary)}
                 </div>
 
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Extracted Seeds</h4>
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-3">Extracted Seeds</h4>
                   <div className="space-y-3">
                     {(scan.seeds || []).map((seed, i) => (
-                      <div key={i} className="flex items-start justify-between gap-4 p-4 rounded-lg border border-slate-200">
+                      <div key={i} className="flex items-start justify-between gap-4 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
                         <div>
-                          <p className="font-semibold text-slate-900">{seed.keyword}</p>
-                          <p className="text-sm text-slate-600 mt-1">{seed.justification}</p>
+                          <p className="font-semibold text-slate-900 dark:text-slate-50">{seed.keyword}</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{seed.justification}</p>
                         </div>
                         <Button 
                           variant="secondary" 

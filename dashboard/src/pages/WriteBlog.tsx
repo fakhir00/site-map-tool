@@ -60,7 +60,7 @@ export default function WriteBlog() {
     <div className="mx-auto max-w-3xl py-8 space-y-8">
       
       {articleError && (
-        <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300">
           {articleError}
         </div>
       )}
@@ -68,23 +68,23 @@ export default function WriteBlog() {
       {/* Manual Blog Generator Box */}
       <Card className="p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
             <FilePenLine className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Write Blog</h2>
-            <p className="text-sm text-slate-500">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Write Blog</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
           </div>
         </div>
 
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
               Main Keyword <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               placeholder="e.g. mortgage calculator"
               value={mainKeyword}
               onChange={(e) => setMainKeyword(e.target.value)}
@@ -92,14 +92,14 @@ export default function WriteBlog() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
               Keyword Cluster (Optional)
             </label>
-            <p className="text-xs text-slate-500 mb-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
               Enter related keywords to naturally include in the article.
             </p>
             <textarea
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               rows={4}
               placeholder={`home loan rates\namortization schedule\ninterest rates`}
               value={keywordCluster}

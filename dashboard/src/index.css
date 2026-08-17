@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: "Inter", "Aptos", system-ui, sans-serif;
@@ -14,6 +15,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root.dark {
+  color: #f8fafc;
+  background: #0f172a;
+}
+
 html,
 body,
 #root {
@@ -27,6 +33,11 @@ body {
     #f6f7fb;
   color: #0f172a;
   font-family: var(--font-sans);
+}
+
+.dark body {
+  background: #0f172a;
+  color: #f8fafc;
 }
 
 button,

@@ -191,10 +191,10 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
 
   return (
     <Card className="p-0">
-      <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 border-b border-slate-200 dark:border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <Input
               className="pl-9"
               onChange={(event) => {
@@ -207,7 +207,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
           </div>
 
           <select
-            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 dark:focus:ring-cyan-600"
             onChange={(event) => {
               setType(event.target.value)
               setPage(1)
@@ -282,7 +282,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
             onClick={() => setIsHubSpokeMode(!isHubSpokeMode)} 
             size="sm" 
             variant="secondary"
-            className={isHubSpokeMode ? "bg-cyan-100 text-cyan-800 border-cyan-300" : ""}
+            className={isHubSpokeMode ? "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-900/40 dark:text-cyan-300 dark:border-cyan-700" : ""}
           >
             <Network className="h-4 w-4" />
             {isHubSpokeMode ? 'Table View' : 'Hub Spoke'}
@@ -292,7 +292,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
             onClick={() => topPicksMutation.mutate()} 
             size="sm" 
             variant="secondary"
-            className="text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200"
+            className="text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 dark:text-amber-400 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:border-amber-800/50"
           >
             <Sparkles className="h-4 w-4" />
             {topPicksMutation.isPending ? 'Generating...' : 'Top Picks'}
@@ -305,8 +305,8 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {exportError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{exportError}</div>}
-      {articleError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{articleError}</div>}
+      {exportError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{exportError}</div>}
+      {articleError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{articleError}</div>}
 
       {isHubSpokeMode ? (
         <HubSpokeView projectId={projectId} />
@@ -314,7 +314,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
                 <tr>
                   <th className="px-5 py-3 font-semibold">Keyword gap</th>
                   <th className="px-5 py-3 font-semibold">Intent</th>
@@ -326,22 +326,22 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                   <th className="px-5 py-3 text-right font-semibold">Save</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                 {keywords.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-10 text-center text-slate-500" colSpan={7}>
+                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={7}>
                       No keyword gaps found yet.
                     </td>
                   </tr>
                 ) : (
                   keywords.map((keyword) => (
-                    <tr className="hover:bg-slate-50" key={keyword.id}>
+                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50" key={keyword.id}>
                       <td className="max-w-[360px] px-5 py-4">
                         <div className="flex items-center gap-2">
                           {isSelectionMode && (
                             <input 
                               type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer flex-shrink-0"
+                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer flex-shrink-0 dark:border-slate-700 dark:bg-slate-900"
                               checked={selectedIds.has(keyword.id)}
                               onChange={(e) => {
                                 const newSet = new Set(selectedIds)
@@ -351,7 +351,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                               }}
                             />
                           )}
-                          <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline">
+                          <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline dark:text-slate-50 dark:hover:text-cyan-400">
                             {keyword.phrase}
                           </a>
                         </div>
@@ -360,15 +360,15 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                         <KeywordIntentBadge keywordPhrase={keyword.phrase} />
                       </td>
                       <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
-                      <td className="px-5 py-4 text-right font-mono text-slate-700">{keyword.frequency}</td>
+                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">{keyword.frequency}</td>
                       <td className="px-5 py-4">
                         <div className="flex max-w-[360px] flex-wrap gap-1.5">
                           {sourceDomains(keyword).slice(0, 4).map((source) => (
                             <a
                               className={`inline-flex max-w-[160px] items-center truncate rounded-md border px-2 py-1 text-xs font-medium ${
                                 source.sourceType === 'own'
-                                  ? 'border-slate-200 bg-slate-50 text-slate-700'
-                                  : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                  ? 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  : 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/50 dark:bg-indigo-900/30 dark:text-indigo-300'
                               }`}
                               href={source.href}
                               key={source.label}
@@ -380,7 +380,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                             </a>
                           ))}
                           {sourceDomains(keyword).length > 4 && (
-                            <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-500">
+                            <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
                               +{sourceDomains(keyword).length - 4}
                             </span>
                           )}
@@ -389,7 +389,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                             {keywordSources(keyword).slice(0, 5).map((source) => (
                             <a
                               aria-label={source.url}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-800"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-cyan-700 dark:hover:text-cyan-400"
                               href={source.url}
                               key={source.url}
                               rel="noopener noreferrer"
@@ -434,8 +434,8 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
           </div>
 
           {data && data.pages > 1 && (
-            <div className="flex flex-col gap-3 border-t border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-500">
+            <div className="flex flex-col gap-3 border-t border-slate-200 dark:border-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 Page {page} of {data.pages} · {data.total.toLocaleString()} keywords
               </p>
               <div className="flex gap-2">

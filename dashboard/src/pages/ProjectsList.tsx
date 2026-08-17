@@ -173,8 +173,8 @@ export function ProjectsList() {
     <div className="space-y-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-950">Dashboard</h2>
-          <p className="mt-1 text-sm text-slate-500">Track and manage your keyword gap analyses.</p>
+          <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Dashboard</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Track and manage your keyword gap analyses.</p>
         </div>
         <Button onClick={() => setShowNewModal(true)}>
           <Plus className="h-4 w-4" />
@@ -185,22 +185,22 @@ export function ProjectsList() {
       <section className="grid gap-4 md:grid-cols-3">
         <Card>
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">Dashboard</p>
-            <Globe2 className="h-4 w-4 text-cyan-800" />
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard</p>
+            <Globe2 className="h-4 w-4 text-cyan-800 dark:text-cyan-400" />
           </div>
           <p className="mt-3 text-3xl font-bold">{projects.length}</p>
         </Card>
         <Card>
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">URLs discovered</p>
-            <FileText className="h-4 w-4 text-indigo-700" />
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">URLs discovered</p>
+            <FileText className="h-4 w-4 text-indigo-700 dark:text-indigo-400" />
           </div>
           <p className="mt-3 text-3xl font-bold">{totals.urls.toLocaleString()}</p>
         </Card>
         <Card>
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">Keyword gaps</p>
-            <CalendarClock className="h-4 w-4 text-emerald-700" />
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Keyword gaps</p>
+            <CalendarClock className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
           </div>
           <p className="mt-3 text-3xl font-bold">{totals.keywords.toLocaleString()}</p>
         </Card>
@@ -208,7 +208,7 @@ export function ProjectsList() {
 
       <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
           <Input className="pl-9" onChange={(event) => setSearch(event.target.value)} placeholder="Search projects" value={search} />
         </div>
         
@@ -253,14 +253,14 @@ export function ProjectsList() {
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((item) => (
-            <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-white" key={item} />
+            <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" key={item} />
           ))}
         </div>
       ) : filteredProjects.length === 0 ? (
         <Card className="py-12 text-center">
-          <Globe2 className="mx-auto mb-4 h-10 w-10 text-slate-400" />
-          <h3 className="text-lg font-semibold text-slate-950">No projects found</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+          <Globe2 className="mx-auto mb-4 h-10 w-10 text-slate-400 dark:text-slate-500" />
+          <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">No projects found</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
             Add your website and main keyword to find competitor content gaps.
           </p>
           <Button className="mt-4" onClick={() => setShowNewModal(true)}>
@@ -281,7 +281,7 @@ export function ProjectsList() {
                   <div className="absolute top-6 left-6 z-10">
                     <input 
                       type="checkbox"
-                      className="h-5 w-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer"
+                      className="h-5 w-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer dark:border-slate-700 dark:bg-slate-900"
                       checked={selectedIds.has(project.id)}
                       onChange={(e) => {
                         const newSet = new Set(selectedIds)
@@ -295,11 +295,11 @@ export function ProjectsList() {
                 
                 <div className={`flex items-start justify-between gap-3 ${isSelectionMode ? 'pl-8' : ''}`}>
                   <div className="min-w-0">
-                    <Link className="block truncate text-lg font-semibold text-slate-950 hover:text-cyan-800" to={`/projects/${project.id}`}>
+                    <Link className="block truncate text-lg font-semibold text-slate-950 hover:text-cyan-800 dark:text-slate-50 dark:hover:text-cyan-400" to={`/projects/${project.id}`}>
                       {project.name}
                     </Link>
                     <a
-                      className="mt-1 flex items-center gap-1 truncate text-sm text-slate-500 hover:text-slate-950"
+                      className="mt-1 flex items-center gap-1 truncate text-sm text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50"
                       href={project.domain}
                       rel="noopener noreferrer"
                       target="_blank"
@@ -307,12 +307,12 @@ export function ProjectsList() {
                       <Globe2 className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{displayHost(project.domain)}</span>
                     </a>
-                    <p className="mt-2 truncate text-sm font-medium text-slate-700">{primaryKeyword(project)}</p>
+                    <p className="mt-2 truncate text-sm font-medium text-slate-700 dark:text-slate-300">{primaryKeyword(project)}</p>
                   </div>
                   {!isSelectionMode && (
                     <button
                       aria-label={`Delete ${project.name}`}
-                      className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                      className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 dark:text-slate-500 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
                       disabled={deleteMutation.isPending}
                       onClick={(e) => {
                         e.preventDefault()
@@ -330,25 +330,25 @@ export function ProjectsList() {
 
                 <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
                   <div>
-                    <p className="text-slate-500">URLs</p>
-                    <p className="mt-1 font-semibold text-slate-950">{project.urls_found.toLocaleString()}</p>
+                    <p className="text-slate-500 dark:text-slate-400">URLs</p>
+                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.urls_found.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500">Scraped</p>
-                    <p className="mt-1 font-semibold text-slate-950">{project.urls_processed.toLocaleString()}</p>
+                    <p className="text-slate-500 dark:text-slate-400">Scraped</p>
+                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.urls_processed.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500">Gaps</p>
-                    <p className="mt-1 font-semibold text-slate-950">{project.total_keywords.toLocaleString()}</p>
+                    <p className="text-slate-500 dark:text-slate-400">Gaps</p>
+                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.total_keywords.toLocaleString()}</p>
                   </div>
                 </div>
 
                 <div className="mt-5">
                   <div className="mb-2 flex items-center justify-between">
                     {statusBadge(project.status)}
-                    <span className="text-xs font-medium text-slate-500">{completed}%</span>
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{completed}%</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div className="h-full rounded-full bg-cyan-700 transition-all" style={{ width: `${Math.min(completed, 100)}%` }} />
                   </div>
                 </div>
@@ -364,16 +364,16 @@ export function ProjectsList() {
       )}
 
       {showNewModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/40 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/40 dark:bg-slate-950/80 p-4">
           <Card className="w-full max-w-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-bold text-slate-950">New Gap Hunter</h3>
-                <p className="mt-1 text-sm text-slate-500">Enter your website and the main keyword to compare against competitors.</p>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">New Gap Hunter</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the main keyword to compare against competitors.</p>
               </div>
               <button
                 aria-label="Close"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                 onClick={() => setShowNewModal(false)}
                 type="button"
               >
@@ -383,14 +383,14 @@ export function ProjectsList() {
 
             <form className="space-y-4" onSubmit={handleCreate}>
               {createMutation.error && (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
                   {createMutation.error.message}
                 </div>
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Your website</span>
+                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Your website</span>
                   <Input
                     onChange={(event) => setForm({ ...form, site_url: event.target.value })}
                     placeholder="https://yourcompany.com"
@@ -399,7 +399,7 @@ export function ProjectsList() {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Primary keyword</span>
+                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Primary keyword</span>
                   <Input
                     onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
                     placeholder="sitemap generator"
@@ -411,9 +411,9 @@ export function ProjectsList() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Competitor search region (Optional)</span>
+                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Competitor search region (Optional)</span>
                   <select
-                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50"
                     onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
                     value={form.search_locale}
                   >

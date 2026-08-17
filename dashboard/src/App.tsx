@@ -32,33 +32,37 @@ function PublicRoute() {
   return <Outlet />
 }
 
+import { ThemeProvider } from './components/ThemeProvider'
+
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<PublicRoute />}>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-        </Route>
-
-        <Route element={<PrivateRoute />}>
-          <Route path="/" element={<DashboardLayout />}>
-            <Route index element={<ProjectsList />} />
-            <Route path="projects/:projectId" element={<ProjectDetail />} />
-            <Route path="website-prompts" element={<WebsitePromptGenerator />} />
-            <Route path="scan" element={<ScanInterface />} />
-            <Route path="write-blog" element={<WriteBlog />} />
-            <Route path="write-blog/:projectId" element={<WriteBlogArticle />} />
-            <Route path="gap-page-prompts" element={<GapPageGenerator />} />
-            <Route path="saved-keywords" element={<SavedKeywords />} />
-            <Route path="gold-hunter" element={<GoldHunter />} />
-            <Route path="settings" element={<Settings />} />
+    <ThemeProvider defaultTheme="dark" storageKey="sitemap-theme">
+      <BrowserRouter>
+        <Routes>
+          <Route element={<PublicRoute />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
           </Route>
-        </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          <Route element={<PrivateRoute />}>
+            <Route path="/" element={<DashboardLayout />}>
+              <Route index element={<ProjectsList />} />
+              <Route path="projects/:projectId" element={<ProjectDetail />} />
+              <Route path="website-prompts" element={<WebsitePromptGenerator />} />
+              <Route path="scan" element={<ScanInterface />} />
+              <Route path="write-blog" element={<WriteBlog />} />
+              <Route path="write-blog/:projectId" element={<WriteBlogArticle />} />
+              <Route path="gap-page-prompts" element={<GapPageGenerator />} />
+              <Route path="saved-keywords" element={<SavedKeywords />} />
+              <Route path="gold-hunter" element={<GoldHunter />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   )
 }
 
