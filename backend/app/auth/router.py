@@ -31,15 +31,37 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"DEBUG: Login attempt for email '{body.email}' password '{body.password}'")
+    with open('/Users/fakhirbaig/Documents/GitHub/sit map tool/backend/login_debug.txt', 'a') as f:
+        f.write(f"Login attempt: email='{body.email}', password='{body.password}'\n")
+        
     result = await db.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
+    if not user:
+        with open('/Users/fakhirbaig/Documents/GitHub/sit map tool/backend/login_debug.txt', 'a') as f:
+            f.write("Failed: user not found\n")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    if not user.password_hash:
+        with open('/Users/fakhirbaig/Documents/GitHub/sit map tool/backend/login_debug.txt', 'a') as f:
+            f.write("Failed: no password hash\n")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    if not verify_password(body.password, user.password_hash):
+        with open('/Users/fakhirbaig/Documents/GitHub/sit map tool/backend/login_debug.txt', 'a') as f:
+            f.write("Failed: verify_password returned False\n")
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.is_active:
+        with open('/Users/fakhirbaig/Documents/GitHub/sit map tool/backend/login_debug.txt', 'a') as f:
+            f.write("Failed: not active\n")
         raise HTTPException(status_code=403, detail="Account disabled")
 
+    with open('/Users/fakhirbaig/Documents/GitHub/sit map tool/backend/login_debug.txt', 'a') as f:
+        f.write("Success!\n")
     token = create_access_token(user.id)
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 

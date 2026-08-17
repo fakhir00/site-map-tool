@@ -7,8 +7,7 @@ const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, '')
 const REQUEST_TIMEOUT_MS = 20_000
 const ARTICLE_REQUEST_TIMEOUT_MS = 300_000
 const needsProductionApiUrl = !isDev && !configuredApiUrl
-export const DEMO_BACKEND_ENABLED =
-  import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true' || needsProductionApiUrl
+export const DEMO_BACKEND_ENABLED = false
 
 type ApiRequestInit = RequestInit & {
   timeoutMs?: number
