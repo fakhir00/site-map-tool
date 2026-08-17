@@ -13,7 +13,7 @@ function articleStatusBadge(article: ArticleDraft) {
   return <Badge variant="indigo">Generating</Badge>
 }
 
-export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
+export function GeneratedArticlePanel({ projectId, articleId }: { projectId: string, articleId?: string | null }) {
   const [copied, setCopied] = useState(false)
   const [viewMode, setViewMode] = useState<'markdown' | 'preview'>('preview')
   const [promptOpen, setPromptOpen] = useState(true)
@@ -50,7 +50,7 @@ export function GeneratedArticlePanel({ projectId }: { projectId: string }) {
     return <div className="h-80 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
   }
 
-  const article = data?.items?.[0]
+  const article = articleId ? data?.items?.find(a => a.id === articleId) : data?.items?.[0]
 
   if (!article) {
     return (

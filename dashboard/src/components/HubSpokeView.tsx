@@ -147,7 +147,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
       api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: projectId }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['project-articles', data.project_id] })
-      window.open(`/write-blog/${data.project_id}`, '_blank')
+      navigate(`/write-blog/${data.project_id}`)
     }
   })
 

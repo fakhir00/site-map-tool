@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
@@ -9,6 +9,7 @@ import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
 
 export default function WriteBlog() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   
   const initialKeyword = searchParams.get('keyword') || ''
@@ -41,7 +42,7 @@ export default function WriteBlog() {
     },
     onSuccess: (_, { projectId }) => {
       queryClient.invalidateQueries({ queryKey: ['project-articles', projectId] })
-      window.open(`/write-blog/${projectId}`, '_blank')
+      navigate(`/write-blog/${projectId}`)
     },
     onError: (err) => {
       setArticleError(err instanceof Error ? err.message : 'Article generation failed')
@@ -56,7 +57,7 @@ export default function WriteBlog() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['project-articles', data.project_id] })
-      window.open(`/write-blog/${data.project_id}`, '_blank')
+      navigate(`/write-blog/${data.project_id}`)
     },
     onError: (err) => {
       setArticleError(err instanceof Error ? err.message : 'Manual article generation failed')
