@@ -381,6 +381,15 @@ async def bulk_save_keywords(
     )
     existing_ids = {row[0] for row in existing_result.all()}
 
+    # Update notes for already saved keywords
+    if existing_ids:
+        await db.execute(
+            update(KeywordBank).where(
+                KeywordBank.user_id == current_user.id,
+                KeywordBank.keyword_id.in_(existing_ids)
+            ).values(notes=body.notes)
+        )
+
     # Create new entries
     new_entries = [
         KeywordBank(user_id=current_user.id, keyword_id=kw_id, notes=body.notes)
@@ -390,7 +399,8 @@ async def bulk_save_keywords(
     if new_entries:
         db.add_all(new_entries)
         
-    return {"message": f"{len(new_entries)} keywords saved to bank"}
+    await db.commit()
+    return {"message": f"{len(valid_ids)} keywords tagged as {body.notes}"}
 
 
 @router.post("/{project_id}/keywords/bulk-delete")

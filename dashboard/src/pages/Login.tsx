@@ -30,7 +30,7 @@ export function Login() {
     setLoading(true)
 
     try {
-      const data = await api.post<TokenResponse>('/auth/login', { email, password })
+      const data = await api.post<TokenResponse>('/auth/login', { email: email.trim(), password })
       auth.setToken(data.access_token)
       navigate(from, { replace: true })
     } catch (err) {
