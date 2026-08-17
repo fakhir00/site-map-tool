@@ -81,6 +81,7 @@ from pydantic import BaseModel
 class ManualGenerateRequest(BaseModel):
     main_keyword: str
     keyword_cluster: str = ""
+    project_id: str | None = None
 
 @router.post("/manual-generate", response_model=ArticleDraftOut)
 async def manual_generate_article(
@@ -88,14 +89,24 @@ async def manual_generate_article(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Find the most recently active project for this user
-    result = await db.execute(
-        select(Project)
-        .where(Project.user_id == current_user.id)
-        .order_by(Project.created_at.desc())
-        .limit(1)
-    )
-    project = result.scalar_one_or_none()
+    project = None
+    if req.project_id:
+        result = await db.execute(
+            select(Project)
+            .where(Project.id == req.project_id, Project.user_id == current_user.id)
+        )
+        project = result.scalar_one_or_none()
+        
+    if not project:
+        # Find the most recently active project for this user
+        result = await db.execute(
+            select(Project)
+            .where(Project.user_id == current_user.id)
+            .order_by(Project.created_at.desc())
+            .limit(1)
+        )
+        project = result.scalar_one_or_none()
+        
     if not project:
         raise HTTPException(status_code=400, detail="You must create at least one project first.")
 

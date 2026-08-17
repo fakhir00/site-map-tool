@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Network, RefreshCw, BookOpen, Settings, DollarSign } from 'lucide-react'
+import { Network, RefreshCw, BookOpen, Settings, DollarSign, FilePenLine, Loader2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from './ui/Button'
 
@@ -30,14 +30,26 @@ function LayerIcon({ name }: { name: string }) {
   return <Network className="h-4 w-4 text-slate-400" />
 }
 
-function NewHubCard({ hub }: { hub: NewSchemaHub }) {
+function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (keyword: string, instruction: string) => void, isWriting: boolean }) {
   const layerEntries = Object.entries(hub.layers || {})
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 shadow-sm">
       <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-5 py-4">
-        <h5 className="text-lg font-bold text-slate-900 dark:text-slate-50">{hub.hub_title}</h5>
-        <div className="mt-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">SEO Hub / Pillar Page</div>
+        <div className="flex justify-between items-start">
+          <div>
+            <h5 className="text-lg font-bold text-slate-900 dark:text-slate-50">{hub.hub_title}</h5>
+            <div className="mt-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">SEO Hub / Pillar Page</div>
+          </div>
+          <Button 
+            size="sm" 
+            disabled={isWriting}
+            onClick={() => onWrite(hub.hub_title, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")}
+          >
+            {isWriting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FilePenLine className="mr-2 h-4 w-4" />}
+            Write Hub
+          </Button>
+        </div>
       </div>
       <div className="flex-1 p-5">
         {layerEntries.length === 0 ? (
@@ -61,13 +73,24 @@ function NewHubCard({ hub }: { hub: NewSchemaHub }) {
                         const targetKeyword = match ? match[2] : null
 
                         return (
-                          <li key={sIdx} className="flex flex-col items-start px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{displayTitle}</span>
-                            {targetKeyword && (
-                              <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                Keyword: {targetKeyword}
-                              </span>
-                            )}
+                          <li key={sIdx} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <div className="flex flex-col items-start pr-4">
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{displayTitle}</span>
+                              {targetKeyword && (
+                                <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                  Keyword: {targetKeyword}
+                                </span>
+                              )}
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="secondary" 
+                              disabled={isWriting}
+                              className="shrink-0"
+                              onClick={() => onWrite(targetKeyword || displayTitle, "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words.")}
+                            >
+                              <FilePenLine className="h-4 w-4" />
+                            </Button>
                           </li>
                         )
                       })}
@@ -118,6 +141,19 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
       queryClient.invalidateQueries({ queryKey: ['hub-spoke', projectId] })
     },
   })
+
+  const manualMutation = useMutation({
+    mutationFn: ({ main_keyword, keyword_cluster }: { main_keyword: string, keyword_cluster: string }) => 
+      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: projectId }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['project-articles', data.project_id] })
+      window.open(`/write-blog/${data.project_id}`, '_blank')
+    }
+  })
+
+  const handleWrite = (keyword: string, instruction: string) => {
+    manualMutation.mutate({ main_keyword: keyword, keyword_cluster: instruction })
+  }
 
   if (isLoading) {
     return (
@@ -174,7 +210,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
       {isNewSchema ? (
         <div className="grid gap-6 md:grid-cols-2">
           {(clusters as NewSchema).hubs.map((hub, i) => (
-            <NewHubCard key={i} hub={hub} />
+            <NewHubCard key={i} hub={hub} onWrite={handleWrite} isWriting={manualMutation.isPending} />
           ))}
         </div>
       ) : (
