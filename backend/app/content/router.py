@@ -77,6 +77,86 @@ async def generate_article(
     return _article_out(draft, keyword.phrase)
 
 
+from pydantic import BaseModel
+class ManualGenerateRequest(BaseModel):
+    main_keyword: str
+    keyword_cluster: str = ""
+
+@router.post("/manual-generate", response_model=ArticleDraftOut)
+async def manual_generate_article(
+    req: ManualGenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Find the most recently active project for this user
+    result = await db.execute(
+        select(Project)
+        .where(Project.user_id == current_user.id)
+        .order_by(Project.created_at.desc())
+        .limit(1)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=400, detail="You must create at least one project first.")
+
+    # Create a Keyword entry for this manual keyword
+    keyword_res = await db.execute(
+        select(Keyword)
+        .where(Keyword.project_id == project.id, Keyword.phrase == req.main_keyword)
+    )
+    keyword = keyword_res.scalar_one_or_none()
+    
+    if not keyword:
+        keyword = Keyword(
+            project_id=project.id,
+            phrase=req.main_keyword,
+            keyword_type="primary"
+        )
+        db.add(keyword)
+        await db.flush()
+
+    # Extract seed keywords from cluster
+    seed_keywords = [k.strip() for k in req.keyword_cluster.split("\n") if k.strip()]
+    if not seed_keywords:
+        seed_keywords = [req.main_keyword]
+    
+    competitor_urls = await _fallback_project_urls(db, project.id, source_type="competitor", limit=6)
+    own_urls = await _fallback_project_urls(db, project.id, source_type="own", limit=2)
+
+    try:
+        package = await run_in_threadpool(
+            generate_article_package,
+            project_name=project.name,
+            project_domain=project.domain,
+            primary_keyword=req.main_keyword,
+            seed_keywords=seed_keywords,
+            competitor_urls=competitor_urls,
+            own_urls=own_urls,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    draft = ArticleDraft(
+        project_id=project.id,
+        keyword_id=keyword.id,
+        status=package["status"],
+        title=package["title"],
+        content_markdown=package["content_markdown"],
+        audit_score=package["audit"].get("score") if package.get("audit") else None,
+        generation_attempts=package["attempts"],
+        research_summary={
+            "brief": package["brief"],
+            "competitor_pages": package["competitor_pages"],
+            "own_pages": package["own_pages"],
+        },
+        audit_feedback=package.get("audit"),
+    )
+    db.add(draft)
+    await db.flush()
+    await db.refresh(draft)
+    return _article_out(draft, keyword.phrase)
+
+
 @router.post("/{project_id}/articles/{article_id}/write-final", response_model=ArticleDraftOut)
 async def write_final_article_endpoint(
     project_id: uuid.UUID,

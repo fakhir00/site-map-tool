@@ -48,11 +48,26 @@ export default function WriteBlog() {
     },
   })
 
+  const manualMutation = useMutation({
+    mutationFn: ({ main_keyword, keyword_cluster }: { main_keyword: string, keyword_cluster: string }) => 
+      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster }),
+    onMutate: () => {
+      setArticleError('')
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['project-articles', data.project_id] })
+      window.open(`/write-blog/${data.project_id}`, '_blank')
+    },
+    onError: (err) => {
+      setArticleError(err instanceof Error ? err.message : 'Manual article generation failed')
+    },
+  })
+
   const handleGenerateBlog = () => {
     if (selectedKeyword && selectedKeyword.phrase === mainKeyword) {
       articleMutation.mutate({ keywordId: selectedKeyword.keyword_id, projectId: selectedKeyword.project_id })
     } else {
-      alert('Manual blog generation without a saved keyword is coming soon! Please select a keyword from the table below.')
+      manualMutation.mutate({ main_keyword: mainKeyword, keyword_cluster: keywordCluster })
     }
   }
 
@@ -110,11 +125,11 @@ export default function WriteBlog() {
           <Button 
             className="w-full bg-cyan-500 hover:bg-cyan-600 text-white" 
             size="lg"
-            disabled={articleMutation.isPending || !mainKeyword}
+            disabled={articleMutation.isPending || manualMutation.isPending || !mainKeyword}
             onClick={handleGenerateBlog}
           >
-            {articleMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-            {articleMutation.isPending ? 'Generating...' : 'Generate Blog'}
+            {articleMutation.isPending || manualMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+            {articleMutation.isPending || manualMutation.isPending ? 'Generating...' : 'Generate Blog'}
           </Button>
         </div>
       </Card>
