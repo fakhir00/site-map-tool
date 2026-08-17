@@ -264,7 +264,7 @@ export function ProjectDetail() {
             <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4 shrink-0">
               <h3 className="font-semibold text-slate-950 dark:text-slate-50">Crawled sources</h3>
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/50 max-h-[350px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/50 max-h-[390px] overflow-y-auto">
               {sources.length === 0 ? (
                 <p className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">No sources have been queued yet.</p>
               ) : (
