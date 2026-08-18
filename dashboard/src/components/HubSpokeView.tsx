@@ -76,6 +76,8 @@ function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (
                         const displayTitle = match ? match[1] : spoke
                         const targetKeyword = match ? match[2] : null
 
+                        const isToolSpoke = layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('transactional')
+
                         return (
                           <li key={sIdx} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">
                             <div className="flex flex-col items-start pr-4">
@@ -91,9 +93,19 @@ function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (
                               variant="secondary" 
                               disabled={isWriting}
                               className="shrink-0"
-                              onClick={() => onWrite(targetKeyword || displayTitle, "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words.")}
+                              onClick={() => onWrite(targetKeyword || displayTitle, isToolSpoke ? "INSTRUCTION: This is a Tool spoke. Write functional requirements and pseudo-code." : "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words.")}
                             >
-                              <FilePenLine className="h-4 w-4" />
+                              {isToolSpoke ? (
+                                <>
+                                  <Settings className="mr-2 h-4 w-4" />
+                                  Build tool
+                                </>
+                              ) : (
+                                <>
+                                  <FilePenLine className="mr-2 h-4 w-4" />
+                                  Write Blog
+                                </>
+                              )}
                             </Button>
                           </li>
                         )
