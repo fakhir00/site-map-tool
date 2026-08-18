@@ -1274,44 +1274,44 @@ Return ONLY a JSON object in this exact format:
         return None
 
 
-async def cluster_hub_and_spoke(keywords: list[str]) -> dict[str, Any] | None:
+async def cluster_hub_and_spoke(keywords: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
     if not is_ai_configured() or not keywords:
         return None
 
     trimmed = keywords[:500]
     prompt = f"""
-Take a raw, flat Hub-and-Spoke list and transform it into a visually optimized, layered, ranking-ready SEO architecture.
+Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
 You are a Senior SEO Content Strategist and Topical Authority Architect with 10+ years of experience in semantic SEO, content gap analysis, and large-scale keyword clustering for Fortune 500 brands. Make smart choices.
 
 [TASK - STRICT ENFORCEMENT]
 
-*Rule 1: Group by Logical Topical Clusters.*
-Group all keywords into logical Topical Clusters based on:
-• Search Intent: (e.g., Informational vs. Transactional vs. Navigational).
-• User Persona: (e.g., Teachers, Gamers, Health Enthusiasts, General Consumers).
-• Semantic Proximity: Keywords that share root words (e.g., "diy oral care hacks for X" all belong together).
-Crucial Rule: Do not just group by the Type column. A Primary keyword for "Cars" and a Primary keyword for "Recipes" must be split into separate Pillars even if they share the same Type label.
+Step 1: Data Audit & Anomaly Detection
+Identify keywords in the list where "is_ai" is true. These are AI Recommendations. You MUST label them strictly as "Zero Competition Quick-Wins" by placing them into a special layer of the same name.
 
-*Rule 2: Fix the Hub.*
-• If the Hub contains generic words ("Fundamentals", "Basics", "Intro"), strip them.
-• Replace with the exact high-volume core entity.
-• Title Format: Make logical hubs. All hubs MUST follow the exact format "The ultimate guide to [Core Entity]".
+Step 2: Ignore the "Type" Column for Grouping
+Do NOT group by the provided Type (Primary, LSI, Entity, etc.).
+Instead, read the actual Keyword text and group purely by human logic—what is the user's core problem or scenario?
 
-*Rule 3: Kill Synonyms & Merge Components.*
-• Merge all singular/plural and synonym spokes into ONE spoke: "What Is [Core Entity]?".
-• If a spoke is a single part/component (e.g., "leg", "wheel"), DO NOT keep it alone. Merge it into a broader "Complete Guide to Parts & Accessories".
+Step 3: Create Topical Buckets (Clusters)
+Identify 3–5 distinct, unrelated themes within the list (e.g., "Hardware," "Software," "Health," "Gaming").
+Ensure keywords about entirely different subjects are split into separate buckets, even if they share the same Type label.
 
-*Rule 4: Enforce the 3-Layer Stack.*
-You MUST build these 3 layers for each Hub. If missing, invent them based on the niche:
-1. *Foundation Spokes (Informational)*: "What Is X?", "X vs Y".
-2. *Action Spokes (How-To)*: "How to Set Up X", "How to Choose X".
-3. *Money Spokes (Commercial)*: "Best X Brands", "X for Sale", "X for [Niche]".
+Step 4: Select the "Hub" for Each Bucket
+Within each bucket, pick the broadest, most generic keyword as the main Pillar page (the Hub).
+This umbrella term should logically encompass all other keywords in that bucket.
+Title Format: Make logical hubs. All hubs MUST follow the exact format "The ultimate guide to [Core Entity]".
 
-*Rule 5: Visually Optimized JSON Output.*
+Step 5: Split Remaining Keywords by Search Intent (Crucial Step)
+Analyze each leftover keyword in the bucket and distribute them into the following layers:
+- If "Tool/Transactional" intent (e.g., user wants to DO or USE something immediately): Assign as a Tool Spoke.
+- If "Informational/Commercial" intent (e.g., user wants to LEARN, COMPARE, or READ): Assign as a Blog Spoke.
+- If "is_ai" is true (from Step 1): Assign them to the "Zero Competition Quick-Wins" layer.
+
+*Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly.
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
-• Display the Target Keyword from the provided list in parentheses next to each Spoke. Example: "What Is a Portable Stage Platform? (Target Keyword: portable stage)"
+• Display the exact original phrase from the provided list in parentheses next to each Spoke. Example: "How to Build a Stage (Target Keyword: how to build a stage)"
 
 EXPECTED JSON SCHEMA:
 {{
@@ -1319,9 +1319,9 @@ EXPECTED JSON SCHEMA:
     {{
       "hub_title": "The ultimate guide to Portable Stage Platforms",
       "layers": {{
-        "Foundation Spokes (Informational)": ["What Is a Portable Stage Platform? (Target Keyword: portable stage)"],
-        "Action Spokes (How-To)": ["How to Set Up a Portable Stage (Target Keyword: portable stage setup)"],
-        "Money Spokes (Commercial)": ["Best Portable Stage Brands (Target Keyword: best portable stage brands)"]
+        "Tool Spokes (Functional Utility)": ["Virtual Stage Designer (Target Keyword: virtual stage designer)"],
+        "Blog Spokes (Informational/Commercial)": ["How to Set Up a Portable Stage (Target Keyword: portable stage setup)"],
+        "Zero Competition Quick-Wins": ["Top 10 Stage Types (Target Keyword: top 10 stage types)"]
       }}
     }}
   ]
@@ -1332,7 +1332,7 @@ Keywords to cluster:
 """
     try:
         payload = await _achat_json(
-            system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the 3-Layer SEO Stack schema.",
+            system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the SEO architecture schema.",
             user_prompt=prompt,
             temperature=0.1,
             max_tokens=3000,

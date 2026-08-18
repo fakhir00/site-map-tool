@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { Network, RefreshCw, BookOpen, Settings, DollarSign, FilePenLine, Loader2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from './ui/Button'
@@ -24,6 +25,9 @@ type OldSchema = Record<string, any>
 type ClusterData = NewSchema | OldSchema
 
 function LayerIcon({ name }: { name: string }) {
+  if (name.includes('Zero') || name.includes('Quick-Wins')) return <DollarSign className="h-4 w-4 text-amber-500" />
+  if (name.includes('Blog') || name.includes('Informational')) return <BookOpen className="h-4 w-4 text-indigo-500" />
+  if (name.includes('Tool') || name.includes('Transactional')) return <Settings className="h-4 w-4 text-emerald-500" />
   if (name.includes('Foundation') || name.includes('Informational')) return <BookOpen className="h-4 w-4 text-indigo-500" />
   if (name.includes('Action') || name.includes('How-To')) return <Settings className="h-4 w-4 text-emerald-500" />
   if (name.includes('Money') || name.includes('Commercial')) return <DollarSign className="h-4 w-4 text-amber-500" />
@@ -129,6 +133,7 @@ function OldHubCard({ hub, spokes }: { hub: string; spokes: string[] }) {
 
 export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const { data, isLoading } = useQuery({
     queryKey: ['hub-spoke', projectId],
@@ -145,7 +150,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const manualMutation = useMutation({
     mutationFn: ({ main_keyword, keyword_cluster }: { main_keyword: string, keyword_cluster: string }) => 
       api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: projectId }),
-    onSuccess: (data) => {
+    onSuccess: (data: { project_id: string }) => {
       queryClient.invalidateQueries({ queryKey: ['project-articles', data.project_id] })
       navigate(`/write-blog/${data.project_id}`)
     }

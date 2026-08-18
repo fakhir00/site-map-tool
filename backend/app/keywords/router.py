@@ -230,15 +230,31 @@ async def generate_hub_spoke(
 ):
     project = await _assert_owns_project(project_id, current_user.id, db)
     
-    q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id).order_by(Keyword.frequency.desc())
+    # We need to know if the keyword came from an AI recommendation
+    from app.models import Keyword, KeywordUrl, Url
+    q_existing = (
+        select(Keyword.phrase, Keyword.keyword_type, Url.source_domain)
+        .outerjoin(KeywordUrl, Keyword.id == KeywordUrl.keyword_id)
+        .outerjoin(Url, KeywordUrl.url_id == Url.id)
+        .where(Keyword.project_id == project.id)
+        .order_by(Keyword.frequency.desc())
+    )
     result = await db.execute(q_existing)
-    existing_phrases = [row[0] for row in result.all()]
     
-    if not existing_phrases:
+    keyword_map = {}
+    for phrase, kw_type, domain in result.all():
+        if phrase not in keyword_map:
+            keyword_map[phrase] = {"phrase": phrase, "type": kw_type, "is_ai": False}
+        if domain == "AI Recommendations":
+            keyword_map[phrase]["is_ai"] = True
+            
+    existing_keywords = list(keyword_map.values())
+    
+    if not existing_keywords:
         raise HTTPException(status_code=400, detail="No keywords found to cluster.")
 
     from nlp.openrouter import cluster_hub_and_spoke
-    clusters = await cluster_hub_and_spoke(existing_phrases)
+    clusters = await cluster_hub_and_spoke(existing_keywords)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")
 
