@@ -1281,13 +1281,13 @@ async def cluster_hub_and_spoke(keywords: list[dict[str, Any]]) -> dict[str, Any
 
     trimmed = keywords[:500]
     prompt = f"""
-Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, ranking-ready SEO architecture.
+Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
 You are a Senior SEO Content Strategist and Topical Authority Architect with 10+ years of experience in semantic SEO, content gap analysis, and large-scale keyword clustering for Fortune 500 brands. Make smart choices.
 
 [TASK - STRICT ENFORCEMENT]
 
 Step 1: Data Audit & Anomaly Detection
-Identify keywords in the list where "is_ai" is true. These are AI Recommendations. You MUST label them strictly as "Zero Competition Quick-Wins".
+Identify keywords in the list where "is_ai" is true. These are AI Recommendations. You MUST label them strictly as "Zero Competition Quick-Wins" by placing them into a special layer of the same name.
 
 Step 2: Ignore the "Type" Column for Grouping
 Do NOT group by the provided Type (Primary, LSI, Entity, etc.).
@@ -1300,38 +1300,29 @@ Ensure keywords about entirely different subjects are split into separate bucket
 Step 4: Select the "Hub" for Each Bucket
 Within each bucket, pick the broadest, most generic keyword as the main Pillar page (the Hub).
 This umbrella term should logically encompass all other keywords in that bucket.
-Title Format: Make logical hubs. All hubs MUST follow the exact format "HUB [Number] ([Cluster Name]) : [Broad Primary Keyword] - Broad (Pillar Overview)".
-Example: "HUB 1 (Yes/No Decision) : yes or no wheel - Broad (Pillar Overview)"
+Title Format: Make logical hubs. All hubs MUST follow the exact format "The ultimate guide to [Core Entity]".
 
 Step 5: Split Remaining Keywords by Search Intent (Crucial Step)
-Analyze each leftover keyword in the bucket and assign them as Spokes:
+Analyze each leftover keyword in the bucket and distribute them into the following layers:
 - If "Tool/Transactional" intent (e.g., user wants to DO or USE something immediately): Assign as a Tool Spoke.
-  Example format: "Spoke [Number] (Tool) : [Keyword] - Tool (Immediate Action/Utility)"
 - If "Informational/Commercial" intent (e.g., user wants to LEARN, COMPARE, or READ): Assign as a Blog Spoke.
-  Example format: "Spoke [Number] (Blog) : [Keyword] - Blog (Informational/Guide/How-to)"
+- If "is_ai" is true (from Step 1): Assign them to the "Zero Competition Quick-Wins" layer.
 
 *Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly.
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
+• Display the exact original phrase from the provided list in parentheses next to each Spoke. Example: "How to Build a Stage (Target Keyword: how to build a stage)"
 
 EXPECTED JSON SCHEMA:
 {{
   "hubs": [
     {{
-      "hub_title": "HUB 1 (Yes/No Decision) : yes or no wheel - Broad (Pillar Overview)",
-      "hub_keyword": "yes or no wheel",
-      "spokes": [
-        {{
-          "type": "tool",
-          "title": "Spoke 1 (Tool) : yes no wheel spinner - Tool (Embedded Spinner)",
-          "keyword": "yes no wheel spinner"
-        }},
-        {{
-          "type": "blog",
-          "title": "Spoke 2 (Blog) : best yes or no wheel app - Blog (Reviews & Comparisons)",
-          "keyword": "best yes or no wheel app"
-        }}
-      ]
+      "hub_title": "The ultimate guide to Portable Stage Platforms",
+      "layers": {{
+        "Tool Spokes (Functional Utility)": ["Virtual Stage Designer (Target Keyword: virtual stage designer)"],
+        "Blog Spokes (Informational/Commercial)": ["How to Set Up a Portable Stage (Target Keyword: portable stage setup)"],
+        "Zero Competition Quick-Wins": ["Top 10 Stage Types (Target Keyword: top 10 stage types)"]
+      }}
     }}
   ]
 }}

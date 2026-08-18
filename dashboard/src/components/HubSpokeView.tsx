@@ -8,21 +8,13 @@ interface HubSpokeViewProps {
   projectId: string
 }
 
-interface Spoke {
-  type: string
-  title: string
-  keyword: string
-}
-
 interface NewSchemaLayer {
   [layerName: string]: string[]
 }
 
 interface NewSchemaHub {
   hub_title: string
-  hub_keyword?: string
-  layers?: NewSchemaLayer
-  spokes?: Spoke[]
+  layers: NewSchemaLayer
 }
 
 interface NewSchema {
@@ -31,12 +23,6 @@ interface NewSchema {
 
 type OldSchema = Record<string, any>
 type ClusterData = NewSchema | OldSchema
-
-function SpokeIcon({ type }: { type: string }) {
-  if (type === 'tool') return <Settings className="h-4 w-4 text-emerald-500" />
-  if (type === 'blog') return <BookOpen className="h-4 w-4 text-indigo-500" />
-  return <Network className="h-4 w-4 text-slate-400" />
-}
 
 function LayerIcon({ name }: { name: string }) {
   if (name.includes('Zero') || name.includes('Quick-Wins')) return <DollarSign className="h-4 w-4 text-amber-500" />
@@ -49,8 +35,6 @@ function LayerIcon({ name }: { name: string }) {
 }
 
 function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (keyword: string, instruction: string) => void, isWriting: boolean }) {
-  // Support both new "spokes" flat array and legacy "layers" object
-  const hasSpokes = Array.isArray(hub.spokes)
   const layerEntries = Object.entries(hub.layers || {})
 
   return (
@@ -64,7 +48,7 @@ function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (
           <Button 
             size="sm" 
             disabled={isWriting}
-            onClick={() => onWrite(hub.hub_keyword || hub.hub_title, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")}
+            onClick={() => onWrite(hub.hub_title, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")}
           >
             {isWriting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FilePenLine className="mr-2 h-4 w-4" />}
             Write Hub
@@ -72,87 +56,54 @@ function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (
         </div>
       </div>
       <div className="flex-1 p-5">
-        {hasSpokes ? (
-          hub.spokes!.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No spokes generated for this hub.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {hub.spokes!.map((spoke, idx) => (
-                <li key={idx} className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm">
-                  <div className="flex items-center gap-3 pr-4">
-                    <SpokeIcon type={spoke.type} />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{spoke.title}</span>
-                      <span className="mt-0.5 inline-flex self-start items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                        Keyword: {spoke.keyword}
-                      </span>
-                    </div>
-                  </div>
-                  <Button 
-                    size="sm" 
-                    variant="secondary" 
-                    disabled={isWriting}
-                    className="shrink-0 text-xs font-medium"
-                    onClick={() => onWrite(spoke.keyword, `INSTRUCTION: This is a ${spoke.type === 'tool' ? 'Tool' : 'Blog'} Spoke article. It MUST be a detailed, focused article of 1500+ words.`)}
-                  >
-                    <FilePenLine className="mr-1.5 h-3.5 w-3.5" />
-                    {spoke.type === 'tool' ? 'Build tool' : 'Write Blog'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )
+        {layerEntries.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No spokes generated for this hub.</p>
         ) : (
-          // Legacy layers fallback
-          layerEntries.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No spokes generated for this hub.</p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {layerEntries.map(([layerName, spokes], idx) => (
-                <div key={idx} className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 dark:border-slate-800/50 dark:bg-slate-800/50 px-4 py-2.5">
-                    <LayerIcon name={layerName} />
-                    <h6 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{layerName}</h6>
-                  </div>
-                  <div className="p-3">
-                    {(!spokes || spokes.length === 0) ? (
-                      <p className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No keywords in this layer.</p>
-                    ) : (
-                      <ul className="flex flex-col gap-1.5">
-                        {spokes.map((spoke, sIdx) => {
-                          const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
-                          const displayTitle = match ? match[1] : spoke
-                          const targetKeyword = match ? match[2] : null
-
-                          return (
-                            <li key={sIdx} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                              <div className="flex flex-col items-start pr-4">
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{displayTitle}</span>
-                                {targetKeyword && (
-                                  <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                    Keyword: {targetKeyword}
-                                  </span>
-                                )}
-                              </div>
-                              <Button 
-                                size="sm" 
-                                variant="secondary" 
-                                disabled={isWriting}
-                                className="shrink-0"
-                                onClick={() => onWrite(targetKeyword || displayTitle, "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words.")}
-                              >
-                                <FilePenLine className="h-4 w-4" />
-                              </Button>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
-                  </div>
+          <div className="flex flex-col gap-4">
+            {layerEntries.map(([layerName, spokes], idx) => (
+              <div key={idx} className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 dark:border-slate-800/50 dark:bg-slate-800/50 px-4 py-2.5">
+                  <LayerIcon name={layerName} />
+                  <h6 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{layerName}</h6>
                 </div>
-              ))}
-            </div>
-          )
+                <div className="p-3">
+                  {(!spokes || spokes.length === 0) ? (
+                    <p className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No keywords in this layer.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1.5">
+                      {spokes.map((spoke, sIdx) => {
+                        const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
+                        const displayTitle = match ? match[1] : spoke
+                        const targetKeyword = match ? match[2] : null
+
+                        return (
+                          <li key={sIdx} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <div className="flex flex-col items-start pr-4">
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{displayTitle}</span>
+                              {targetKeyword && (
+                                <span className="mt-0.5 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                  Keyword: {targetKeyword}
+                                </span>
+                              )}
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="secondary" 
+                              disabled={isWriting}
+                              className="shrink-0"
+                              onClick={() => onWrite(targetKeyword || displayTitle, "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words.")}
+                            >
+                              <FilePenLine className="h-4 w-4" />
+                            </Button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
