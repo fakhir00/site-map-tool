@@ -1282,34 +1282,42 @@ async def cluster_hub_and_spoke(keywords: list[str]) -> dict[str, Any] | None:
     trimmed = keywords[:500]
     prompt = f"""
 Take a raw, flat Hub-and-Spoke list and transform it into a visually optimized, layered, ranking-ready SEO architecture.
+You are a Senior SEO Content Strategist and Topical Authority Architect with 10+ years of experience in semantic SEO, content gap analysis, and large-scale keyword clustering for Fortune 500 brands. Make smart choices.
 
 [TASK - STRICT ENFORCEMENT]
 
-*Rule 1: Fix the Hub.*
-•  If the Hub contains generic words ("Fundamentals", "Basics", "Intro"), strip them.
-•  Replace with the exact high-volume core entity.
-•  Title Format: "The Ultimate Guide to [Core Entity]".
+*Rule 1: Group by Logical Topical Clusters.*
+Group all keywords into logical Topical Clusters based on:
+• Search Intent: (e.g., Informational vs. Transactional vs. Navigational).
+• User Persona: (e.g., Teachers, Gamers, Health Enthusiasts, General Consumers).
+• Semantic Proximity: Keywords that share root words (e.g., "diy oral care hacks for X" all belong together).
+Crucial Rule: Do not just group by the Type column. A Primary keyword for "Cars" and a Primary keyword for "Recipes" must be split into separate Pillars even if they share the same Type label.
 
-*Rule 2: Kill Synonyms & Merge Components.*
-•  Merge all singular/plural and synonym spokes into ONE spoke: "What Is [Core Entity]?".
-•  If a spoke is a single part/component (e.g., "leg", "wheel"), DO NOT keep it alone. Merge it into a broader "Complete Guide to Parts & Accessories".
+*Rule 2: Fix the Hub.*
+• If the Hub contains generic words ("Fundamentals", "Basics", "Intro"), strip them.
+• Replace with the exact high-volume core entity.
+• Title Format: Make logical hubs. All hubs MUST follow the exact format "The ultimate guide to [Core Entity]".
 
-*Rule 3: Enforce the 3-Layer Stack.*
+*Rule 3: Kill Synonyms & Merge Components.*
+• Merge all singular/plural and synonym spokes into ONE spoke: "What Is [Core Entity]?".
+• If a spoke is a single part/component (e.g., "leg", "wheel"), DO NOT keep it alone. Merge it into a broader "Complete Guide to Parts & Accessories".
+
+*Rule 4: Enforce the 3-Layer Stack.*
 You MUST build these 3 layers for each Hub. If missing, invent them based on the niche:
 1. *Foundation Spokes (Informational)*: "What Is X?", "X vs Y".
 2. *Action Spokes (How-To)*: "How to Set Up X", "How to Choose X".
 3. *Money Spokes (Commercial)*: "Best X Brands", "X for Sale", "X for [Niche]".
 
-*Rule 4: Visually Optimized JSON Output.*
-•  Output MUST be a valid JSON object matching the schema below exactly.
-•  DO NOT USE markdown ticks for the JSON output. Return pure JSON.
-•  Display the Target Keyword from the provided list in parentheses next to each Spoke. Example: "What Is a Portable Stage Platform? (Target Keyword: portable stage)"
+*Rule 5: Visually Optimized JSON Output.*
+• Output MUST be a valid JSON object matching the schema below exactly.
+• DO NOT USE markdown ticks for the JSON output. Return pure JSON.
+• Display the Target Keyword from the provided list in parentheses next to each Spoke. Example: "What Is a Portable Stage Platform? (Target Keyword: portable stage)"
 
 EXPECTED JSON SCHEMA:
 {{
   "hubs": [
     {{
-      "hub_title": "The Ultimate Guide to Portable Stage Platforms",
+      "hub_title": "The ultimate guide to Portable Stage Platforms",
       "layers": {{
         "Foundation Spokes (Informational)": ["What Is a Portable Stage Platform? (Target Keyword: portable stage)"],
         "Action Spokes (How-To)": ["How to Set Up a Portable Stage (Target Keyword: portable stage setup)"],
@@ -1324,10 +1332,10 @@ Keywords to cluster:
 """
     try:
         payload = await _achat_json(
-            system_prompt="You output only valid JSON objects matching the 3-Layer SEO Stack schema.",
+            system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the 3-Layer SEO Stack schema.",
             user_prompt=prompt,
             temperature=0.1,
-            max_tokens=2500,
+            max_tokens=3000,
         )
         if isinstance(payload, dict):
             # We accept the nested dictionary as-is, but we could do minor type validation.
