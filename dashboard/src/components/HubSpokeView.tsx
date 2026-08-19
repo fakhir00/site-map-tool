@@ -72,11 +72,14 @@ function NewHubCard({ hub, onWrite, isWriting }: { hub: NewSchemaHub, onWrite: (
                   ) : (
                     <ul className="flex flex-col gap-1.5">
                       {spokes.map((spoke, sIdx) => {
-                        const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
-                        const displayTitle = match ? match[1] : spoke
-                        const targetKeyword = match ? match[2] : null
+                        const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)(?:\s*\[(Tool|Blog)\])?/i)
+                        const displayTitle = match ? match[1].trim() : spoke.replace(/\[(Tool|Blog)\]/i, '').trim()
+                        const targetKeyword = match ? match[2].trim() : null
+                        const intentTag = match ? match[3] : (spoke.match(/\[(Tool|Blog)\]/i)?.[1] || null)
 
-                        const isToolSpoke = layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('transactional')
+                        const isToolSpoke = intentTag 
+                          ? intentTag.toLowerCase() === 'tool' 
+                          : (layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('transactional'))
 
                         return (
                           <li key={sIdx} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50">

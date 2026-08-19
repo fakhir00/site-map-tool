@@ -1282,46 +1282,67 @@ async def cluster_hub_and_spoke(keywords: list[dict[str, Any]]) -> dict[str, Any
     trimmed = keywords[:500]
     prompt = f"""
 Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
-You are a Senior SEO Content Strategist and Topical Authority Architect with 10+ years of experience in semantic SEO, content gap analysis, and large-scale keyword clustering for Fortune 500 brands. Make smart choices.
+You are a Senior SEO Content Strategist and Topical Authority Architect with 10+ years of experience in semantic SEO, content gap analysis, and large-scale keyword clustering for Fortune 500 brands.
 
 [TASK - STRICT ENFORCEMENT]
 
-Step 1: Data Audit & Anomaly Detection
-Identify keywords in the list where "is_ai" is true. These are AI Recommendations. You MUST label them strictly as "Zero Competition Quick-Wins" by placing them into a special layer of the same name.
+You must group keywords into a highly structured Topical Map consisting of a Master Hub and several Sub-Silos, similar to this example structure:
 
-Step 2: Ignore the "Type" Column for Grouping
-Do NOT group by the provided Type (Primary, LSI, Entity, etc.).
-Instead, read the actual Keyword text and group purely by human logic—what is the user's core problem or scenario?
+📍 MASTER HUB: The Ultimate Guide to [Core Topic]
+  ├── 🧱 FOUNDATION SPOKES (Authority)
+  └── 💰 MASTER COMMERCIAL SPOKES
 
-Step 3: Create Topical Buckets (Clusters)
-Identify 3–5 distinct, unrelated themes within the list (e.g., "Hardware," "Software," "Health," "Gaming").
-Ensure keywords about entirely different subjects are split into separate buckets, even if they share the same Type label.
+🪐 SUB-SILO 1: [Sub-Topic]
+  ├── 🧱 Foundations
+  ├── ⚙️ Action
+  └── 💰 Money
 
-Step 4: Select the "Hub" for Each Bucket
-Within each bucket, pick the broadest, most generic keyword as the main Pillar page (the Hub).
-This umbrella term should logically encompass all other keywords in that bucket.
-Title Format: Make logical hubs. All hubs MUST follow the exact format "The ultimate guide to [Core Entity]".
+🪐 SUB-SILO 2: [Sub-Topic]
+  ...
 
-Step 5: Split Remaining Keywords by Search Intent (Crucial Step)
-Analyze each leftover keyword in the bucket and distribute them into the following layers:
-- If "Tool/Transactional" intent (e.g., user wants to DO or USE something immediately): Assign as a Tool Spoke.
-- If "Informational/Commercial" intent (e.g., user wants to LEARN, COMPARE, or READ): Assign as a Blog Spoke.
-- If "is_ai" is true (from Step 1): Assign them to the "Zero Competition Quick-Wins" layer.
+Step 1: The Master Hub
+Identify the absolute broadest, most generic core entity and assign it as the "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
+Under the Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
+
+Step 2: Sub-Silos
+Identify 2-5 distinct sub-themes or categories within the keyword list. For each theme, create a Sub-Silo.
+Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview]".
+Within each Sub-Silo, enforce the 3-Layer Stack:
+1. 🧱 Foundations: "What Is X?", "History of X", Databases.
+2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
+3. 💰 Money: "Best X", "Buy X", "X Services".
+
+Step 3: Intent Tagging (CRITICAL)
+Analyze each leftover keyword and decide whether the user wants to DO/USE something immediately (Tool) or LEARN/READ something (Blog).
+Append the intent tag exactly as `[Tool]` or `[Blog]` at the very end of the spoke string.
+
+Step 4: Zero Competition Quick-Wins
+If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
 
 *Visually Optimized JSON Output.*
-• Output MUST be a valid JSON object matching the schema below exactly.
+• Output MUST be a valid JSON object matching the schema below exactly. 
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
-• Display the exact original phrase from the provided list in parentheses next to each Spoke. Example: "How to Build a Stage (Target Keyword: how to build a stage)"
+• Treat both the Master Hub and each Sub-Silo as separate objects in the `hubs` array.
+• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword]) [Intent Tag]"
 
 EXPECTED JSON SCHEMA:
 {{
   "hubs": [
     {{
-      "hub_title": "The ultimate guide to Portable Stage Platforms",
+      "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
       "layers": {{
-        "Tool Spokes (Functional Utility)": ["Virtual Stage Designer (Target Keyword: virtual stage designer)"],
-        "Blog Spokes (Informational/Commercial)": ["How to Set Up a Portable Stage (Target Keyword: portable stage setup)"],
-        "Zero Competition Quick-Wins": ["Top 10 Stage Types (Target Keyword: top 10 stage types)"]
+        "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity]) [Blog]"],
+        "💰 MASTER COMMERCIAL SPOKES": ["Best [Core Entity] Converters (Target Keyword: [core entity] converter) [Tool]"]
+      }}
+    }},
+    {{
+      "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
+      "layers": {{
+        "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity]) [Blog]"],
+        "⚙️ Action": ["[Core Entity] Generator (Target Keyword: [core entity] generator) [Tool]"],
+        "💰 Money": ["Best [Core Entity] Learning Apps (Target Keyword: best [core entity] learning app) [Blog]"],
+        "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing) [Blog]"]
       }}
     }}
   ]
@@ -1334,8 +1355,8 @@ Keywords to cluster:
         payload = await _achat_json(
             system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the SEO architecture schema.",
             user_prompt=prompt,
-            temperature=0.1,
-            max_tokens=3000,
+            temperature=0.15,
+            max_tokens=4000,
         )
         if isinstance(payload, dict):
             # We accept the nested dictionary as-is, but we could do minor type validation.
