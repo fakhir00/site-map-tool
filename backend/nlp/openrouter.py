@@ -541,6 +541,7 @@ Each object must have:
 def filter_keyword_gap_recommendations(
     seed_keywords: list[str],
     candidates: list[dict[str, Any]],
+    audit_summary: str | None = None,
     max_keywords: int = 60,
 ) -> list[dict[str, Any]] | None:
     """Uses LLM to aggressively filter and deduplicate keyword gap candidates."""
@@ -548,9 +549,20 @@ def filter_keyword_gap_recommendations(
         return None
 
     trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
+    
+    audit_context = f"""
+**AGENT AUDIT SUMMARY (GOLD HUNTER)**
+{audit_summary}
+
+**NEW AUDIT-BASED RULES:**
+1. Extract the Core Subject, Core Audience, and Core Action from the Agent Audit Summary.
+2. Apply the Hard Block Rules: Reject any keyword or topics outside the Core Subject.
+3. Keep only keywords that serve the Core Audience and enable the Core Action.
+""" if audit_summary else ""
+
     prompt = f"""
 [SYSTEM COMMAND — FINAL KEYWORD SANITY FILTER]
-
+{audit_context}
 You are a Keyword Sanity Filter. You have received a raw list of keywords extracted from competitor sitemaps.
 
 **Step 0: NATURAL LANGUAGE NORMALIZATION (NEW — CRITICAL)**
@@ -639,14 +651,25 @@ def judge_competitor_domains(
     seed_keywords: list[str],
     own_domain: str,
     candidates: list[dict[str, Any]],
-    max_domains: int,
+    audit_summary: str | None = None,
+    max_domains: int = 25,
 ) -> list[dict[str, Any]] | None:
     """Use the LLM as the final gatekeeper for whether a domain is a true competitor."""
     if not is_ai_configured() or not candidates:
         return []
 
+    audit_context = f"""
+**AGENT AUDIT SUMMARY (GOLD HUNTER)**
+{audit_summary}
+
+**NEW AUDIT-BASED RULES:**
+1. Extract the Core Subject, Core Audience, and Core Action from the Agent Audit Summary.
+2. Apply the Hard Block Rules: Reject sites that do not fit these criteria and are not thematically relevant for our Core Subject, Core Audience, and Core Action.
+""" if audit_summary else ""
+
     prompt = f"""
 You are the final competitor judge for an SEO SaaS.
+{audit_context}
 
 Target site:
 {own_domain}

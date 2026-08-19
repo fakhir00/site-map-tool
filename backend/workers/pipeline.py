@@ -181,6 +181,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             seed_keywords,
             kw_accumulator,
             topic_terms,
+            project.audit_summary,
         )
         _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
 
@@ -416,6 +417,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
         project.own_domain or project.domain,
         [candidate_signals[domain] for domain in competitor_domains if domain in candidate_signals],
         competitor_limit,
+        project.audit_summary,
     )
     if llm_domains is not None:
         return llm_domains
@@ -914,6 +916,7 @@ def _llm_filter_competitor_domains(
     own_domain: str,
     candidates: list[dict[str, Any]],
     competitor_limit: int,
+    audit_summary: str | None = None,
 ) -> list[str] | None:
     if not candidates or not (settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY):
         return None
@@ -924,6 +927,7 @@ def _llm_filter_competitor_domains(
             seed_keywords,
             own_domain,
             candidates[: settings.MAX_COMPETITOR_JUDGE_CANDIDATES],
+            audit_summary=audit_summary,
             max_domains=competitor_limit,
         )
         if judged is None:
@@ -1135,6 +1139,7 @@ def _refine_keyword_gap_recommendations(
     seed_keywords: list[str],
     accumulator: dict[str, dict[str, Any]],
     topic_terms: set[str] | None,
+    audit_summary: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     if not accumulator:
         return accumulator
@@ -1149,6 +1154,7 @@ def _refine_keyword_gap_recommendations(
         ai_recommendations = filter_keyword_gap_recommendations(
             seed_keywords,
             candidate_rows,
+            audit_summary=audit_summary,
             max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
         )
     except Exception as exc:
