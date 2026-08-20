@@ -253,8 +253,18 @@ async def generate_hub_spoke(
     if not existing_keywords:
         raise HTTPException(status_code=400, detail="No keywords found to cluster.")
 
+    from nlp.keywords import cluster_keywords_by_intent, pick_cluster_representative
+    from nlp.openrouter import verify_cluster_intent, _chat_json
+    
+    raw_clusters = cluster_keywords_by_intent(existing_keywords, similarity_threshold=0.80)
+    final_clusters = []
+    for cluster in raw_clusters:
+        final_clusters.extend(verify_cluster_intent(cluster, call_llm_fn=_chat_json))
+        
+    deduped_existing_keywords = [pick_cluster_representative(c) for c in final_clusters]
+
     from nlp.openrouter import cluster_hub_and_spoke
-    clusters = await cluster_hub_and_spoke(existing_keywords)
+    clusters = await cluster_hub_and_spoke(deduped_existing_keywords)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")
 

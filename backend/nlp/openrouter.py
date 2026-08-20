@@ -578,17 +578,13 @@ Compare the normalized query against the seed keyword set: {json.dumps(seed_keyw
 If the query is completely unrelated to the core topic, primary intent, or specific use case of the seed keywords, REJECT IT IMMEDIATELY. For example, if the seed keyword is highly technical or niche, aggressively reject generic terms, unrelated tutorials, or broad software/IT terms that do not directly address the seed's specific context.
 
 **Step 2: Volume Gate**
-- For the normalized query, estimate monthly search volume.
-- Keep if 500+ per month.
-- Reject if below 500.
+Estimate monthly search volume. Keep if 500+, reject if below.
 
-**Step 3: Intent Clustering (Anti-Cannibalization)**
-- Group normalized queries that share the same user intent. Strictly merge subset phrases.
-- For each cluster, select the highest-volume query as PRIMARY.
-- Merge secondary queries into the primary content piece.
+**Step 3: Final Output**
+Return every keyword that survives Steps 0-2. Do NOT deduplicate or merge similar
+phrasings here — that is handled by a separate embedding-based clustering step downstream.
+(Maximum {max_keywords} total).
 
-**Step 4: Final Output**
-- Output ONLY one keyword per intent cluster (maximum {max_keywords} total).
 - Return ONLY a JSON array of objects. Do not include markdown formatting or explanations.
 - Each returned object must include:
   - "source_phrase": exact original phrase from the candidates
@@ -1389,3 +1385,65 @@ Keywords to cluster:
     except Exception as exc:
         logger.error("Failed to cluster hub and spoke via %s: %s", ai_provider_name(), exc)
         return None
+
+
+def verify_cluster_intent(cluster: list[dict], call_llm_fn) -> list[list[dict]]:
+    """
+    Confirms whether a group of embedding-clustered keywords truly share one search
+    intent. Splits the cluster if the LLM finds a genuine intent difference inside it.
+    `call_llm_fn` is your existing LLM call wrapper (same one used elsewhere in this file).
+    """
+    if len(cluster) < 2:
+        return [cluster]
+
+    phrases = [kw["phrase"] for kw in cluster]
+
+    prompt = f"""[SYSTEM COMMAND — INTENT CLUSTER VERIFICATION]
+
+You are an SEO search-intent auditor. You will be given a small group of keywords
+that an automated system has flagged as possibly representing the SAME searcher intent.
+
+Keywords in this group:
+{phrases}
+
+**Your task:**
+Determine whether these keywords truly represent ONE searcher intent — meaning the
+same underlying goal AND the same audience AND the same stage of the buying/research
+journey. Do not split the group over minor wording differences (word order, singular
+vs plural, synonyms). DO split the group if any keyword implies a meaningfully
+different goal, audience, or intent (e.g. informational vs commercial, one use-case
+vs a different use-case, one audience segment vs another).
+
+**Examples:**
+- "best crm for startups" / "top crm software for small business" -> SAME intent (keep together)
+- "protein powder for weight loss" / "protein powder for muscle gain" -> DIFFERENT intent (split)
+- "how to install docker" / "docker installation guide" -> SAME intent (keep together)
+- "docker pricing" / "docker tutorial" -> DIFFERENT intent (split)
+
+**Output rules:**
+- If ALL keywords share the same intent, return: {{"same_intent": true}}
+- If not, return: {{"same_intent": false, "groups": [["phrase1","phrase2"], ["phrase3"]]}}
+- Every input phrase must appear in exactly one output group.
+- Do not add, drop, or rewrite any phrase.
+
+Return ONLY the JSON object, nothing else.
+"""
+
+    result = call_llm_fn(
+        system_prompt="You output only valid JSON.",
+        user_prompt=prompt,
+        temperature=0.1,
+        max_tokens=500,
+    )
+
+    if not isinstance(result, dict):
+        return [cluster]
+
+    if result.get("same_intent", True):
+        return [cluster]
+
+    phrase_to_kw = {kw["phrase"]: kw for kw in cluster}
+    return [
+        [phrase_to_kw[p] for p in group if p in phrase_to_kw]
+        for group in result.get("groups", [])
+    ]

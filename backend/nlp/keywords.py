@@ -402,3 +402,52 @@ def extract_keywords_from_page(
     result.heading_keywords = extract_heading_keywords(h1, h2s or [], h3s or [])
 
     return result
+
+
+from sentence_transformers import SentenceTransformer
+from sklearn.cluster import AgglomerativeClustering
+
+_intent_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+VOLUME_RANK = {"High": 3, "Medium": 2, "Low": 1}
+
+
+def cluster_keywords_by_intent(keywords: list[dict], similarity_threshold: float = 0.80) -> list[list[dict]]:
+    """
+    Groups keywords by semantic search intent using sentence embeddings.
+    `keywords` = list of dicts, each must have a "phrase" key.
+    Returns a list of clusters (each cluster is a list of the original dicts).
+    Call this AFTER relevance/volume filtering, never before — clustering should
+    only ever run on keywords already confirmed on-topic.
+    """
+    if len(keywords) <= 1:
+        return [[kw] for kw in keywords]
+
+    phrases = [kw["phrase"] for kw in keywords]
+    embeddings = _intent_model.encode(phrases, normalize_embeddings=True)
+
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=1 - similarity_threshold,
+        metric="cosine",
+        linkage="average",
+    )
+    labels = clustering.fit_predict(embeddings)
+
+    clusters: dict[int, list[dict]] = {}
+    for label, kw in zip(labels, keywords):
+        clusters.setdefault(label, []).append(kw)
+
+    return list(clusters.values())
+
+
+def pick_cluster_representative(cluster: list[dict]) -> dict:
+    """
+    Selects the single best keyword from a same-intent cluster:
+    highest volume tier first, then the more natural/shorter phrasing as a tiebreak.
+    """
+    return sorted(
+        cluster,
+        key=lambda kw: (VOLUME_RANK.get(kw.get("volume", "Low"), 0), -len(kw["phrase"])),
+        reverse=True,
+    )[0]
