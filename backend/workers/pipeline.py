@@ -247,22 +247,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             _mark_complete(db, project, job, "paused")
             return
             
-        # Final hub/spoke formatting
-        logger.info("[%s] Applying final Hub/Spoke clustering", project_id)
-        all_kws = db.execute(select(Keyword).where(Keyword.project_id == project_uuid)).scalars().all()
-        
-        final_acc = {}
-        for kw in all_kws:
-            if kw.source_urls:
-                continue # Only process keywords not fully processed yet (if needed), wait, KeywordUrl holds mapping
-            
-            # Re-construct mini accumulator to pass to _refine_keyword_gap_recommendations
-            # Actually, _refine_keyword_gap_recommendations was running LLM. We already did that.
-            # But _build_ai_refined_accumulator was assigning 'hub: X' type.
-            # When we did it chunk-by-chunk, `filter_keyword_gap_recommendations` already returned the `type` as `hub: X` or `primary` etc.
-            # AND WE STORED THAT TYPE DIRECTLY INTO THE DB!
-            # So the DB ALREADY has the correct Hub/Spoke types! We don't need to run it again!
-            pass
+
 
         ai_keywords = generate_ai_keywords_sync(seed_keywords)
         if ai_keywords:
