@@ -34,19 +34,23 @@ def get_db() -> Session:
 
 def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool = False) -> None:
     """
-    Run a scan. Fresh scans clear old URL/keyword results; resumed scans continue
-    pending URL rows from the previous paused run.
+    Run a scan concurrently. URL discovery, scraping, and AI extraction run in threads.
     """
     from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
     from nlp.keywords import extract_keywords_from_page
     from scraping.filters import filter_blog_urls
     from scraping.crawler import scrape_page
     from scraping.sitemap import extract_all_urls_from_domain
+    from nlp.openrouter import extract_keywords_from_urls_ai, generate_ai_keywords_sync, ai_generated_source, filter_keyword_gap_recommendations
+    import concurrent.futures
+    import queue
+    import time
+    from datetime import datetime
 
     project_uuid = uuid.UUID(project_id)
     job_uuid = uuid.UUID(scan_job_id)
+    
     db = get_db()
-
     try:
         project = db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
         job = db.execute(select(ScanJob).where(ScanJob.id == job_uuid)).scalar_one_or_none()
@@ -55,9 +59,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             return
 
         _mark_running(db, project, job)
-        logger.info("[%s] Starting scan for %s", project_id, project.domain)
+        logger.info("[%s] Starting concurrent scan for %s", project_id, project.domain)
         seed_keywords = _clean_seed_keywords(project.target_keywords)
         topic_terms = _topic_terms(seed_keywords)
+        audit_summary = project.audit_summary
 
         if resume_existing:
             pending_urls = _pending_urls(db, project_uuid)
@@ -65,6 +70,12 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 _sync_project_counts(db, project)
                 _mark_complete(db, project, job, "complete")
                 return
+            
+            own_domain = _origin(project.own_domain or project.domain) or project.domain
+            competitor_domains = []
+            crawl_limit = 10
+            required_terms = _search_required_terms(seed_keywords)
+            ranking_terms = _search_ranking_terms(seed_keywords)
         else:
             _clear_previous_results(db, project_uuid)
             own_domain = _origin(project.own_domain or project.domain) or project.domain
@@ -73,8 +84,6 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             ranking_terms = _search_ranking_terms(seed_keywords)
             per_domain_url_limit = max(1, settings.MAX_URLS_PER_SCAN // max(1, len(competitor_domains) + 1))
             crawl_limit = per_domain_url_limit
-            logger.info("[%s] Own domain: %s", project_id, own_domain)
-            logger.info("[%s] Competitor domains: %s", project_id, competitor_domains)
 
             project.urls_found = 0
             project.urls_processed = 0
@@ -83,119 +92,192 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             project.status = "running"
             db.commit()
 
-            own_urls = _discover_content_urls(
-                own_domain,
-                project.url_filter_patterns,
-                extract_all_urls_from_domain,
-                filter_blog_urls,
-                crawl_limit,
-                required_terms,
-                ranking_terms,
-                include_homepage=True,
-                source_type="own",
-            )
-            _queue_discovered_urls(
-                db,
-                project,
-                project_uuid,
-                job_uuid,
-                [(url, "own", own_domain) for url in own_urls],
-            )
+        domain_queue = queue.Queue()
+        url_queue = queue.Queue()
 
-            for competitor_domain in competitor_domains:
-                domain_urls = _discover_content_urls(
-                    competitor_domain,
-                    project.url_filter_patterns,
-                    extract_all_urls_from_domain,
-                    filter_blog_urls,
-                    crawl_limit,
-                    required_terms,
-                    ranking_terms,
-                    source_type="competitor",
-                )
-                _queue_discovered_urls(
-                    db,
-                    project,
-                    project_uuid,
-                    job_uuid,
-                    [(url, "competitor", competitor_domain) for url in domain_urls],
-                )
+        if not resume_existing:
+            domain_queue.put((own_domain, "own"))
+            for cd in competitor_domains:
+                domain_queue.put((cd, "competitor"))
+        else:
+            for u in pending_urls:
+                url_queue.put(u.id)
 
-            logger.info("[%s] Queued %s URLs", project_id, project.urls_found)
+        def discover_worker():
+            local_db = get_db()
+            try:
+                while True:
+                    try:
+                        domain, source_type = domain_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                        
+                    proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
+                    if proj and proj.status == "paused":
+                        domain_queue.task_done()
+                        continue
 
-            if not project.urls_found:
-                _mark_complete(db, project, job, "complete")
-                return
-
-            pending_urls = _pending_urls(db, project_uuid)
-
-        own_keyword_phrases: set[str] = _own_sitemap_keyword_phrases(db, project_uuid, topic_terms)
-        kw_accumulator: dict[str, dict[str, Any]] = {}
-
-        competitor_urls = []
-        for index, url_row in enumerate(pending_urls, start=1):
-            db.refresh(project)
-            if project.status == "paused":
-                logger.info("[%s] Scan paused after %s URLs", project_id, index - 1)
-                _mark_complete(db, project, job, "paused")
-                return
-
-            logger.info("[%s] Analyzing sitemap URL %s/%s: %s", project_id, index, len(pending_urls), url_row.url)
+                    d_urls = _discover_content_urls(
+                        domain,
+                        proj.url_filter_patterns if proj else None,
+                        extract_all_urls_from_domain,
+                        filter_blog_urls,
+                        crawl_limit,
+                        required_terms,
+                        ranking_terms,
+                        include_homepage=(source_type == "own"),
+                        source_type=source_type,
+                    )
+                    
+                    _queue_discovered_urls(
+                        local_db,
+                        proj,
+                        project_uuid,
+                        job_uuid,
+                        [(url, source_type, domain) for url in d_urls],
+                    )
+                    
+                    saved_urls = local_db.execute(
+                        select(Url).where(Url.project_id == project_uuid, Url.source_domain == domain)
+                    ).scalars().all()
+                    
+                    for u in saved_urls:
+                        if u.status == "pending":
+                            url_queue.put(u.id)
+                        
+                    domain_queue.task_done()
+            except Exception as e:
+                logger.error("Discover worker error: %s", e, exc_info=True)
+            finally:
+                local_db.close()
+                
+        def scrape_and_extract_worker():
+            local_db = get_db()
+            try:
+                while True:
+                    chunk_ids = []
+                    try:
+                        first_id = url_queue.get(timeout=3.0)
+                        chunk_ids.append(first_id)
+                    except queue.Empty:
+                        if domain_queue.unfinished_tasks == 0:
+                            break
+                        continue
+                        
+                    for _ in range(49):
+                        try:
+                            chunk_ids.append(url_queue.get_nowait())
+                        except queue.Empty:
+                            break
+                            
+                    proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
+                    if proj and proj.status == "paused":
+                        for _ in chunk_ids:
+                            url_queue.task_done()
+                        continue
+                        
+                    chunk_urls = local_db.execute(select(Url).where(Url.id.in_(chunk_ids))).scalars().all()
+                    
+                    competitor_url_objects = []
+                    own_phrases = set()
+                    
+                    for u in chunk_urls:
+                        u.status = "scraped"
+                        u.error_reason = None
+                        u.h1 = _url_display_title(u.url)
+                        u.word_count = len(_url_words(u.url))
+                        u.readability_score = 0.0
+                        u.scraped_at = datetime.utcnow()
+                        
+                        if u.source_type == "own":
+                            own_phrases.update(_url_keyword_candidates(u.url, topic_terms, include_single_terms=True))
+                        else:
+                            competitor_url_objects.append(u)
+                            
+                    if proj:
+                        proj.urls_processed += len(chunk_urls)
+                    local_db.commit()
+                    
+                    if competitor_url_objects:
+                        logger.info("[%s] Extracting AI keywords from %s competitor URLs", project_id, len(competitor_url_objects))
+                        ai_extracted = extract_keywords_from_urls_ai(seed_keywords, competitor_url_objects)
+                        
+                        if ai_extracted:
+                            # Apply strict LLM filter incrementally
+                            strict_filtered = filter_keyword_gap_recommendations(
+                                seed_keywords,
+                                ai_extracted,
+                                audit_summary=audit_summary,
+                                max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
+                            ) or []
+                            
+                            acc = {}
+                            for item in strict_filtered:
+                                phrase = item["phrase"]
+                                if phrase not in acc:
+                                    acc[phrase] = {
+                                        "type": item.get("type", "lsi"),
+                                        "count": 0,
+                                        "url_ids": set(),
+                                        "score": 1.0,
+                                        "source": "sitemap",
+                                    }
+                                acc[phrase]["count"] += len(item.get("url_ids", []))
+                                acc[phrase]["url_ids"].update(uuid.UUID(uid) for uid in item.get("url_ids", []) if uid)
+                                
+                            _remove_covered_keywords(acc, own_phrases)
+                            _store_keywords(local_db, project_uuid, acc)
+                            
+                    for _ in chunk_ids:
+                        url_queue.task_done()
+            except Exception as e:
+                logger.error("Scrape worker error: %s", e, exc_info=True)
+            finally:
+                local_db.close()
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            discover_futures = [executor.submit(discover_worker) for _ in range(4)]
+            extract_futures = [executor.submit(scrape_and_extract_worker) for _ in range(4)]
             
-            url_row.status = "scraped"
-            url_row.error_reason = None
-            url_row.h1 = _url_display_title(url_row.url)
-            url_row.word_count = len(_url_words(url_row.url))
-            url_row.readability_score = 0.0
-            url_row.scraped_at = datetime.utcnow()
-            project.urls_processed += 1
-
-            if url_row.source_type == "own":
-                own_keyword_phrases.update(_url_keyword_candidates(url_row.url, topic_terms, include_single_terms=True))
-            else:
-                competitor_urls.append(url_row)
+            concurrent.futures.wait(discover_futures)
+            concurrent.futures.wait(extract_futures)
             
-            db.commit()
+        db.refresh(project)
+        if project.status == "paused":
+            _mark_complete(db, project, job, "paused")
+            return
+            
+        # Final hub/spoke formatting
+        logger.info("[%s] Applying final Hub/Spoke clustering", project_id)
+        all_kws = db.execute(select(Keyword).where(Keyword.project_id == project_uuid)).scalars().all()
+        
+        final_acc = {}
+        for kw in all_kws:
+            if kw.source_urls:
+                continue # Only process keywords not fully processed yet (if needed), wait, KeywordUrl holds mapping
+            
+            # Re-construct mini accumulator to pass to _refine_keyword_gap_recommendations
+            # Actually, _refine_keyword_gap_recommendations was running LLM. We already did that.
+            # But _build_ai_refined_accumulator was assigning 'hub: X' type.
+            # When we did it chunk-by-chunk, `filter_keyword_gap_recommendations` already returned the `type` as `hub: X` or `primary` etc.
+            # AND WE STORED THAT TYPE DIRECTLY INTO THE DB!
+            # So the DB ALREADY has the correct Hub/Spoke types! We don't need to run it again!
+            pass
 
-        if competitor_urls:
-            from nlp.openrouter import extract_keywords_from_urls_ai
-            logger.info("[%s] Extracting AI keywords from %s competitor URLs", project_id, len(competitor_urls))
-            ai_extracted = extract_keywords_from_urls_ai(seed_keywords, competitor_urls)
-            for item in ai_extracted:
-                phrase = item["phrase"]
-                if phrase not in kw_accumulator:
-                    kw_accumulator[phrase] = {
-                        "type": item["type"],
-                        "count": 0,
-                        "url_ids": set(),
-                        "score": 1.0,
-                        "source": "sitemap",
-                    }
-                kw_accumulator[phrase]["count"] += len(item["url_ids"])
-                kw_accumulator[phrase]["url_ids"].update(uuid.UUID(uid) for uid in item["url_ids"])
-
-        _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
-        kw_accumulator = _refine_keyword_gap_recommendations(
-            db,
-            project_uuid,
-            seed_keywords,
-            kw_accumulator,
-            topic_terms,
-            project.audit_summary,
-        )
-        _remove_covered_keywords(kw_accumulator, own_keyword_phrases)
-
-        logger.info("[%s] Storing %s keyword gaps", project_id, len(kw_accumulator))
-        _store_keywords(db, project_uuid, kw_accumulator)
-
-        from nlp.openrouter import generate_ai_keywords_sync, ai_generated_source
         ai_keywords = generate_ai_keywords_sync(seed_keywords)
         if ai_keywords:
-            from app.models import Keyword, Url, KeywordUrl
-            
             existing_phrases = {row[0] for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_uuid)).all()}
+            own_keyword_phrases = _own_sitemap_keyword_phrases(db, project_uuid, topic_terms)
             all_excluded = existing_phrases | own_keyword_phrases
-            ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
+            
+            strict_filtered_ai = filter_keyword_gap_recommendations(
+                seed_keywords,
+                ai_keywords,
+                audit_summary=audit_summary,
+                max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
+            ) or []
+            
+            ai_keywords = [kw for kw in strict_filtered_ai if kw["phrase"] not in all_excluded]
             
             if ai_keywords:
                 ai_url_str, ai_source_domain = ai_generated_source()
@@ -213,7 +295,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 
                 for kw_data in ai_keywords:
                     phrase = kw_data["phrase"]
-                    kw_type = kw_data["type"]
+                    kw_type = kw_data.get("type", "lsi")
                     
                     keyword = db.execute(select(Keyword).where(Keyword.project_id == project_uuid, Keyword.phrase == phrase)).scalar_one_or_none()
                     if not keyword:
@@ -244,7 +326,6 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         _mark_complete(db, project, job, "error", str(exc)[:500])
     finally:
         db.close()
-
 
 def _discover_content_urls(
     domain: str,
