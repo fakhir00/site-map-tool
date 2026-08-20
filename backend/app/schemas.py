@@ -101,6 +101,7 @@ class ProjectOut(BaseModel):
     scan_frequency: str
     url_filter_patterns: Optional[List[str]]
     target_keywords: Optional[List[str]]
+    audit_summary: Optional[str] = None
     search_locale: str
     status: str
     urls_found: int

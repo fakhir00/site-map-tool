@@ -39,6 +39,7 @@ class Project(Base):
     scan_frequency: Mapped[str] = mapped_column(String(50), default="once")
     url_filter_patterns: Mapped[Optional[List[str]]] = mapped_column(JSON, default=lambda: ["/blog/", "/news/", "/post/", "/article/"])
     target_keywords: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    audit_summary: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(50), default="pending")
     search_locale: Mapped[str] = mapped_column(String(10), default="us")
     urls_found: Mapped[int] = mapped_column(Integer, default=0)
