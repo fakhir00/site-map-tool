@@ -211,18 +211,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                                 max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
                             ) or []
                             
-                            from nlp.keywords import cluster_keywords_by_intent, pick_cluster_representative
-                            from nlp.openrouter import verify_cluster_intent, _chat_json
-                            
-                            raw_clusters = cluster_keywords_by_intent(strict_filtered, similarity_threshold=0.80)
-                            final_clusters = []
-                            for cluster in raw_clusters:
-                                final_clusters.extend(verify_cluster_intent(cluster, call_llm_fn=_chat_json))
-                            
-                            deduped_keywords = [pick_cluster_representative(c) for c in final_clusters]
-
                             acc = {}
-                            for item in deduped_keywords:
+                            for item in strict_filtered:
                                 phrase = item["phrase"]
                                 if phrase not in acc:
                                     acc[phrase] = {
@@ -259,6 +249,20 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             
         # Final hub/spoke formatting
         logger.info("[%s] Applying final Hub/Spoke clustering", project_id)
+        all_kws = db.execute(select(Keyword).where(Keyword.project_id == project_uuid)).scalars().all()
+        
+        final_acc = {}
+        for kw in all_kws:
+            if kw.source_urls:
+                continue # Only process keywords not fully processed yet (if needed), wait, KeywordUrl holds mapping
+            
+            # Re-construct mini accumulator to pass to _refine_keyword_gap_recommendations
+            # Actually, _refine_keyword_gap_recommendations was running LLM. We already did that.
+            # But _build_ai_refined_accumulator was assigning 'hub: X' type.
+            # When we did it chunk-by-chunk, `filter_keyword_gap_recommendations` already returned the `type` as `hub: X` or `primary` etc.
+            # AND WE STORED THAT TYPE DIRECTLY INTO THE DB!
+            # So the DB ALREADY has the correct Hub/Spoke types! We don't need to run it again!
+            pass
 
         ai_keywords = generate_ai_keywords_sync(seed_keywords)
         if ai_keywords:
@@ -273,17 +277,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
             ) or []
             
-            from nlp.keywords import cluster_keywords_by_intent, pick_cluster_representative
-            from nlp.openrouter import verify_cluster_intent, _chat_json
-            
-            raw_clusters_ai = cluster_keywords_by_intent(strict_filtered_ai, similarity_threshold=0.80)
-            final_clusters_ai = []
-            for cluster in raw_clusters_ai:
-                final_clusters_ai.extend(verify_cluster_intent(cluster, call_llm_fn=_chat_json))
-            
-            deduped_ai_keywords = [pick_cluster_representative(c) for c in final_clusters_ai]
-
-            ai_keywords = [kw for kw in deduped_ai_keywords if kw["phrase"] not in all_excluded]
+            ai_keywords = [kw for kw in strict_filtered_ai if kw["phrase"] not in all_excluded]
             
             if ai_keywords:
                 ai_url_str, ai_source_domain = ai_generated_source()
