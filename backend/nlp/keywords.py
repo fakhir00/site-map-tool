@@ -404,41 +404,32 @@ def extract_keywords_from_page(
     return result
 
 
-from sentence_transformers import SentenceTransformer
-from sklearn.cluster import AgglomerativeClustering
-
-_intent_model = SentenceTransformer("all-MiniLM-L6-v2")
-
 VOLUME_RANK = {"High": 3, "Medium": 2, "Low": 1}
-
 
 def cluster_keywords_by_intent(keywords: list[dict], similarity_threshold: float = 0.80) -> list[list[dict]]:
     """
-    Groups keywords by semantic search intent using sentence embeddings.
-    `keywords` = list of dicts, each must have a "phrase" key.
-    Returns a list of clusters (each cluster is a list of the original dicts).
-    Call this AFTER relevance/volume filtering, never before — clustering should
-    only ever run on keywords already confirmed on-topic.
+    Groups keywords by semantic search intent using statistical set math (Jaccard).
+    Replaces heavy PyTorch ML logic to stay under 512MB RAM constraints.
     """
     if len(keywords) <= 1:
         return [[kw] for kw in keywords]
 
-    phrases = [kw["phrase"] for kw in keywords]
-    embeddings = _intent_model.encode(phrases, normalize_embeddings=True)
+    clusters = []
+    for kw in keywords:
+        phrase = kw["phrase"]
+        added = False
+        for cluster in clusters:
+            for member in cluster:
+                if check_intent_cannibalization(phrase, member["phrase"]):
+                    cluster.append(kw)
+                    added = True
+                    break
+            if added:
+                break
+        if not added:
+            clusters.append([kw])
 
-    clustering = AgglomerativeClustering(
-        n_clusters=None,
-        distance_threshold=1 - similarity_threshold,
-        metric="cosine",
-        linkage="average",
-    )
-    labels = clustering.fit_predict(embeddings)
-
-    clusters: dict[int, list[dict]] = {}
-    for label, kw in zip(labels, keywords):
-        clusters.setdefault(label, []).append(kw)
-
-    return list(clusters.values())
+    return clusters
 
 
 def pick_cluster_representative(cluster: list[dict]) -> dict:
