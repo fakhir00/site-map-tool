@@ -1,7 +1,7 @@
-
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer, X } from 'lucide-react'
 import { api, type Project, type ProjectSource, type ProjectStats, type ScanJob, type ScanProgress } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -44,6 +44,7 @@ function displayHost(value: string) {
 export function ProjectDetail() {
   const { projectId = '' } = useParams<{ projectId: string }>()
   const queryClient = useQueryClient()
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
 
   const invalidateProject = () => {
     queryClient.invalidateQueries({ queryKey: ['projects'] })
@@ -129,7 +130,8 @@ export function ProjectDetail() {
   const isRunning = status === 'running'
   const isPaused = status === 'paused'
   const percent = scanStatus?.percent ?? 0
-  const latestJobError = jobs.find((job) => job.error_message)?.error_message
+  const activeJobError = jobs.find((job) => job.error_message)?.error_message
+  const latestJobError = activeJobError && activeJobError !== dismissedError ? activeJobError : null
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error
   const keyword = project.target_keywords?.[0]
 
@@ -214,9 +216,16 @@ export function ProjectDetail() {
       )}
 
       {latestJobError && (
-        <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
+        <div className="relative flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 pr-10 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          {latestJobError}
+          <p>{latestJobError}</p>
+          <button 
+            type="button" 
+            onClick={() => setDismissedError(latestJobError)}
+            className="absolute right-3 top-3 text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
