@@ -255,13 +255,30 @@ async def generate_hub_spoke(
 
     from nlp.keywords import cluster_keywords_by_intent, pick_cluster_representative
     from nlp.openrouter import verify_cluster_intent, _chat_json
+    from starlette.concurrency import run_in_threadpool
+    import concurrent.futures
     
-    raw_clusters = cluster_keywords_by_intent(existing_keywords, similarity_threshold=0.80)
-    final_clusters = []
-    for cluster in raw_clusters:
-        final_clusters.extend(verify_cluster_intent(cluster, call_llm_fn=_chat_json))
+    def _deduplicate_keywords():
+        raw_clusters = cluster_keywords_by_intent(existing_keywords, similarity_threshold=0.80)
+        final_clusters = []
         
-    deduped_existing_keywords = [pick_cluster_representative(c) for c in final_clusters]
+        singletons = [c for c in raw_clusters if len(c) < 2]
+        multi_member = [c for c in raw_clusters if len(c) >= 2]
+        
+        final_clusters.extend(singletons)
+        
+        if multi_member:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [
+                    executor.submit(verify_cluster_intent, cluster, _chat_json) 
+                    for cluster in multi_member
+                ]
+                for future in concurrent.futures.as_completed(futures):
+                    final_clusters.extend(future.result())
+                    
+        return [pick_cluster_representative(c) for c in final_clusters]
+
+    deduped_existing_keywords = await run_in_threadpool(_deduplicate_keywords)
 
     from nlp.openrouter import cluster_hub_and_spoke
     clusters = await cluster_hub_and_spoke(deduped_existing_keywords)
