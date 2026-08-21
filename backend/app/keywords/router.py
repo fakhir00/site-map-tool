@@ -263,8 +263,14 @@ async def generate_hub_spoke(
     if not existing_keywords:
         raise HTTPException(status_code=400, detail="No keywords found to cluster.")
 
+    # Strip heavy metadata (UUIDs, JSON arrays) to prevent LLM context overflow
+    clean_keywords_for_llm = [
+        {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
+        for kw in existing_keywords
+    ]
+
     from nlp.openrouter import cluster_hub_and_spoke
-    clusters = await cluster_hub_and_spoke(existing_keywords)
+    clusters = await cluster_hub_and_spoke(clean_keywords_for_llm)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")
 
