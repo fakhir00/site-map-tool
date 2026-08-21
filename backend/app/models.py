@@ -109,6 +109,14 @@ class Keyword(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
+    # 4-Tier Classification (nullable — only set for primary/long-tail keywords)
+    tier: Mapped[Optional[str]] = mapped_column(String(50))  # merge | subheading_group | related | outlier
+    sub_silo_id: Mapped[Optional[int]] = mapped_column(Integer)
+    cluster_group_id: Mapped[Optional[str]] = mapped_column(String(100))  # for "related" tier cross-linking
+    article_title: Mapped[Optional[str]] = mapped_column(Text)  # for "subheading_group" broadest phrase
+    h_tags: Mapped[Optional[list]] = mapped_column(JSON)  # for "subheading_group" other cluster members
+    merged_from: Mapped[Optional[list]] = mapped_column(JSON)  # for "merge" tier, dropped duplicate phrases
+
     project: Mapped["Project"] = relationship("Project", back_populates="keywords")
     keyword_urls: Mapped[List["KeywordUrl"]] = relationship("KeywordUrl", back_populates="keyword", cascade="all, delete-orphan")
     bank_entries: Mapped[List["KeywordBank"]] = relationship("KeywordBank", back_populates="keyword", cascade="all, delete-orphan")

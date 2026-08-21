@@ -94,6 +94,14 @@ export type Keyword = {
     source_domain: string | null
   }[]
   created_at: string
+
+  // 4-Tier Classification
+  tier: 'merge' | 'subheading_group' | 'related' | 'outlier' | null
+  sub_silo_id: number | null
+  cluster_group_id: string | null
+  article_title: string | null
+  h_tags: string[] | null
+  merged_from: string[] | null
 }
 
 export type KeywordListResponse = {
@@ -364,23 +372,23 @@ export const api = {
     throw new ApiError(apiConnectionMessage('html'), response.status)
   },
 
-  get<T>(endpoint: string, options: ApiRequestInit = {}) {
-    return this.fetch<T>(endpoint, { ...options, method: 'GET' })
+  get<T>(endpoint: string, options: ApiRequestInit = {}): Promise<T> {
+    return api.fetch<T>(endpoint, { ...options, method: 'GET' })
   },
 
-  post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}) {
-    return this.fetch<T>(endpoint, {
+  post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}): Promise<T> {
+    return api.fetch<T>(endpoint, {
       ...options,
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   },
 
-  delete<T>(endpoint: string, options: ApiRequestInit = {}) {
-    return this.fetch<T>(endpoint, { ...options, method: 'DELETE' })
+  delete<T>(endpoint: string, options: ApiRequestInit = {}): Promise<T> {
+    return api.fetch<T>(endpoint, { ...options, method: 'DELETE' })
   },
 
-  postArticle<T>(endpoint: string, body?: unknown) {
-    return this.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
+  postArticle<T>(endpoint: string, body?: unknown): Promise<T> {
+    return api.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
   },
 }

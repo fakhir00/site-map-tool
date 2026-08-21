@@ -43,6 +43,20 @@ async def _ensure_runtime_schema(conn):
             await conn.execute(text("ALTER TABLE urls ADD COLUMN source_type VARCHAR(50) DEFAULT 'competitor'"))
         if "source_domain" not in url_columns:
             await conn.execute(text("ALTER TABLE urls ADD COLUMN source_domain VARCHAR(512)"))
+
+        # 4-Tier Classification columns on keywords
+        result = await conn.execute(text("PRAGMA table_info(keywords)"))
+        kw_columns = {row[1] for row in result.fetchall()}
+        for col, col_type in [
+            ("tier", "VARCHAR(50)"),
+            ("sub_silo_id", "INTEGER"),
+            ("cluster_group_id", "VARCHAR(100)"),
+            ("article_title", "TEXT"),
+            ("h_tags", "JSON"),
+            ("merged_from", "JSON"),
+        ]:
+            if col not in kw_columns:
+                await conn.execute(text(f"ALTER TABLE keywords ADD COLUMN {col} {col_type}"))
         return
 
     result = await conn.execute(
@@ -85,6 +99,28 @@ async def _ensure_runtime_schema(conn):
         await conn.execute(text("ALTER TABLE urls ADD COLUMN source_type VARCHAR(50) DEFAULT 'competitor'"))
     if "source_domain" not in url_columns:
         await conn.execute(text("ALTER TABLE urls ADD COLUMN source_domain VARCHAR(512)"))
+
+    # 4-Tier Classification columns on keywords
+    result = await conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'keywords'
+            """
+        )
+    )
+    kw_columns = {row[0] for row in result.fetchall()}
+    for col, col_type in [
+        ("tier", "VARCHAR(50)"),
+        ("sub_silo_id", "INTEGER"),
+        ("cluster_group_id", "VARCHAR(100)"),
+        ("article_title", "TEXT"),
+        ("h_tags", "JSONB"),
+        ("merged_from", "JSONB"),
+    ]:
+        if col not in kw_columns:
+            await conn.execute(text(f"ALTER TABLE keywords ADD COLUMN {col} {col_type}"))
 
 
 app = FastAPI(

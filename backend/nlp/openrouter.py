@@ -212,6 +212,67 @@ def _chat_text(
         raise e
 
 
+def verify_cluster_intent(cluster: list[dict]) -> dict:
+    """
+    Verifies a tight (Level-2) cluster. Returns one of:
+      {"verdict": "same_intent"}                      -> Tier 1 (merge)
+      {"verdict": "related_nuance"}                   -> Tier 2 (subheading group)
+      {"verdict": "different", "groups": [[...],[...]}} -> split, re-classify each group
+    """
+    if len(cluster) < 2:
+        return {"verdict": "same_intent"}
+
+    phrases = [kw["phrase"] for kw in cluster]
+
+    prompt = f"""[SYSTEM COMMAND — INTENT CLUSTER VERIFICATION]
+
+You are an SEO search-intent auditor. These keywords were flagged as very similar in
+meaning by an automated similarity check:
+
+{json.dumps(phrases)}
+
+Classify this group into exactly ONE of three verdicts:
+
+1. "same_intent" — these are genuinely the SAME searcher intent (same goal, same
+   audience, same journey stage), just phrased differently. They should become ONE
+   page targeting ONE of these phrases.
+
+2. "related_nuance" — these are closely related and could reasonably live on ONE
+   comprehensive article, but each phrase represents a slightly distinct angle or
+   sub-question worth its own section (H2/H3) within that article — not distinct
+   enough to deserve fully separate pages.
+
+3. "different" — at least one keyword here represents a meaningfully different
+   intent (different audience, different goal, or different journey stage) and
+   should NOT be grouped with the others at all.
+
+**Examples:**
+- "iron condor vs iron butterfly" / "iron butterfly vs iron condor" -> same_intent (word-order flip)
+- "iron condor risk management" / "0dte iron condor risk management" / "0dte risk management" -> related_nuance (one is broader than the other two, all valid sections of one guide)
+- "cash secured put strategy" / "cash secured put nvidia strategy" -> different (general vs ticker-specific — different searcher intent)
+
+**Output rules:**
+- If verdict is "same_intent" or "related_nuance", return: {{"verdict": "same_intent"}} or {{"verdict": "related_nuance"}}
+- If verdict is "different", return: {{"verdict": "different", "groups": [["phrase1","phrase2"], ["phrase3"]]}}
+  Every input phrase must appear in exactly one output group. Do not add, drop, or rewrite phrases.
+
+Return ONLY the JSON object, nothing else.
+"""
+    try:
+        result = _chat_json(
+            system_prompt="You output only valid JSON objects.",
+            user_prompt=prompt,
+            temperature=0.1,
+            max_tokens=500,
+        )
+        if isinstance(result, dict) and "verdict" in result:
+            return result
+        return {"verdict": "related_nuance"}
+    except Exception as e:
+        logger.warning("verify_cluster_intent LLM call failed: %s", e)
+        return {"verdict": "related_nuance"}
+
+
 async def generate_ai_keywords(seed_keywords: list[str]) -> list[dict[str, Any]]:
     """Generate SEO keyword recommendations using the configured AI provider."""
     if not is_ai_configured():
@@ -565,7 +626,7 @@ def filter_keyword_gap_recommendations(
 {audit_context}
 You are a Keyword Sanity Filter. You have received a raw list of keywords extracted from competitor sitemaps.
 
-**Step 0: NATURAL LANGUAGE NORMALIZATION (NEW — CRITICAL)**
+**Step 0: NATURAL LANGUAGE NORMALIZATION (CRITICAL)**
 For every raw keyword, rewrite it into a natural human search query:
 - Reverse awkward structures: "board games using spin wheel" → "spin the wheel board game".
 - Remove redundant words: "games using spin wheel" → "spin the wheel games".
@@ -582,13 +643,9 @@ If the query is completely unrelated to the core topic, primary intent, or speci
 - Keep if 500+ per month.
 - Reject if below 500.
 
-**Step 3: Intent Clustering (Anti-Cannibalization)**
-- Group normalized queries that share the same user intent. Strictly merge subset phrases.
-- For each cluster, select the highest-volume query as PRIMARY.
-- Merge secondary queries into the primary content piece.
-
-**Step 4: Final Output**
-- Output ONLY one keyword per intent cluster (maximum {max_keywords} total).
+**Step 3: Final Output**
+- Return ALL keywords that passed Steps 0-2 (maximum {max_keywords} total).
+- Do NOT deduplicate or merge similar keywords — that is handled separately.
 - Return ONLY a JSON array of objects. Do not include markdown formatting or explanations.
 - Each returned object must include:
   - "source_phrase": exact original phrase from the candidates

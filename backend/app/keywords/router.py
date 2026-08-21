@@ -230,10 +230,14 @@ async def generate_hub_spoke(
 ):
     project = await _assert_owns_project(project_id, current_user.id, db)
     
-    # We need to know if the keyword came from an AI recommendation
+    # We need to know if the keyword came from an AI recommendation + tier info
     from app.models import Keyword, KeywordUrl, Url
     q_existing = (
-        select(Keyword.phrase, Keyword.keyword_type, Url.source_domain)
+        select(
+            Keyword.phrase, Keyword.keyword_type, Url.source_domain,
+            Keyword.tier, Keyword.article_title, Keyword.h_tags,
+            Keyword.merged_from, Keyword.cluster_group_id, Keyword.sub_silo_id,
+        )
         .outerjoin(KeywordUrl, Keyword.id == KeywordUrl.keyword_id)
         .outerjoin(Url, KeywordUrl.url_id == Url.id)
         .where(Keyword.project_id == project.id)
@@ -242,9 +246,15 @@ async def generate_hub_spoke(
     result = await db.execute(q_existing)
     
     keyword_map = {}
-    for phrase, kw_type, domain in result.all():
+    for phrase, kw_type, domain, tier, article_title, h_tags, merged_from, cluster_group_id, sub_silo_id in result.all():
         if phrase not in keyword_map:
-            keyword_map[phrase] = {"phrase": phrase, "type": kw_type, "is_ai": False}
+            keyword_map[phrase] = {
+                "phrase": phrase, "type": kw_type, "is_ai": False,
+                "tier": tier, "article_title": article_title,
+                "h_tags": h_tags, "merged_from": merged_from,
+                "cluster_group_id": cluster_group_id,
+                "sub_silo_id": sub_silo_id,
+            }
         if domain == "AI Recommendations":
             keyword_map[phrase]["is_ai"] = True
             
@@ -281,12 +291,34 @@ async def get_hub_spoke(
 ):
     project = await _assert_owns_project(project_id, current_user.id, db)
     
-    from app.models import HubSpokeCluster
+    from app.models import HubSpokeCluster, Keyword
     q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
     res_cluster = await db.execute(q_cluster)
     cluster_record = res_cluster.scalar_one_or_none()
     
-    return {"clusters": cluster_record.mapping_data if cluster_record else None}
+    # Build tier metadata for the frontend
+    tier_q = (
+        select(Keyword.phrase, Keyword.tier, Keyword.article_title,
+               Keyword.h_tags, Keyword.merged_from, Keyword.cluster_group_id,
+               Keyword.sub_silo_id)
+        .where(Keyword.project_id == project.id, Keyword.tier.isnot(None))
+    )
+    tier_result = await db.execute(tier_q)
+    tier_metadata = {}
+    for phrase, tier, article_title, h_tags, merged_from, cluster_group_id, sub_silo_id in tier_result.all():
+        tier_metadata[phrase] = {
+            "tier": tier,
+            "article_title": article_title,
+            "h_tags": h_tags,
+            "merged_from": merged_from,
+            "cluster_group_id": cluster_group_id,
+            "sub_silo_id": sub_silo_id,
+        }
+    
+    return {
+        "clusters": cluster_record.mapping_data if cluster_record else None,
+        "tier_metadata": tier_metadata,
+    }
 
 
 

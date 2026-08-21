@@ -37,11 +37,11 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
     Run a scan concurrently. URL discovery, scraping, and AI extraction run in threads.
     """
     from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
-    from nlp.keywords import extract_keywords_from_page
+    from nlp.keywords import extract_keywords_from_page, classify_keyword_tiers
     from scraping.filters import filter_blog_urls
     from scraping.crawler import scrape_page
     from scraping.sitemap import extract_all_urls_from_domain
-    from nlp.openrouter import extract_keywords_from_urls_ai, generate_ai_keywords_sync, ai_generated_source, filter_keyword_gap_recommendations
+    from nlp.openrouter import extract_keywords_from_urls_ai, generate_ai_keywords_sync, ai_generated_source, filter_keyword_gap_recommendations, verify_cluster_intent
     import concurrent.futures
     import queue
     import time
@@ -211,8 +211,14 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                                 max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
                             ) or []
                             
+                            # Split by type: only primary/long-tail go through tiering
+                            clusterable = [kw for kw in strict_filtered if kw.get("type") in ("primary", "long-tail")]
+                            passthrough = [kw for kw in strict_filtered if kw.get("type") not in ("primary", "long-tail")]
+                            
                             acc = {}
-                            for item in strict_filtered:
+                            
+                            # Build accumulator for passthrough (entity/lsi/heading) — no tiering
+                            for item in passthrough:
                                 phrase = item["phrase"]
                                 if phrase not in acc:
                                     acc[phrase] = {
@@ -224,7 +230,12 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                                     }
                                 acc[phrase]["count"] += len(item.get("url_ids", []))
                                 acc[phrase]["url_ids"].update(uuid.UUID(uid) for uid in item.get("url_ids", []) if uid)
-                                
+                            
+                            # Apply 4-tier classification to clusterable keywords
+                            if clusterable:
+                                tier_results = classify_keyword_tiers(clusterable, verify_cluster_intent)
+                                _build_tiered_accumulator(acc, tier_results, ai_extracted)
+                            
                             _remove_covered_keywords(acc, own_phrases)
                             _store_keywords(local_db, project_uuid, acc)
                             
@@ -278,26 +289,42 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                     db.add(ai_url)
                     db.flush()
                 
-                for kw_data in ai_keywords:
+                # Split by type for tiering
+                clusterable_ai = [kw for kw in ai_keywords if kw.get("type") in ("primary", "long-tail")]
+                passthrough_ai = [kw for kw in ai_keywords if kw.get("type") not in ("primary", "long-tail")]
+                
+                acc_ai: dict[str, dict[str, Any]] = {}
+                
+                # Passthrough keywords (entity/lsi/heading)
+                for kw_data in passthrough_ai:
                     phrase = kw_data["phrase"]
-                    kw_type = kw_data.get("type", "lsi")
-                    
-                    keyword = db.execute(select(Keyword).where(Keyword.project_id == project_uuid, Keyword.phrase == phrase)).scalar_one_or_none()
-                    if not keyword:
-                        keyword = Keyword(
-                            project_id=project_uuid,
-                            phrase=phrase,
-                            keyword_type=kw_type,
-                            frequency=1,
-                        )
-                        db.add(keyword)
-                        db.flush()
-                    
-                    link = db.execute(select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)).scalar_one_or_none()
-                    if not link:
-                        db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
-                db.commit()
-                logger.info("[%s] Stored %s AI-generated keywords", project_id, len(ai_keywords))
+                    if phrase not in acc_ai:
+                        acc_ai[phrase] = {
+                            "type": kw_data.get("type", "lsi"),
+                            "count": 1,
+                            "url_ids": {ai_url.id},
+                            "score": 1.0,
+                            "source": "sitemap_ai",
+                        }
+                
+                # Apply 4-tier classification to clusterable AI keywords
+                if clusterable_ai:
+                    tier_results = classify_keyword_tiers(clusterable_ai, verify_cluster_intent)
+                    # Give all entries the ai_url id
+                    ai_extracted_with_ids = [
+                        {**kw, "url_ids": [str(ai_url.id)]} for kw in ai_keywords
+                    ]
+                    _build_tiered_accumulator(acc_ai, tier_results, ai_extracted_with_ids)
+                    # Ensure all entries have the ai_url.id
+                    for entry in acc_ai.values():
+                        entry["url_ids"].add(ai_url.id)
+                        entry["source"] = "sitemap_ai"
+                else:
+                    # Only passthrough, already handled above
+                    pass
+                
+                _store_keywords(db, project_uuid, acc_ai)
+                logger.info("[%s] Stored %s AI-generated keywords (tiered)", project_id, len(acc_ai))
 
         _sync_project_counts(db, project)
         _mark_complete(db, project, job, "complete")
@@ -1175,6 +1202,105 @@ def _collect_keywords(
         add_keyword(phrase, "lsi", score)
 
 
+def _build_tiered_accumulator(
+    acc: dict[str, dict[str, Any]],
+    tier_results: list[dict],
+    original_extracted: list[dict[str, Any]],
+) -> None:
+    """
+    Translate classify_keyword_tiers() output into the accumulator dict
+    expected by _store_keywords(). Mutates `acc` in place.
+    """
+    # Build a lookup from phrase -> url_ids from the original AI extraction
+    phrase_url_map: dict[str, set] = {}
+    for item in original_extracted:
+        phrase = str(item.get("phrase", "")).strip().lower()
+        if phrase:
+            url_ids = set()
+            for uid in item.get("url_ids", []):
+                try:
+                    url_ids.add(uuid.UUID(uid) if isinstance(uid, str) else uid)
+                except (ValueError, AttributeError):
+                    pass
+            phrase_url_map.setdefault(phrase, set()).update(url_ids)
+
+    def _base_entry(kw: dict, tier: str, sub_silo: int, **extra) -> dict:
+        phrase = kw["phrase"]
+        entry = {
+            "type": kw.get("type", "primary"),
+            "count": 1,
+            "url_ids": phrase_url_map.get(phrase, set()),
+            "score": 1.0,
+            "source": "sitemap",
+            "tier": tier,
+            "sub_silo_id": sub_silo,
+        }
+        entry.update(extra)
+        return entry
+
+    for tier_rec in tier_results:
+        tier = tier_rec["tier"]
+        sub_silo = tier_rec.get("sub_silo", 0)
+
+        if tier == "merge":
+            rep = tier_rec["representative_keyword"]
+            phrase = rep["phrase"]
+            dropped = [kw["phrase"] for kw in tier_rec["cluster"] if kw["phrase"] != phrase]
+            # Collect url_ids from all merged phrases
+            all_url_ids: set = set()
+            for kw in tier_rec["cluster"]:
+                all_url_ids.update(phrase_url_map.get(kw["phrase"], set()))
+            entry = _base_entry(rep, "merge", sub_silo, merged_from=dropped)
+            entry["url_ids"] = all_url_ids
+            entry["count"] = len(tier_rec["cluster"])
+            if phrase not in acc:
+                acc[phrase] = entry
+            else:
+                acc[phrase]["url_ids"].update(all_url_ids)
+                acc[phrase]["merged_from"] = dropped
+
+        elif tier == "subheading_group":
+            broadest = tier_rec["broadest"]
+            phrase = broadest["phrase"]
+            h_tags = [kw["phrase"] for kw in tier_rec["cluster"] if kw["phrase"] != phrase]
+            all_url_ids = set()
+            for kw in tier_rec["cluster"]:
+                all_url_ids.update(phrase_url_map.get(kw["phrase"], set()))
+            entry = _base_entry(
+                broadest, "subheading_group", sub_silo,
+                article_title=phrase,
+                h_tags=h_tags,
+            )
+            entry["url_ids"] = all_url_ids
+            entry["count"] = len(tier_rec["cluster"])
+            if phrase not in acc:
+                acc[phrase] = entry
+            else:
+                acc[phrase]["url_ids"].update(all_url_ids)
+                acc[phrase]["h_tags"] = h_tags
+                acc[phrase]["article_title"] = phrase
+
+        elif tier == "related":
+            group_id = tier_rec.get("cluster_group_id", "")
+            for kw in tier_rec.get("members", []):
+                phrase = kw["phrase"]
+                entry = _base_entry(kw, "related", sub_silo, cluster_group_id=group_id)
+                if phrase not in acc:
+                    acc[phrase] = entry
+                else:
+                    acc[phrase]["url_ids"].update(entry["url_ids"])
+                    acc[phrase]["cluster_group_id"] = group_id
+
+        elif tier == "outlier":
+            kw = tier_rec["keyword"]
+            phrase = kw["phrase"]
+            entry = _base_entry(kw, "outlier", sub_silo)
+            if phrase not in acc:
+                acc[phrase] = entry
+            else:
+                acc[phrase]["url_ids"].update(entry["url_ids"])
+
+
 def _remove_covered_keywords(accumulator: dict[str, dict[str, Any]], own_keyword_phrases: set[str]) -> None:
     if not own_keyword_phrases:
         return
@@ -1420,6 +1546,20 @@ def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, d
             else:
                 keyword.frequency += data["count"]
                 keyword.updated_at = datetime.utcnow()
+
+            # Persist 4-tier classification metadata if present
+            if data.get("tier"):
+                keyword.tier = data["tier"]
+            if data.get("sub_silo_id") is not None:
+                keyword.sub_silo_id = data["sub_silo_id"]
+            if data.get("cluster_group_id"):
+                keyword.cluster_group_id = data["cluster_group_id"]
+            if data.get("article_title"):
+                keyword.article_title = data["article_title"]
+            if data.get("h_tags"):
+                keyword.h_tags = data["h_tags"]
+            if data.get("merged_from"):
+                keyword.merged_from = data["merged_from"]
 
             for url_id in data["url_ids"]:
                 exists = db.get(KeywordUrl, (keyword.id, url_id))

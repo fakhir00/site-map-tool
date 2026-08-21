@@ -402,3 +402,189 @@ def extract_keywords_from_page(
     result.heading_keywords = extract_heading_keywords(h1, h2s or [], h3s or [])
 
     return result
+
+
+# ─── 4-Tier Keyword Clustering ────────────────────────────────
+
+_INTENT_MODEL = None
+
+VOLUME_RANK = {"High": 3, "Medium": 2, "Low": 1}
+
+LEVEL1_THRESHOLD = 0.55   # loose: defines sub-silo membership
+LEVEL2_THRESHOLD = 0.85   # tight: candidate for true duplication
+
+
+def _get_intent_model():
+    """Lazy-load sentence-transformers model (only in worker process)."""
+    global _INTENT_MODEL
+    if _INTENT_MODEL is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _INTENT_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+            logger.info("Loaded sentence-transformers model all-MiniLM-L6-v2")
+        except Exception as e:
+            logger.error("Failed to load sentence-transformers model: %s", e)
+            return None
+    return _INTENT_MODEL
+
+
+def _embed(phrases: list[str]):
+    """Encode phrases into normalized embeddings."""
+    import numpy as np
+    model = _get_intent_model()
+    if model is None:
+        return None
+    return model.encode(phrases, normalize_embeddings=True)
+
+
+def cluster_level(keywords: list[dict], threshold: float) -> list[list[dict]]:
+    """
+    Generic single-level agglomerative clustering by cosine similarity threshold.
+    `keywords` must each have a "phrase" key. Returns list of clusters (each a list
+    of the original dicts).
+    """
+    if len(keywords) <= 1:
+        return [[kw] for kw in keywords]
+
+    import numpy as np
+
+    phrases = [kw["phrase"] for kw in keywords]
+    embeddings = _embed(phrases)
+    if embeddings is None:
+        # Fallback: treat each keyword as its own cluster
+        return [[kw] for kw in keywords]
+
+    try:
+        from sklearn.cluster import AgglomerativeClustering
+
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=1 - threshold,
+            metric="cosine",
+            linkage="average",
+        )
+        labels = clustering.fit_predict(embeddings)
+
+        clusters: dict[int, list[dict]] = {}
+        for label, kw in zip(labels, keywords):
+            clusters.setdefault(label, []).append(kw)
+
+        return list(clusters.values())
+    except Exception as e:
+        logger.warning("Agglomerative clustering failed: %s", e)
+        return [[kw] for kw in keywords]
+
+
+def pick_cluster_representative(cluster: list[dict]) -> dict:
+    """Highest volume tier wins; tiebreak by shorter/more natural phrasing."""
+    return sorted(
+        cluster,
+        key=lambda kw: (VOLUME_RANK.get(kw.get("volume", "Low"), 0), -len(kw["phrase"])),
+        reverse=True,
+    )[0]
+
+
+def pick_broadest_phrase(cluster: list[dict]) -> dict:
+    """
+    For Tier 2 title selection: picks the phrase closest to the cluster's semantic
+    centroid (most representative/broadest framing).
+    """
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    phrases = [kw["phrase"] for kw in cluster]
+    embeddings = _embed(phrases)
+    if embeddings is None:
+        # Fallback: pick shortest phrase
+        return min(cluster, key=lambda kw: len(kw["phrase"]))
+    centroid = embeddings.mean(axis=0, keepdims=True)
+    sims = cosine_similarity(embeddings, centroid).flatten()
+    return cluster[int(np.argmax(sims))]
+
+
+def classify_keyword_tiers(keywords: list[dict], call_llm_fn) -> list[dict]:
+    """
+    Input: keywords already passed through relevance + volume gates.
+    Only pass keywords with type in {"primary", "long-tail"}.
+
+    Output: list of tier records:
+      {"tier": "merge", "sub_silo": <id>, "cluster": [...], "representative_keyword": {...}}
+      {"tier": "subheading_group", "sub_silo": <id>, "cluster": [...], "broadest": {...}}
+      {"tier": "related", "sub_silo": <id>, "cluster_group_id": <id>, "members": [...]}
+      {"tier": "outlier", "sub_silo": <id>, "keyword": {...}}
+    """
+    if not keywords:
+        return []
+
+    # Check if the model can load; if not, treat everything as outliers
+    model = _get_intent_model()
+    if model is None:
+        logger.warning("Sentence-transformers model not available; all keywords treated as outliers")
+        return [{"tier": "outlier", "sub_silo": i, "keyword": kw} for i, kw in enumerate(keywords)]
+
+    results = []
+    level1_clusters = cluster_level(keywords, LEVEL1_THRESHOLD)
+
+    for sub_silo_id, l1_cluster in enumerate(level1_clusters):
+        if len(l1_cluster) == 1:
+            results.append({
+                "tier": "outlier",
+                "sub_silo": sub_silo_id,
+                "keyword": l1_cluster[0],
+            })
+            continue
+
+        level2_clusters = cluster_level(l1_cluster, LEVEL2_THRESHOLD)
+        used_in_tight_cluster: set[str] = set()
+
+        for l2_cluster in level2_clusters:
+            if len(l2_cluster) < 2:
+                continue  # handled as "related" below via leftovers
+
+            try:
+                verdict = call_llm_fn(l2_cluster)
+            except Exception as e:
+                logger.warning("LLM cluster verification failed: %s", e)
+                verdict = {"verdict": "related_nuance"}
+
+            verdict_type = verdict.get("verdict", "related_nuance") if isinstance(verdict, dict) else "related_nuance"
+
+            if verdict_type == "same_intent":
+                results.append({
+                    "tier": "merge",
+                    "sub_silo": sub_silo_id,
+                    "cluster": l2_cluster,
+                    "representative_keyword": pick_cluster_representative(l2_cluster),
+                })
+                used_in_tight_cluster.update(kw["phrase"] for kw in l2_cluster)
+
+            elif verdict_type == "related_nuance":
+                results.append({
+                    "tier": "subheading_group",
+                    "sub_silo": sub_silo_id,
+                    "cluster": l2_cluster,
+                    "broadest": pick_broadest_phrase(l2_cluster),
+                })
+                used_in_tight_cluster.update(kw["phrase"] for kw in l2_cluster)
+
+            else:  # "different" — LLM split it
+                groups = verdict.get("groups", []) if isinstance(verdict, dict) else []
+                phrase_to_kw = {kw["phrase"]: kw for kw in l2_cluster}
+                for group in groups:
+                    group_kws = [phrase_to_kw[p] for p in group if p in phrase_to_kw]
+                    if group_kws:
+                        used_in_tight_cluster.update(kw["phrase"] for kw in group_kws)
+                # fall through — these remain in the Level-1 cluster as "related" below
+
+        # everything not absorbed into a Tier 1/2 group is "related"
+        leftovers = [kw for kw in l1_cluster if kw["phrase"] not in used_in_tight_cluster]
+        if leftovers:
+            results.append({
+                "tier": "related",
+                "sub_silo": sub_silo_id,
+                "cluster_group_id": f"silo-{sub_silo_id}",
+                "members": leftovers,
+            })
+
+    return results
+

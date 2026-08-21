@@ -175,6 +175,14 @@ class KeywordOut(BaseModel):
     sources: List[KeywordSourceOut] = Field(default_factory=list)
     created_at: datetime
 
+    # 4-Tier Classification
+    tier: Optional[str] = None
+    sub_silo_id: Optional[int] = None
+    cluster_group_id: Optional[str] = None
+    article_title: Optional[str] = None
+    h_tags: Optional[List[str]] = None
+    merged_from: Optional[List[str]] = None
+
     class Config:
         from_attributes = True
 
