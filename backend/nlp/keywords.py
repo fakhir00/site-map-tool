@@ -414,65 +414,46 @@ LEVEL1_THRESHOLD = 0.55   # loose: defines sub-silo membership
 LEVEL2_THRESHOLD = 0.85   # tight: candidate for true duplication
 
 
-def _get_intent_model():
-    """Lazy-load sentence-transformers model (only in worker process)."""
-    global _INTENT_MODEL
-    if _INTENT_MODEL is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            _INTENT_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-            logger.info("Loaded sentence-transformers model all-MiniLM-L6-v2")
-        except Exception as e:
-            logger.error("Failed to load sentence-transformers model: %s", e)
-            return None
-    return _INTENT_MODEL
-
-
-def _embed(phrases: list[str]):
-    """Encode phrases into normalized embeddings."""
-    import numpy as np
-    model = _get_intent_model()
-    if model is None:
-        return None
-    return model.encode(phrases, normalize_embeddings=True)
+def phrase_similarity(phrase1: str, phrase2: str) -> float:
+    """Calculate intent similarity using set math (Jaccard) to save RAM."""
+    set1 = get_intent_word_set(phrase1)
+    set2 = get_intent_word_set(phrase2)
+    if not set1 or not set2:
+        return 0.0
+    if set1.issubset(set2) or set2.issubset(set1):
+        return 1.0
+    intersection = set1.intersection(set2)
+    union = set1.union(set2)
+    return len(intersection) / len(union)
 
 
 def cluster_level(keywords: list[dict], threshold: float) -> list[list[dict]]:
     """
-    Generic single-level agglomerative clustering by cosine similarity threshold.
-    `keywords` must each have a "phrase" key. Returns list of clusters (each a list
-    of the original dicts).
+    Mathematical average-linkage clustering based on Jaccard similarity threshold.
+    Replaces heavy PyTorch AgglomerativeClustering to stay under 512MB RAM constraints.
     """
     if len(keywords) <= 1:
         return [[kw] for kw in keywords]
 
-    import numpy as np
-
-    phrases = [kw["phrase"] for kw in keywords]
-    embeddings = _embed(phrases)
-    if embeddings is None:
-        # Fallback: treat each keyword as its own cluster
-        return [[kw] for kw in keywords]
-
-    try:
-        from sklearn.cluster import AgglomerativeClustering
-
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=1 - threshold,
-            metric="cosine",
-            linkage="average",
-        )
-        labels = clustering.fit_predict(embeddings)
-
-        clusters: dict[int, list[dict]] = {}
-        for label, kw in zip(labels, keywords):
-            clusters.setdefault(label, []).append(kw)
-
-        return list(clusters.values())
-    except Exception as e:
-        logger.warning("Agglomerative clustering failed: %s", e)
-        return [[kw] for kw in keywords]
+    clusters = []
+    for kw in keywords:
+        phrase = kw["phrase"]
+        best_cluster = None
+        best_sim = -1.0
+        
+        for cluster in clusters:
+            sims = [phrase_similarity(phrase, c["phrase"]) for c in cluster]
+            avg_sim = sum(sims) / len(sims)
+            if avg_sim > best_sim:
+                best_sim = avg_sim
+                best_cluster = cluster
+                
+        if best_sim >= threshold and best_cluster is not None:
+            best_cluster.append(kw)
+        else:
+            clusters.append([kw])
+            
+    return clusters
 
 
 def pick_cluster_representative(cluster: list[dict]) -> dict:
@@ -486,20 +467,10 @@ def pick_cluster_representative(cluster: list[dict]) -> dict:
 
 def pick_broadest_phrase(cluster: list[dict]) -> dict:
     """
-    For Tier 2 title selection: picks the phrase closest to the cluster's semantic
-    centroid (most representative/broadest framing).
+    For Tier 2 title selection: picks the broadest framing (usually the shortest phrase).
+    Replaces embedding centroid calculations to save RAM.
     """
-    import numpy as np
-    from sklearn.metrics.pairwise import cosine_similarity
-
-    phrases = [kw["phrase"] for kw in cluster]
-    embeddings = _embed(phrases)
-    if embeddings is None:
-        # Fallback: pick shortest phrase
-        return min(cluster, key=lambda kw: len(kw["phrase"]))
-    centroid = embeddings.mean(axis=0, keepdims=True)
-    sims = cosine_similarity(embeddings, centroid).flatten()
-    return cluster[int(np.argmax(sims))]
+    return min(cluster, key=lambda kw: len(kw["phrase"]))
 
 
 def classify_keyword_tiers(keywords: list[dict], call_llm_fn) -> list[dict]:
@@ -515,12 +486,6 @@ def classify_keyword_tiers(keywords: list[dict], call_llm_fn) -> list[dict]:
     """
     if not keywords:
         return []
-
-    # Check if the model can load; if not, treat everything as outliers
-    model = _get_intent_model()
-    if model is None:
-        logger.warning("Sentence-transformers model not available; all keywords treated as outliers")
-        return [{"tier": "outlier", "sub_silo": i, "keyword": kw} for i, kw in enumerate(keywords)]
 
     results = []
     level1_clusters = cluster_level(keywords, LEVEL1_THRESHOLD)
