@@ -268,6 +268,12 @@ function keywordRecord(phrase: string, keywordType: Keyword['keyword_type'], sou
     source_urls: sources.map((source) => source.url),
     sources,
     created_at: isoNow(),
+    tier: null,
+    sub_silo_id: null,
+    cluster_group_id: null,
+    article_title: null,
+    h_tags: null,
+    merged_from: null,
   } satisfies Keyword
 }
 
