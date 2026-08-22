@@ -296,12 +296,26 @@ function OldHubCard({ hub, spokes }: { hub: string; spokes: string[] }) {
 
 function TierLegend() {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900/50">
-      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">Tiers:</span>
-      <TierBadge tier="merge" mergedCount={3} />
-      <TierBadge tier="subheading_group" />
-      <TierBadge tier="related" />
-      <TierBadge tier="outlier" />
+    <div className="mb-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Tier Legend: How keywords are classified</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 whitespace-nowrap"><TierBadge tier="merge" mergedCount={3} /></div>
+          <span className="text-xs text-slate-600 dark:text-slate-400 leading-tight"><strong className="text-slate-700 dark:text-slate-300">Merged (Tier 1):</strong> Duplicate intents. Collapsed into a single keyword to prevent keyword cannibalization.</span>
+        </div>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 whitespace-nowrap"><TierBadge tier="subheading_group" /></div>
+          <span className="text-xs text-slate-600 dark:text-slate-400 leading-tight"><strong className="text-slate-700 dark:text-slate-300">Subheading (Tier 2):</strong> Related nuances. These should live on one comprehensive article as H2/H3 sections.</span>
+        </div>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 whitespace-nowrap"><TierBadge tier="related" /></div>
+          <span className="text-xs text-slate-600 dark:text-slate-400 leading-tight"><strong className="text-slate-700 dark:text-slate-300">Related (Tier 3):</strong> Distinct intents in the same silo. Separate articles that should deeply cross-link.</span>
+        </div>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 whitespace-nowrap"><TierBadge tier="outlier" /></div>
+          <span className="text-xs text-slate-600 dark:text-slate-400 leading-tight"><strong className="text-slate-700 dark:text-slate-300">Standalone (Tier 4):</strong> Unique outlier intents. Become standalone articles with no special grouping rules.</span>
+        </div>
+      </div>
     </div>
   )
 }
