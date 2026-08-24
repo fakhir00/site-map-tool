@@ -284,7 +284,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const isNewSchema = 'hubs' in clusters && Array.isArray((clusters as NewSchema).hubs)
 
   return (
-    <div className="p-4 md:p-8 bg-[#fafafa] dark:bg-[#18181b] min-h-[500px] font-mono rounded-lg border border-slate-200 dark:border-slate-800/60 shadow-inner">
+    <div className="p-4 md:p-8 bg-slate-50 dark:bg-slate-900/50 min-h-[500px] font-mono rounded-lg border border-slate-200 dark:border-slate-800/60 shadow-inner">
       <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
         <div>
           <h4 className="text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight font-sans">Topical Map</h4>
@@ -310,11 +310,30 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
             size="sm" 
             onClick={() => {
               if (!clusters) return
-              const blob = new Blob([JSON.stringify(clusters, null, 2)], { type: 'application/json' })
+              
+              let text = 'Topical Map\n===========\n\n'
+              if (isNewSchema) {
+                ;(clusters as NewSchema).hubs.forEach((hub) => {
+                  text += `MASTER HUB: ${hub.hub_title}\n`
+                  if (hub.layers) {
+                    Object.entries(hub.layers).forEach(([layerName, spokes]) => {
+                      text += `\n  ${layerName}\n`
+                      ;(spokes as string[]).forEach((spoke) => {
+                        text += `  ├── ${spoke}\n`
+                      })
+                    })
+                  }
+                  text += '\n------------------------\n\n'
+                })
+              } else {
+                text += JSON.stringify(clusters, null, 2)
+              }
+
+              const blob = new Blob([text], { type: 'text/plain' })
               const url = window.URL.createObjectURL(blob)
               const anchor = document.createElement('a')
               anchor.href = url
-              anchor.download = `hub-spoke-map-${projectId}.json`
+              anchor.download = `hub-spoke-map-${projectId}.txt`
               document.body.appendChild(anchor)
               anchor.click()
               anchor.remove()
