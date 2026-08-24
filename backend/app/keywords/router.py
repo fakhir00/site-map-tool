@@ -264,7 +264,6 @@ async def generate_hub_spoke(
         raise HTTPException(status_code=400, detail="No keywords found to cluster.")
 
     TOOL_WORDS = {"calculator", "generator", "tool", "converter", "app", "software", "online", "download", "free"}
-    OUTDATED_WORDS = {"old", "past", "history", "previous", "discontinued", "obsolete"}
 
     import re
     from datetime import datetime
@@ -277,10 +276,6 @@ async def generate_hub_spoke(
         
         # Drop tool intents
         if any(tw in phrase_lower.split() for tw in TOOL_WORDS):
-            continue
-            
-        # Drop clearly outdated data descriptors
-        if any(ow in phrase_lower.split() for ow in OUTDATED_WORDS):
             continue
             
         # Drop keywords containing past years (e.g., 2023, 2024, 2025 when we are in 2026)
