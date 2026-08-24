@@ -263,16 +263,86 @@ async def generate_hub_spoke(
     if not existing_keywords:
         raise HTTPException(status_code=400, detail="No keywords found to cluster.")
 
-    # Strip heavy metadata (UUIDs, JSON arrays) to prevent LLM context overflow
+    TOOL_WORDS = {"calculator", "generator", "tool", "converter", "app", "software", "online", "download", "free"}
+
+    # Phase 1: Filter
+    clean_candidates = []
+    for kw in existing_keywords:
+        phrase_lower = kw["phrase"].lower()
+        # Drop tool intents
+        if any(tw in phrase_lower.split() for tw in TOOL_WORDS):
+            continue
+        # Drop merged duplicates and subheadings (they don't need their own spoke node)
+        if kw["tier"] in ("merge", "subheading_group"):
+            continue
+        clean_candidates.append(kw)
+
+    if not clean_candidates:
+        raise HTTPException(status_code=400, detail="No valid parent keywords found after filtering.")
+
+    # Phase 2: Split
+    top_100 = clean_candidates[:100]
+    remaining = clean_candidates[100:]
+
     clean_keywords_for_llm = [
         {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
-        for kw in existing_keywords
+        for kw in top_100
     ]
 
+    # Phase 3: The AI Skeleton
     from nlp.openrouter import cluster_hub_and_spoke
     clusters = await cluster_hub_and_spoke(clean_keywords_for_llm)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")
+
+    # Phase 4: Auto-Map Remaining Keywords
+    if remaining and "hubs" in clusters and isinstance(clusters["hubs"], list) and len(clusters["hubs"]) > 0:
+        from nlp.keywords import phrase_similarity
+        import re
+        
+        placed_nodes = []
+        for h_idx, hub in enumerate(clusters["hubs"]):
+            layers = hub.get("layers", {})
+            for layer_name, spokes in layers.items():
+                for spoke in spokes:
+                    match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
+                    if match:
+                        placed_nodes.append({
+                            "hub_idx": h_idx,
+                            "layer_name": layer_name,
+                            "target_kw": match.group(1).strip()
+                        })
+
+        for kw in remaining:
+            phrase = kw["phrase"]
+            best_hub_idx = 0
+            best_layer = "🧱 Foundations"
+            best_sim = -1.0
+            
+            for node in placed_nodes:
+                sim = phrase_similarity(phrase, node["target_kw"])
+                if sim > best_sim:
+                    best_sim = sim
+                    best_hub_idx = node["hub_idx"]
+                    best_layer = node["layer_name"]
+                    
+            if best_sim <= 0:
+                best_hub_idx = 0
+                best_layer = "🧱 Foundations"
+                
+            hub = clusters["hubs"][best_hub_idx]
+            if "layers" not in hub:
+                hub["layers"] = {}
+            if best_layer not in hub["layers"]:
+                hub["layers"][best_layer] = []
+                
+            hub["layers"][best_layer].append(f"{phrase.title()} (Target Keyword: {phrase})")
+            
+            placed_nodes.append({
+                "hub_idx": best_hub_idx,
+                "layer_name": best_layer,
+                "target_kw": phrase
+            })
 
     from app.models import HubSpokeCluster
     q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
