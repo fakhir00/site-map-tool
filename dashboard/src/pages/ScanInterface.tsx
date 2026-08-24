@@ -49,7 +49,7 @@ export default function ScanInterface() {
     }
 
     createMutation.mutate({
-      name: `${rawKeywords[0]} gaps for ${displayHost(siteUrl)}`,
+      name: `Finding gaps for ${displayHost(siteUrl)}`,
       domain: siteUrl,
       own_domain: siteUrl,
       scan_frequency: 'once',

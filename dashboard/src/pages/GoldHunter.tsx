@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Search, Loader2, Clock, Plus } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, type Project } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -66,14 +66,23 @@ export function GoldHunter() {
     }
   })
 
+  const createMutation = useMutation({
+    mutationFn: (body: any) => api.post<Project>('/projects', body),
+    onSuccess: async (project: Project) => {
+      try {
+        await api.post(`/projects/${project.id}/scan/start`)
+      } catch (err) {
+        console.error('Failed to auto-start scan:', err)
+      }
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      navigate(`/projects/${project.id}`)
+    },
+  })
+
   const handleScan = (e: React.FormEvent) => {
     e.preventDefault()
     if (!url.trim()) return
     scanMutation.mutate(url.trim())
-  }
-
-  const handleLaunchGapHunter = (seed_keyword: string, input_url: string) => {
-    navigate(`/?new_keyword=${encodeURIComponent(seed_keyword)}&site_url=${encodeURIComponent(input_url)}`)
   }
 
   return (
@@ -134,27 +143,33 @@ export function GoldHunter() {
                   {renderAuditSummary(scan.audit_summary)}
                 </div>
 
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-3">Extracted Seeds</h4>
-                  <div className="space-y-3">
-                    {(scan.seeds || []).map((seed, i) => (
-                      <div key={i} className="flex items-start justify-between gap-4 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
-                        <div>
-                          <p className="font-semibold text-slate-900 dark:text-slate-50">{seed.keyword}</p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{seed.justification}</p>
-                        </div>
-                        <Button 
-                          variant="secondary" 
-                          size="sm"
-                          onClick={() => handleLaunchGapHunter(seed.keyword, scan.input_url)}
-                          className="shrink-0"
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Gap Hunter
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
+                <div className="mt-4 flex justify-end">
+                  <Button 
+                    disabled={createMutation.isPending}
+                    onClick={() => {
+                      const allKeywords = (scan.seeds || []).map(s => s.keyword)
+                      if (allKeywords.length === 0) return
+                      
+                      const siteUrl = scan.input_url
+                      const host = new URL(siteUrl).hostname.replace(/^www\./, '')
+                      
+                      createMutation.mutate({
+                        name: `Finding gaps for ${host}`,
+                        domain: siteUrl,
+                        own_domain: siteUrl,
+                        scan_frequency: 'once',
+                        target_keywords: allKeywords,
+                        search_locale: 'us',
+                      })
+                    }}
+                  >
+                    {createMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Plus className="h-4 w-4 mr-2" />
+                    )}
+                    Gap Hunter
+                  </Button>
                 </div>
               </Card>
             ))}
