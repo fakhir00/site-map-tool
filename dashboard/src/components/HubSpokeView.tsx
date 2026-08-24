@@ -97,13 +97,18 @@ function TreeHub({
 
   return (
     <div className="mb-12 font-mono text-sm max-w-[1000px] w-full">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-slate-900 dark:text-slate-100 uppercase tracking-wide whitespace-pre-wrap">
-          {hub.hub_title}
-        </h3>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex flex-col gap-1">
+          <h3 className="text-slate-900 dark:text-slate-100 uppercase tracking-wide whitespace-pre-wrap">
+            {hub.hub_title}
+          </h3>
+          <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono">
+            {hubSlug}/
+          </span>
+        </div>
         <button 
           onClick={() => onWrite(hub.hub_title, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")} 
-          className="text-xs text-cyan-600 hover:text-cyan-500 hover:underline font-mono ml-4 shrink-0"
+          className="text-xs text-cyan-600 hover:text-cyan-500 hover:underline font-mono ml-4 shrink-0 mt-0.5"
         >
           [ write hub ]
         </button>
@@ -130,7 +135,7 @@ function TreeHub({
                 const isSubheading = tier === 'subheading_group'
                 
                 const slugSource = targetKeyword || finalTitle
-                const spokeSlug = `${hubSlug}/${slugify(slugSource)}`
+                const spokeSlug = `/${slugify(slugSource)}/`
 
                 return (
                   <div key={sIdx} className="flex flex-col">
@@ -140,7 +145,7 @@ function TreeHub({
                         <div className="mt-1.5 sm:mt-0 shrink-0">
                           <TreeDot tier={tier} />
                         </div>
-                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline gap-x-3 gap-y-0.5 flex-1 min-w-0">
                           <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
                             {isSubheading ? `"${finalTitle}"` : finalTitle}
                           </span>
