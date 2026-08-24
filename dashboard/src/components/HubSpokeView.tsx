@@ -184,14 +184,11 @@ function NewHubCard({
                   ) : (
                     <ul className="flex flex-col gap-1.5">
                       {spokes.map((spoke, sIdx) => {
-                        const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)(?:\s*\[(Tool|Blog)\])?/i)
-                        const displayTitle = match ? match[1].trim() : spoke.replace(/\[(Tool|Blog)\]/i, '').trim()
+                        const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
+                        const displayTitle = match ? match[1].trim() : spoke.trim()
                         const targetKeyword = match ? match[2].trim() : null
-                        const intentTag = match ? match[3] : (spoke.match(/\[(Tool|Blog)\]/i)?.[1] || null)
 
-                        const isToolSpoke = intentTag 
-                          ? intentTag.toLowerCase() === 'tool' 
-                          : (layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('transactional'))
+                        const isToolSpoke = false // Tool intents are now completely filtered out by the AI
 
                         // Look up tier metadata for this spoke's target keyword
                         const tierInfo = targetKeyword ? tierMetadata[targetKeyword.toLowerCase()] : null

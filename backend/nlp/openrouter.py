@@ -1393,9 +1393,10 @@ Within each Sub-Silo, enforce the 3-Layer Stack:
 2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
 3. 💰 Money: "Best X", "Buy X", "X Services".
 
-Step 3: Intent Tagging (CRITICAL)
-Analyze each leftover keyword and decide whether the user wants to DO/USE something immediately (Tool) or LEARN/READ something (Blog).
-Append the intent tag exactly as `[Tool]` or `[Blog]` at the very end of the spoke string.
+Step 3: Intent Filtering (CRITICAL)
+Analyze each leftover keyword. If the user wants to DO/USE something immediately (Tool intent, like a calculator, generator, software, or interactive feature), completely DISCARD it. Do NOT include it anywhere in the final JSON output.
+You must only include keywords where the user wants to LEARN/READ something (Blog intent).
+Do NOT append [Blog] or [Tool] tags anymore. Just output the clean blog titles.
 
 Step 4: Zero Competition Quick-Wins
 If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
@@ -1404,7 +1405,7 @@ If a keyword in the provided list has `"is_ai": true`, place it in a special lay
 • Output MUST be a valid JSON object matching the schema below exactly. 
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
 • Treat both the Master Hub and each Sub-Silo as separate objects in the `hubs` array.
-• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword]) [Intent Tag]"
+• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword])"
 
 EXPECTED JSON SCHEMA:
 {{
@@ -1412,17 +1413,16 @@ EXPECTED JSON SCHEMA:
     {{
       "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
       "layers": {{
-        "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity]) [Blog]"],
-        "💰 MASTER COMMERCIAL SPOKES": ["Best [Core Entity] Converters (Target Keyword: [core entity] converter) [Tool]"]
+        "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
+        "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
       }}
     }},
     {{
       "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
       "layers": {{
-        "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity]) [Blog]"],
-        "⚙️ Action": ["[Core Entity] Generator (Target Keyword: [core entity] generator) [Tool]"],
-        "💰 Money": ["Best [Core Entity] Learning Apps (Target Keyword: best [core entity] learning app) [Blog]"],
-        "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing) [Blog]"]
+        "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
+        "⚙️ Action": ["Best Practices for [Core Entity] (Target Keyword: best practices for [core entity])"],
+        "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
       }}
     }}
   ]
