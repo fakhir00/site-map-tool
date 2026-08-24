@@ -124,9 +124,10 @@ function TreeHub({
               <div className="text-slate-400 italic pl-4">No keywords in this layer.</div>
             ) : (
               spokes.map((spoke, sIdx) => {
-                const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
+                const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)(?:\s*\[(.*?)\])?/i)
                 const displayTitle = match ? match[1].trim() : spoke.trim()
                 const targetKeyword = match ? match[2].trim() : null
+                const extraTags = match && match[3] ? match[3].trim() : null
 
                 const tierInfo = targetKeyword ? tierMetadata[targetKeyword.toLowerCase()] : null
                 const tier = tierInfo?.tier || null
@@ -146,9 +147,16 @@ function TreeHub({
                           <TreeDot tier={tier} />
                         </div>
                         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline gap-x-3 gap-y-0.5 flex-1 min-w-0">
-                          <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
-                            {isSubheading ? `"${finalTitle}"` : finalTitle}
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
+                              {isSubheading ? `"${finalTitle}"` : finalTitle}
+                            </span>
+                            {extraTags && extraTags.toLowerCase().includes('h2') && (
+                              <span className="text-xs text-amber-600 dark:text-amber-500 font-medium ml-2">
+                                ↳ {extraTags}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono break-all">
                             {spokeSlug}
                           </span>
