@@ -61,6 +61,8 @@ function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: any
     return <span className="text-[12px] text-slate-500">[outlier]</span>
   }
   return null
+}
+
 function slugify(text: string) {
   return text
     .toString()

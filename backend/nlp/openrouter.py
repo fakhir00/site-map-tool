@@ -1380,13 +1380,14 @@ You must group keywords into a highly structured Topical Map consisting of a Mas
 🪐 SUB-SILO 2: [Sub-Topic]
   ...
 
-Step 1: The Master Hub
-Identify the absolute broadest, most generic core entity and assign it as the "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+Step 1: Master Hubs
+Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+You are NOT bound to a single Master Hub. If the keywords cover multiple distinct macro-topics, create MULTIPLE Master Hubs.
 Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
-Under the Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
+Under each Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
 
 Step 2: Sub-Silos
-Identify 2-5 distinct sub-themes or categories within the keyword list. For each theme, create a Sub-Silo.
+Identify distinct sub-themes or categories for EACH Master Hub. For each theme, create a Sub-Silo nested conceptually under its relevant Master Hub (though stored flat in the JSON array).
 Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview]".
 Within each Sub-Silo, enforce the 3-Layer Stack:
 1. 🧱 Foundations: "What Is X?", "History of X", Databases.
