@@ -128,13 +128,13 @@ function TreeHub({
                 return (
                   <div key={sIdx} className="flex flex-col">
                     <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between group py-1 gap-2 sm:gap-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-slate-400 dark:text-slate-500 select-none">├──</span>
+                      <div className="flex items-center gap-3 w-full">
+                        <span className="text-slate-400 dark:text-slate-500 select-none shrink-0">├──</span>
                         <TreeDot tier={tier} />
-                        <span className="text-emerald-600 dark:text-emerald-500 font-medium whitespace-nowrap">
+                        <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono whitespace-nowrap shrink-0">
                           {spokeSlug}
                         </span>
-                        <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words">
+                        <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words min-w-0 truncate">
                           {isSubheading ? `"${finalTitle}"` : finalTitle}
                         </span>
                       </div>

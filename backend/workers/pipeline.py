@@ -82,7 +82,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             competitor_domains = _discover_competitor_domains(project, seed_keywords)
             required_terms = _search_required_terms(seed_keywords)
             ranking_terms = _search_ranking_terms(seed_keywords)
-            per_domain_url_limit = max(1, settings.MAX_URLS_PER_SCAN // max(1, len(competitor_domains) + 1))
+            total_allowed_urls = settings.MAX_URLS_PER_SCAN * max(1, len(seed_keywords))
+            per_domain_url_limit = max(1, total_allowed_urls // max(1, len(competitor_domains) + 1))
             crawl_limit = per_domain_url_limit
 
             project.urls_found = 0
@@ -463,40 +464,51 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
             competitor_domains.append(domain)
             competitor_roots.add(root)
 
-    primary_query = _primary_competitor_search_query(seed_keywords)
-    
-    primary_results_added = False
-    if is_apify_configured():
-        logger.info(f"Using Apify for primary query: {primary_query}")
-        apify_results = search_google_via_apify(primary_query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
-        for res in apify_results:
-            add_domain(res["url"], require_relevance=False, query=primary_query, source="apify_page_1")
-            primary_results_added = True
-            if len(competitor_domains) >= candidate_limit:
-                break
-                
-    if not primary_results_added and len(competitor_domains) < candidate_limit:
-        logger.info(f"Falling back to local search for primary query: {primary_query}")
-        for href in _search_result_urls(primary_query, include_google=True, locale=search_locale):
-            add_domain(href, require_relevance=False, query=primary_query, source="google_page_1")
-            if len(competitor_domains) >= candidate_limit:
-                break
-
-    for query in _competitor_search_queries(seed_keywords):
-        query_results_added = False
+    for kw in seed_keywords:
+        kw = kw.strip()
+        if not kw: continue
+        
+        logger.info(f"Discovering competitors for keyword: {kw}")
+        
+        # 1. Primary explicit search for this specific keyword
+        primary_results_added = False
         if is_apify_configured():
-            apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
+            apify_results = search_google_via_apify(kw, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
             for res in apify_results:
-                add_domain(res["url"], query=query)
-                query_results_added = True
+                add_domain(res["url"], require_relevance=False, query=kw, source="apify_page_1")
+                primary_results_added = True
                 if len(competitor_domains) >= candidate_limit:
                     break
                     
-        if not query_results_added and len(competitor_domains) < candidate_limit:
-            for href in _search_result_urls(query, include_google=True, locale=search_locale):
-                add_domain(href, query=query)
+        if not primary_results_added and len(competitor_domains) < candidate_limit:
+            for href in _search_result_urls(kw, include_google=True, locale=search_locale):
+                add_domain(href, require_relevance=False, query=kw, source="google_page_1")
                 if len(competitor_domains) >= candidate_limit:
                     break
+
+        if len(competitor_domains) >= candidate_limit:
+            break
+            
+        # 2. Secondary variant searches for this keyword
+        for query in _competitor_search_queries([kw]):
+            query_results_added = False
+            if is_apify_configured():
+                apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
+                for res in apify_results:
+                    add_domain(res["url"], query=query)
+                    query_results_added = True
+                    if len(competitor_domains) >= candidate_limit:
+                        break
+                        
+            if not query_results_added and len(competitor_domains) < candidate_limit:
+                for href in _search_result_urls(query, include_google=True, locale=search_locale):
+                    add_domain(href, query=query)
+                    if len(competitor_domains) >= candidate_limit:
+                        break
+                        
+            if len(competitor_domains) >= candidate_limit:
+                break
+                
         if len(competitor_domains) >= candidate_limit:
             break
 

@@ -41,14 +41,19 @@ export default function ScanInterface() {
   const handleCreate = (event: FormEvent) => {
     event.preventDefault()
     const siteUrl = form.site_url.trim()
-    const keyword = form.primary_keyword.trim()
+    const rawKeywords = form.primary_keyword.split(',').map(k => k.trim()).filter(k => k.length > 0)
+    
+    if (rawKeywords.length === 0) {
+      alert("Please enter at least one keyword")
+      return
+    }
 
     createMutation.mutate({
-      name: `${keyword} gaps for ${displayHost(siteUrl)}`,
+      name: `${rawKeywords[0]} gaps for ${displayHost(siteUrl)}`,
       domain: siteUrl,
       own_domain: siteUrl,
       scan_frequency: 'once',
-      target_keywords: [keyword],
+      target_keywords: rawKeywords,
       search_locale: form.search_locale,
     })
   }
@@ -58,7 +63,7 @@ export default function ScanInterface() {
       <Card className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-950 dark:text-slate-50">New Gap Hunter</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the main keyword to compare against competitors.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the keywords to compare against competitors.</p>
         </div>
 
         <form className="space-y-6" onSubmit={handleCreate}>
@@ -79,10 +84,10 @@ export default function ScanInterface() {
               />
             </label>
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Primary keyword</span>
+              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Keywords (comma-separated)</span>
               <Input
                 onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
-                placeholder="sitemap generator"
+                placeholder="sitemap generator, seo tool"
                 required
                 value={form.primary_keyword}
               />
