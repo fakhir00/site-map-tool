@@ -123,20 +123,25 @@ function TreeHub({
                 const finalTitle = (tier === 'subheading_group' && tierInfo?.article_title) ? tierInfo.article_title : displayTitle
                 const isSubheading = tier === 'subheading_group'
                 
-                const spokeSlug = `${hubSlug}/${slugify(finalTitle)}`
+                const slugSource = targetKeyword || finalTitle
+                const spokeSlug = `${hubSlug}/${slugify(slugSource)}`
 
                 return (
                   <div key={sIdx} className="flex flex-col">
                     <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between group py-1 gap-2 sm:gap-4">
-                      <div className="flex items-center gap-3 w-full">
-                        <span className="text-slate-400 dark:text-slate-500 select-none shrink-0">├──</span>
-                        <TreeDot tier={tier} />
-                        <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono whitespace-nowrap shrink-0">
-                          {spokeSlug}
-                        </span>
-                        <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words min-w-0 truncate">
-                          {isSubheading ? `"${finalTitle}"` : finalTitle}
-                        </span>
+                      <div className="flex items-start gap-3 w-full sm:items-center">
+                        <span className="text-slate-400 dark:text-slate-500 select-none shrink-0 mt-1 sm:mt-0">├──</span>
+                        <div className="mt-1.5 sm:mt-0 shrink-0">
+                          <TreeDot tier={tier} />
+                        </div>
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 flex-1 min-w-0">
+                          <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
+                            {isSubheading ? `"${finalTitle}"` : finalTitle}
+                          </span>
+                          <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono break-all">
+                            {spokeSlug}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="flex items-center gap-4 ml-6 sm:ml-auto w-full sm:w-auto justify-end">
