@@ -1382,6 +1382,7 @@ You must group keywords into a highly structured Topical Map consisting of a Mas
 
 Step 1: Master Hubs
 Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub.
 You are NOT bound to a single Master Hub. If the keywords cover multiple distinct macro-topics, create MULTIPLE Master Hubs.
 Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
 Under each Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
@@ -1398,14 +1399,18 @@ Step 3: Intent Tags
 If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title.
 Otherwise, assume it is a blog post. Do NOT append a [Blog] tag, just output the clean title.
 
-Step 4: Zero Competition Quick-Wins
+Step 4: Handling Entities
+If a keyword is marked as type "entity", DO NOT create a standalone article or tool page for it. Instead, find the most relevant existing article spoke and append the entity to its title as a suggested H2, like this:
+"[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity1, entity2]"
+
+Step 5: Zero Competition Quick-Wins
 If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
 
 *Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly. 
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
 • Treat both the Master Hub and each Sub-Silo as separate objects in the `hubs` array.
-• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword])"
+• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword])" or "[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity]"
 
 EXPECTED JSON SCHEMA:
 {{
