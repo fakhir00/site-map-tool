@@ -241,6 +241,10 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hub-spoke', projectId] })
     },
+    onError: (error: any) => {
+      console.error('Cluster generation failed:', error)
+      alert(error?.response?.data?.detail || error?.message || 'Failed to generate Hub & Spoke architecture. Check console.')
+    }
   })
 
   const manualMutation = useMutation({

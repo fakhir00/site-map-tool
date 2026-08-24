@@ -1399,9 +1399,14 @@ Step 3: Intent Tags
 If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title.
 Otherwise, assume it is a blog post. Do NOT append a [Blog] tag, just output the clean title.
 
-Step 4: Handling Entities
-If a keyword is marked as type "entity", DO NOT create a standalone article or tool page for it. Instead, find the most relevant existing article spoke and append the entity to its title as a suggested H2, like this:
-"[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity1, entity2]"
+Step 4: Handling Entities (CRITICAL RULE)
+Look closely at the "type" field of each keyword.
+If "type" == "entity":
+- YOU ARE STRICTLY FORBIDDEN from creating a standalone article or tool page for it.
+- DO NOT assign an "entity" keyword as a "Target Keyword".
+- Instead, you MUST group it under a related article (which has a primary/long-tail target keyword) by appending it as an H2 suggestion.
+Format for appending entities to an article:
+"[Optimized Title] (Target Keyword: [primary/long-tail keyword]) [Include H2: entity1, entity2]"
 
 Step 5: Zero Competition Quick-Wins
 If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
@@ -1426,15 +1431,20 @@ EXPECTED JSON SCHEMA:
       "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
       "layers": {{
         "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
-        "⚙️ Action": ["Best Practices for [Core Entity] (Target Keyword: best practices for [core entity])"],
+        "⚙️ Action": ["Best Practices for [Core Entity] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
         "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
       }}
     }}
   ]
 }}
 
-Keywords to cluster:
-{json.dumps(trimmed)}
+Main Keywords (Create Master Hubs and Spokes using ONLY these):
+{json.dumps([kw for kw in trimmed if kw.get("type") != "entity"])}
+
+Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include H2: entity] to the most relevant Spokes created above):
+{json.dumps([kw["phrase"] for kw in trimmed if kw.get("type") == "entity"])}
+
+CRITICAL JSON RULE: When appending [Include H2: entity], DO NOT put quotation marks around the entity name. Doing so will break the JSON string. Use exactly the format: [Include H2: entity name]
 """
     try:
         payload = await _achat_json(
