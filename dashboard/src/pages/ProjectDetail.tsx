@@ -133,7 +133,6 @@ export function ProjectDetail() {
   const activeJobError = jobs.find((job) => job.error_message)?.error_message
   const latestJobError = activeJobError && activeJobError !== dismissedError ? activeJobError : null
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error
-  const keyword = project.target_keywords?.[0]
 
   return (
     <div className="space-y-6">
