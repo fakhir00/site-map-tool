@@ -86,7 +86,13 @@ function TreeHub({
   const layerEntries = Object.entries(hub.layers || {})
   
   // Clean hub title for slug (remove "MASTER HUB: " or similar prefixes if they exist)
-  const cleanHubTitle = hub.hub_title.replace(/^.*?:\s*/, '')
+  let cleanHubTitle = hub.hub_title.replace(/^.*?:\s*/, '').trim()
+  
+  // If it's a sub-silo formatted like "Category Name — Sub-Topic Overview", extract just the category
+  if (cleanHubTitle.includes('—')) {
+    cleanHubTitle = cleanHubTitle.split('—')[0].trim()
+  }
+  
   const hubSlug = `/${slugify(cleanHubTitle)}`
 
   return (
