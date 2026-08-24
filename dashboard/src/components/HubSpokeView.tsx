@@ -61,6 +61,15 @@ function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: any
     return <span className="text-[12px] text-slate-500">[outlier]</span>
   }
   return null
+function slugify(text: string) {
+  return text
+    .toString()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
 }
 
 function TreeHub({
@@ -73,6 +82,10 @@ function TreeHub({
   tierMetadata: Record<string, TierMetadataEntry>
 }) {
   const layerEntries = Object.entries(hub.layers || {})
+  
+  // Clean hub title for slug (remove "MASTER HUB: " or similar prefixes if they exist)
+  const cleanHubTitle = hub.hub_title.replace(/^.*?:\s*/, '')
+  const hubSlug = `/${slugify(cleanHubTitle)}`
 
   return (
     <div className="mb-12 font-mono text-sm max-w-[1000px] w-full">
@@ -107,6 +120,8 @@ function TreeHub({
                 
                 const finalTitle = (tier === 'subheading_group' && tierInfo?.article_title) ? tierInfo.article_title : displayTitle
                 const isSubheading = tier === 'subheading_group'
+                
+                const spokeSlug = `${hubSlug}/${slugify(finalTitle)}`
 
                 return (
                   <div key={sIdx} className="flex flex-col">
@@ -114,6 +129,9 @@ function TreeHub({
                       <div className="flex items-center gap-3">
                         <span className="text-slate-400 dark:text-slate-500 select-none">├──</span>
                         <TreeDot tier={tier} />
+                        <span className="text-emerald-600 dark:text-emerald-500 font-medium whitespace-nowrap">
+                          {spokeSlug}
+                        </span>
                         <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words">
                           {isSubheading ? `"${finalTitle}"` : finalTitle}
                         </span>

@@ -260,11 +260,6 @@ async def generate_hub_spoke(
             
     existing_keywords = list(keyword_map.values())
     
-    if not existing_keywords:
-        raise HTTPException(status_code=400, detail="No keywords found to cluster.")
-
-    TOOL_WORDS = {"calculator", "generator", "tool", "converter", "app", "software", "online", "download", "free"}
-
     import re
     from datetime import datetime
     current_year = datetime.now().year
@@ -273,10 +268,6 @@ async def generate_hub_spoke(
     clean_candidates = []
     for kw in existing_keywords:
         phrase_lower = kw["phrase"].lower()
-        
-        # Drop tool intents
-        if any(tw in phrase_lower.split() for tw in TOOL_WORDS):
-            continue
             
         # Drop keywords containing past years (e.g., 2023, 2024, 2025 when we are in 2026)
         # Looks for any 4-digit number starting with 19 or 20

@@ -1393,10 +1393,9 @@ Within each Sub-Silo, enforce the 3-Layer Stack:
 2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
 3. 💰 Money: "Best X", "Buy X", "X Services".
 
-Step 3: Intent Filtering (CRITICAL)
-Analyze each leftover keyword. If the user wants to DO/USE something immediately (Tool intent, like a calculator, generator, software, or interactive feature), completely DISCARD it. Do NOT include it anywhere in the final JSON output.
-You must only include keywords where the user wants to LEARN/READ something (Blog intent).
-Do NOT append [Blog] or [Tool] tags anymore. Just output the clean blog titles.
+Step 3: Intent Tags
+If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title.
+Otherwise, assume it is a blog post. Do NOT append a [Blog] tag, just output the clean title.
 
 Step 4: Zero Competition Quick-Wins
 If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
