@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { RefreshCw, Network } from 'lucide-react'
+import { RefreshCw, Network, Download } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from './ui/Button'
 
@@ -157,10 +157,19 @@ function TreeHub({
                       
                       <div className="flex items-center gap-4 ml-6 sm:ml-auto w-full sm:w-auto justify-end">
                         <button 
-                          onClick={() => onWrite(targetKeyword || finalTitle, "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words.")} 
+                          onClick={() => {
+                            const isTool = layerName.toLowerCase().includes('action') || layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('app') || layerName.toLowerCase().includes('generator') || layerName.toLowerCase().includes('calculator')
+                            const instruction = isTool 
+                              ? "INSTRUCTION: This is a Spoke tool/app page supporting a main hub. It MUST be an interactive tool, calculator, or interactive component."
+                              : "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words."
+                            onWrite(targetKeyword || finalTitle, instruction)
+                          }} 
                           className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-cyan-600 hover:text-cyan-500 hover:underline transition-opacity shrink-0"
                         >
-                          [ write ]
+                          {(() => {
+                            const isTool = layerName.toLowerCase().includes('action') || layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('app') || layerName.toLowerCase().includes('generator') || layerName.toLowerCase().includes('calculator')
+                            return isTool ? '[ Make Tool ]' : '[ Write ]'
+                          })()}
                         </button>
                         <div className="shrink-0 text-right">
                           <TreeAnnotation tier={tier} tierInfo={tierInfo} />
@@ -295,6 +304,25 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
           >
             <RefreshCw className={`mr-2 h-3 w-3 ${clusterMutation.isPending ? 'animate-spin' : ''}`} />
             {clusterMutation.isPending ? 'Re-building...' : 'Re-build'}
+          </Button>
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            onClick={() => {
+              if (!clusters) return
+              const blob = new Blob([JSON.stringify(clusters, null, 2)], { type: 'application/json' })
+              const url = window.URL.createObjectURL(blob)
+              const anchor = document.createElement('a')
+              anchor.href = url
+              anchor.download = `hub-spoke-map-${projectId}.json`
+              document.body.appendChild(anchor)
+              anchor.click()
+              anchor.remove()
+              window.URL.revokeObjectURL(url)
+            }}
+          >
+            <Download className="mr-2 h-3 w-3" />
+            Save Map
           </Button>
         </div>
       </div>

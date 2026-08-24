@@ -257,6 +257,18 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                 Blog
               </Button>
               <Button
+                variant="secondary"
+                size="sm"
+                disabled={selectedIds.size === 0}
+                onClick={() => {
+                  const selectedKeywords = keywords.filter(k => selectedIds.has(k.id)).map(k => k.phrase).join('\n')
+                  navigator.clipboard.writeText(selectedKeywords)
+                  alert('Copied to clipboard!')
+                }}
+              >
+                Copy
+              </Button>
+              <Button
                 variant="danger"
                 size="sm"
                 disabled={selectedIds.size === 0 || bulkDeleteMutation.isPending}
