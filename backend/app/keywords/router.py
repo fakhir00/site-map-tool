@@ -264,17 +264,37 @@ async def generate_hub_spoke(
         raise HTTPException(status_code=400, detail="No keywords found to cluster.")
 
     TOOL_WORDS = {"calculator", "generator", "tool", "converter", "app", "software", "online", "download", "free"}
+    OUTDATED_WORDS = {"old", "past", "history", "previous", "discontinued", "obsolete"}
+
+    import re
+    from datetime import datetime
+    current_year = datetime.now().year
 
     # Phase 1: Filter
     clean_candidates = []
     for kw in existing_keywords:
         phrase_lower = kw["phrase"].lower()
+        
         # Drop tool intents
         if any(tw in phrase_lower.split() for tw in TOOL_WORDS):
             continue
+            
+        # Drop clearly outdated data descriptors
+        if any(ow in phrase_lower.split() for ow in OUTDATED_WORDS):
+            continue
+            
+        # Drop keywords containing past years (e.g., 2023, 2024, 2025 when we are in 2026)
+        # Looks for any 4-digit number starting with 19 or 20
+        year_match = re.search(r'\b(19\d{2}|20\d{2})\b', phrase_lower)
+        if year_match:
+            keyword_year = int(year_match.group(1))
+            if keyword_year < current_year:
+                continue
+
         # Drop merged duplicates and subheadings (they don't need their own spoke node)
         if kw["tier"] in ("merge", "subheading_group"):
             continue
+            
         clean_candidates.append(kw)
 
     if not clean_candidates:
