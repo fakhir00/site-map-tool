@@ -636,16 +636,24 @@ For every raw keyword, rewrite it into a natural human search query:
 
 **Step 1: STRICT SEED RELEVANCE GATE (CRITICAL)**
 Compare the normalized query against the seed keyword set: {json.dumps(seed_keywords)}
-If the query is completely unrelated to the core topic, primary intent, or specific use case of the seed keywords, REJECT IT IMMEDIATELY. For example, if the seed keyword is highly technical or niche, aggressively reject generic terms, unrelated tutorials, or broad software/IT terms that do not directly address the seed's specific context.
+If the query does NOT directly support, align with, or fall under the exact mechanical use-cases of the seed keywords, REJECT IT IMMEDIATELY. Aggressively reject:
+- Generic umbrella terms that are too broad.
+- Tangential topics (e.g., if the seed is "lunar age calculator", reject "chinese new year traditions").
+- Completely unrelated niches.
 
-**Step 2: Volume Gate**
+**Step 2: ANTI-CANNIBALIZATION & DEDUPLICATION (CRITICAL)**
+Look at all the keywords that passed Step 1. Many competitors use slightly varied phrases for the exact same search intent (e.g. "circuit diagram tutorial for beginners" vs "understanding circuit diagrams for beginners").
+- Group all variations that share the exact same search intent.
+- Keep ONLY ONE normalized, best-representing keyword per intent.
+- DISCARD the redundant variations. Do NOT allow multiple keywords with the same intent to pass.
+
+**Step 3: Volume Gate**
 - For the normalized query, estimate monthly search volume.
 - Keep if 500+ per month.
 - Reject if below 500.
 
-**Step 3: Final Output**
-- Return ALL keywords that passed Steps 0-2 (maximum {max_keywords} total).
-- Do NOT deduplicate or merge similar keywords — that is handled separately.
+**Step 4: Final Output**
+- Return ALL deduplicated keywords that passed Steps 1-3 (maximum {max_keywords} total).
 - Return ONLY a JSON array of objects. Do not include markdown formatting or explanations.
 - Each returned object must include:
   - "source_phrase": exact original phrase from the candidates
