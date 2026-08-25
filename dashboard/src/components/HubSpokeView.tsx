@@ -14,6 +14,7 @@ interface NewSchemaLayer {
 
 interface NewSchemaHub {
   hub_title: string
+  target_keyword?: string
   layers: NewSchemaLayer
 }
 
@@ -85,10 +86,10 @@ function TreeHub({
 }) {
   const layerEntries = Object.entries(hub.layers || {})
   
-  // Clean hub title to extract target keyword if AI provided it
+  // Clean hub title to extract target keyword if AI provided it in the string fallback
   const hubMatch = hub.hub_title.match(/(.*?)\s*[\(\[]?Target Keyword:\s*([^)\]]+)[\)\]]?/i)
   let displayHubTitle = hubMatch ? hubMatch[1].trim() : hub.hub_title.trim()
-  let hubTargetKeyword = hubMatch ? hubMatch[2].trim() : null
+  let hubTargetKeyword = hub.target_keyword || (hubMatch ? hubMatch[2].trim() : null)
 
   // Clean hub title for slug (remove "MASTER HUB: " or similar prefixes if they exist)
   let cleanHubTitle = displayHubTitle.replace(/^.*?:\s*/, '').trim()

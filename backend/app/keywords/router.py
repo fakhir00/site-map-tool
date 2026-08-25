@@ -287,12 +287,12 @@ async def generate_hub_spoke(
         raise HTTPException(status_code=400, detail="No valid parent keywords found after filtering.")
 
     # Phase 2: Send to LLM
-    top_500 = clean_candidates[:500]
-    remaining = clean_candidates[500:]
+    top_200 = clean_candidates[:200]
+    remaining = clean_candidates[200:]
     
     clean_keywords_for_llm = [
         {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
-        for kw in top_500
+        for kw in top_200
     ]
 
     # Phase 3: The AI Skeleton

@@ -1381,15 +1381,15 @@ You must group keywords into a highly structured Topical Map consisting of a Mas
   ...
 
 Step 1: Master Hubs
-Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic] (Target Keyword: [exact keyword])". 
-The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub's target keyword.
+Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub's target keyword (output this in the `target_keyword` field).
 You are NOT bound to a single Master Hub. If the keywords cover multiple distinct macro-topics, create MULTIPLE Master Hubs.
 Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
 Under each Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
 
 Step 2: Sub-Silos
 Identify distinct sub-themes or categories for EACH Master Hub. For each theme, create a Sub-Silo nested conceptually under its relevant Master Hub (though stored flat in the JSON array).
-Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview] (Target Keyword: [exact keyword])".
+Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview]". Output its explicit target keyword in the `target_keyword` field.
 Within each Sub-Silo, enforce the 3-Layer Stack:
 1. 🧱 Foundations: "What Is X?", "History of X", Databases.
 2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
@@ -1415,20 +1415,23 @@ If a keyword in the provided list has `"is_ai": true`, place it in a special lay
 • Output MUST be a valid JSON object matching the schema below exactly. 
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
 • Treat both the Master Hub and each Sub-Silo as separate objects in the `hubs` array.
+• Each Hub MUST have a `target_keyword` field.
 • Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword])" or "[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity]"
 
 EXPECTED JSON SCHEMA:
 {{
   "hubs": [
     {{
-      "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic] (Target Keyword: [exact keyword])",
+      "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
+      "target_keyword": "[exact keyword]",
       "layers": {{
         "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
         "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
       }}
     }},
     {{
-      "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity] (Target Keyword: [exact keyword])",
+      "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
+      "target_keyword": "[exact keyword]",
       "layers": {{
         "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
         "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
@@ -1449,7 +1452,7 @@ Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [
             system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the SEO architecture schema.",
             user_prompt=prompt,
             temperature=0.15,
-            max_tokens=4000,
+            max_tokens=8000,
         )
         if isinstance(payload, dict):
             # We accept the nested dictionary as-is, but we could do minor type validation.
