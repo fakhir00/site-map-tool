@@ -86,7 +86,7 @@ function TreeHub({
   const layerEntries = Object.entries(hub.layers || {})
   
   // Clean hub title to extract target keyword if AI provided it
-  const hubMatch = hub.hub_title.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
+  const hubMatch = hub.hub_title.match(/(.*?)\s*[\(\[]?Target Keyword:\s*([^)\]]+)[\)\]]?/i)
   let displayHubTitle = hubMatch ? hubMatch[1].trim() : hub.hub_title.trim()
   let hubTargetKeyword = hubMatch ? hubMatch[2].trim() : null
 
@@ -130,7 +130,7 @@ function TreeHub({
               <div className="text-slate-400 italic pl-4">No keywords in this layer.</div>
             ) : (
               spokes.map((spoke, sIdx) => {
-                const match = spoke.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)(?:\s*\[(.*?)\])?/i)
+                const match = spoke.match(/(.*?)\s*[\(\[]?Target Keyword:\s*([^)\]]+)[\)\]]?(?:\s*\[(.*?)\])?/i)
                 const displayTitle = match ? match[1].trim() : spoke.trim()
                 const targetKeyword = match ? match[2].trim() : null
                 const extraTags = match && match[3] ? match[3].trim() : null

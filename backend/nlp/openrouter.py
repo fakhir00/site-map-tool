@@ -1397,7 +1397,7 @@ Within each Sub-Silo, enforce the 3-Layer Stack:
 
 Step 3: Intent Tags & Cannibalization Rules (CRITICAL)
 - If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title. Otherwise, do NOT append a [Blog] tag.
-- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice across the entire map. The Master Hub and its Foundation spoke must target different keywords (e.g. 'circuit diagram' for the Hub, and 'what is a circuit diagram' for the spoke). DO NOT output duplicate target keywords.
+- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice. Furthermore, if the keyword list contains multiple variations of the exact same search intent (e.g., "dot plot vs histogram difference", "advantages of dot plot vs histogram", "how to choose between dot plot and histogram"), YOU MUST DISCARD THE REDUNDANT ONES. Only create ONE single comprehensive article for that intent. Do not create 4 different articles that cannibalize each other. Just map the best keyword for it and ignore the rest.
 
 Step 4: Handling Entities (CRITICAL RULE)
 Look closely at the "type" field of each keyword.
