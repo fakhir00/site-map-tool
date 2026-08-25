@@ -1,6 +1,7 @@
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { RefreshCw, Network, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from './ui/Button'
 
