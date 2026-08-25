@@ -1443,8 +1443,6 @@ Main Keywords (Create Master Hubs and Spokes using ONLY these):
 
 Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include H2: entity] to the most relevant Spokes created above):
 {json.dumps([kw["phrase"] for kw in trimmed if kw.get("type") == "entity"])}
-
-CRITICAL JSON RULE: When appending [Include H2: entity], DO NOT put quotation marks around the entity name. Doing so will break the JSON string. Use exactly the format: [Include H2: entity name]
 """
     try:
         payload = await _achat_json(
