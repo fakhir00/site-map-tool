@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Download } from 'lucide-react'
+import { RefreshCw, Network, Download } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from './ui/Button'
 
@@ -237,7 +236,6 @@ function OldTreeHub({ hub, spokes }: { hub: string; spokes: string[] }) {
 export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [hasAutoTriggered, setHasAutoTriggered] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['hub-spoke', projectId],
@@ -263,6 +261,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const handleWrite = (keyword: string, instruction: string) => {
     manualMutation.mutate({ main_keyword: keyword, keyword_cluster: instruction })
   }
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400 font-sans">
@@ -275,21 +274,23 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   const clusters = data?.clusters
   const tierMetadata = data?.tier_metadata || {}
 
-  useEffect(() => {
-    if (!isLoading && (!clusters || Object.keys(clusters).length === 0) && !hasAutoTriggered && !clusterMutation.isPending) {
-      setHasAutoTriggered(true)
-      clusterMutation.mutate()
-    }
-  }, [isLoading, clusters, hasAutoTriggered, clusterMutation])
-
   if (!clusters || Object.keys(clusters).length === 0) {
     return (
       <div className="flex flex-col items-center justify-center px-4 py-16 text-center font-sans">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-cyan-600 dark:border-slate-800 dark:border-t-cyan-400 mb-4" />
-        <h3 className="mb-1 text-lg font-bold text-slate-950 dark:text-slate-50">Architecting Topic Clusters...</h3>
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+          <Network className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+        </div>
+        <h3 className="mb-1 text-lg font-bold text-slate-950 dark:text-slate-50">No Hubs & Spokes Generated</h3>
         <p className="mb-6 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-          The AI is analyzing your keywords and mapping them into an optimized Hub & Spoke structure. This may take up to 30 seconds.
+          Group your keywords into a semantic Hub and Spoke architecture to maximize topical authority.
         </p>
+        <Button 
+          onClick={() => clusterMutation.mutate()} 
+          disabled={clusterMutation.isPending}
+          className="bg-cyan-600 hover:bg-cyan-700"
+        >
+          {clusterMutation.isPending ? 'Generating Architecture...' : 'Generate Hub & Spoke'}
+        </Button>
       </div>
     )
   }
@@ -308,6 +309,16 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
           <div className="flex items-center gap-2"><TreeDot tier="subheading_group" /> Multi-intent</div>
           <div className="flex items-center gap-2"><TreeDot tier="related" /> Linked</div>
           <div className="flex items-center gap-2"><TreeDot tier="outlier" /> Outlier</div>
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            onClick={() => clusterMutation.mutate()}
+            disabled={clusterMutation.isPending}
+            className="ml-0 md:ml-4"
+          >
+            <RefreshCw className={`mr-2 h-3 w-3 ${clusterMutation.isPending ? 'animate-spin' : ''}`} />
+            {clusterMutation.isPending ? 'Re-building...' : 'Re-build'}
+          </Button>
           <Button 
             variant="secondary" 
             size="sm" 
