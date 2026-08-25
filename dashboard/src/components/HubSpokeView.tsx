@@ -85,29 +85,35 @@ function TreeHub({
 }) {
   const layerEntries = Object.entries(hub.layers || {})
   
+  // Clean hub title to extract target keyword if AI provided it
+  const hubMatch = hub.hub_title.match(/(.*?)\s*\(Target Keyword:\s*(.*?)\)/i)
+  let displayHubTitle = hubMatch ? hubMatch[1].trim() : hub.hub_title.trim()
+  let hubTargetKeyword = hubMatch ? hubMatch[2].trim() : null
+
   // Clean hub title for slug (remove "MASTER HUB: " or similar prefixes if they exist)
-  let cleanHubTitle = hub.hub_title.replace(/^.*?:\s*/, '').trim()
+  let cleanHubTitle = displayHubTitle.replace(/^.*?:\s*/, '').trim()
   
   // If it's a sub-silo formatted like "Category Name — Sub-Topic Overview", extract just the category
   if (cleanHubTitle.includes('—')) {
     cleanHubTitle = cleanHubTitle.split('—')[0].trim()
   }
   
-  const hubSlug = `/${slugify(cleanHubTitle)}`
+  const hubSlugSource = hubTargetKeyword || cleanHubTitle
+  const hubSlug = `/${slugify(hubSlugSource)}`
 
   return (
     <div className="mb-12 font-mono text-sm max-w-[1000px] w-full">
       <div className="flex items-start justify-between mb-2">
         <div className="flex flex-col gap-1">
           <h3 className="text-slate-900 dark:text-slate-100 uppercase tracking-wide whitespace-pre-wrap">
-            {hub.hub_title}
+            {displayHubTitle}
           </h3>
           <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono">
             {hubSlug}/
           </span>
         </div>
         <button 
-          onClick={() => onWrite(hub.hub_title, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")} 
+          onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")} 
           className="text-xs text-cyan-600 hover:text-cyan-500 hover:underline font-mono ml-4 shrink-0 mt-0.5"
         >
           [ write hub ]
@@ -166,7 +172,7 @@ function TreeHub({
                       <div className="flex items-center gap-4 ml-6 sm:ml-auto w-full sm:w-auto justify-end">
                         <button 
                           onClick={() => {
-                            const isTool = layerName.toLowerCase().includes('action') || layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('app') || layerName.toLowerCase().includes('generator') || layerName.toLowerCase().includes('calculator')
+                            const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
                             const instruction = isTool 
                               ? "INSTRUCTION: This is a Spoke tool/app page supporting a main hub. It MUST be an interactive tool, calculator, or interactive component."
                               : "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words."
@@ -175,7 +181,7 @@ function TreeHub({
                           className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-cyan-600 hover:text-cyan-500 hover:underline transition-opacity shrink-0"
                         >
                           {(() => {
-                            const isTool = layerName.toLowerCase().includes('action') || layerName.toLowerCase().includes('tool') || layerName.toLowerCase().includes('app') || layerName.toLowerCase().includes('generator') || layerName.toLowerCase().includes('calculator')
+                            const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
                             return isTool ? '[ Make Tool ]' : '[ Write ]'
                           })()}
                         </button>

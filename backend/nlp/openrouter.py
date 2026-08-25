@@ -1381,23 +1381,23 @@ You must group keywords into a highly structured Topical Map consisting of a Mas
   ...
 
 Step 1: Master Hubs
-Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
-The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub.
+Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic] (Target Keyword: [exact keyword])". 
+The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub's target keyword.
 You are NOT bound to a single Master Hub. If the keywords cover multiple distinct macro-topics, create MULTIPLE Master Hubs.
 Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
 Under each Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
 
 Step 2: Sub-Silos
 Identify distinct sub-themes or categories for EACH Master Hub. For each theme, create a Sub-Silo nested conceptually under its relevant Master Hub (though stored flat in the JSON array).
-Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview]".
+Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview] (Target Keyword: [exact keyword])".
 Within each Sub-Silo, enforce the 3-Layer Stack:
 1. 🧱 Foundations: "What Is X?", "History of X", Databases.
 2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
 3. 💰 Money: "Best X", "Buy X", "X Services".
 
-Step 3: Intent Tags
-If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title.
-Otherwise, assume it is a blog post. Do NOT append a [Blog] tag, just output the clean title.
+Step 3: Intent Tags & Cannibalization Rules (CRITICAL)
+- If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title. Otherwise, do NOT append a [Blog] tag.
+- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice across the entire map. The Master Hub and its Foundation spoke must target different keywords (e.g. 'circuit diagram' for the Hub, and 'what is a circuit diagram' for the spoke). DO NOT output duplicate target keywords.
 
 Step 4: Handling Entities (CRITICAL RULE)
 Look closely at the "type" field of each keyword.
@@ -1421,17 +1421,17 @@ EXPECTED JSON SCHEMA:
 {{
   "hubs": [
     {{
-      "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
+      "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic] (Target Keyword: [exact keyword])",
       "layers": {{
         "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
         "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
       }}
     }},
     {{
-      "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
+      "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity] (Target Keyword: [exact keyword])",
       "layers": {{
         "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
-        "⚙️ Action": ["Best Practices for [Core Entity] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
+        "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
         "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
       }}
     }}
