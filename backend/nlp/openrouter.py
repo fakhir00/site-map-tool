@@ -1411,6 +1411,9 @@ Format for appending entities to an article:
 Step 5: Zero Competition Quick-Wins
 If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
 
+Step 6: The NOISE / DISCARD Bin
+If you encounter keywords in the list that are COMPLETELY unrelated to the main topic (e.g. completely different niche, completely different language, etc.) and they do not belong in ANY Hub or Sub-Silo, you MUST place them in a special top-level hub called "🗑️ NOISE / DISCARD" so they do not pollute the real topical map.
+
 *Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly. 
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
@@ -1427,16 +1430,26 @@ EXPECTED JSON SCHEMA:
       "layers": {{
         "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
         "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
-      }}
+      }},
+      "sub_silos": [
+        {{
+          "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
+          "target_keyword": "[exact keyword]",
+          "layers": {{
+            "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
+            "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
+            "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
+          }}
+        }}
+      ]
     }},
     {{
-      "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
-      "target_keyword": "[exact keyword]",
+      "hub_title": "🗑️ NOISE / DISCARD",
+      "target_keyword": "noise",
       "layers": {{
-        "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
-        "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
-        "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
-      }}
+        "Unrelated Keywords": ["(Target Keyword: [unrelated keyword])"]
+      }},
+      "sub_silos": []
     }}
   ]
 }}

@@ -29,7 +29,15 @@ EXPECTED JSON SCHEMA:
       "layers": {{
         "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
         "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
-      }}
+      }},
+      "sub_silos": [
+        {{
+          "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
+          "layers": {{
+            "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"]
+          }}
+        }}
+      ]
     }}
   ]
 }}

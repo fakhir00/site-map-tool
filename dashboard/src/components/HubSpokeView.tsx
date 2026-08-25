@@ -16,6 +16,7 @@ interface NewSchemaHub {
   hub_title: string
   target_keyword?: string
   layers: NewSchemaLayer
+  sub_silos?: NewSchemaHub[]
 }
 
 interface NewSchema {
@@ -79,10 +80,12 @@ function TreeHub({
   hub,
   onWrite,
   tierMetadata,
+  isSubSilo = false,
 }: {
   hub: NewSchemaHub
   onWrite: (keyword: string, instruction: string) => void
   tierMetadata: Record<string, TierMetadataEntry>
+  isSubSilo?: boolean
 }) {
   const layerEntries = Object.entries(hub.layers || {})
   
@@ -103,7 +106,7 @@ function TreeHub({
   const hubSlug = `/${slugify(hubSlugSource)}`
 
   return (
-    <div className="mb-12 font-mono text-sm max-w-[1000px] w-full">
+    <div className={`mb-12 font-mono text-sm max-w-[1000px] w-full ${isSubSilo ? 'ml-8 border-l-2 border-slate-200 dark:border-slate-700 pl-6 mt-8' : ''}`}>
       <div className="flex items-start justify-between mb-2">
         <div className="flex flex-col gap-1">
           <h3 className="text-slate-900 dark:text-slate-100 uppercase tracking-wide whitespace-pre-wrap">
@@ -210,6 +213,15 @@ function TreeHub({
           </div>
         ))}
       </div>
+      
+      {/* Render Sub-Silos Recursively */}
+      {hub.sub_silos && hub.sub_silos.length > 0 && (
+        <div className="flex flex-col mt-6">
+          {hub.sub_silos.map((silo, i) => (
+            <TreeHub key={i} hub={silo} onWrite={onWrite} tierMetadata={tierMetadata} isSubSilo={true} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -328,16 +340,26 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
               
               let text = 'Topical Map\n===========\n\n'
               if (isNewSchema) {
-                ;(clusters as NewSchema).hubs.forEach((hub) => {
-                  text += `MASTER HUB: ${hub.hub_title}\n`
+                const renderHubText = (hub: NewSchemaHub, isSubSilo = false) => {
+                  let txt = `${isSubSilo ? '  ' : ''}MASTER HUB: ${hub.hub_title}\n`
                   if (hub.layers) {
                     Object.entries(hub.layers).forEach(([layerName, spokes]) => {
-                      text += `\n  ${layerName}\n`
+                      txt += `\n${isSubSilo ? '    ' : '  '}${layerName}\n`
                       ;(spokes as string[]).forEach((spoke) => {
-                        text += `  ├── ${spoke}\n`
+                        txt += `${isSubSilo ? '    ' : '  '}├── ${spoke}\n`
                       })
                     })
                   }
+                  if (hub.sub_silos) {
+                    hub.sub_silos.forEach((silo) => {
+                      txt += '\n' + renderHubText(silo, true)
+                    })
+                  }
+                  return txt
+                }
+
+                ;(clusters as NewSchema).hubs.forEach((hub) => {
+                  text += renderHubText(hub)
                   text += '\n------------------------\n\n'
                 })
               } else {

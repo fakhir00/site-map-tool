@@ -307,7 +307,12 @@ async def generate_hub_spoke(
         import re
         
         placed_nodes = []
+        
         for h_idx, hub in enumerate(clusters["hubs"]):
+            # Do not place things randomly into NOISE bin unless explicitly needed
+            if "NOISE" in hub.get("hub_title", "").upper():
+                continue
+                
             layers = hub.get("layers", {})
             for layer_name, spokes in layers.items():
                 for spoke in spokes:
@@ -315,13 +320,29 @@ async def generate_hub_spoke(
                     if match:
                         placed_nodes.append({
                             "hub_idx": h_idx,
+                            "sub_silo_idx": None,
                             "layer_name": layer_name,
                             "target_kw": match.group(1).strip()
                         })
+            
+            sub_silos = hub.get("sub_silos", [])
+            for s_idx, silo in enumerate(sub_silos):
+                silo_layers = silo.get("layers", {})
+                for layer_name, spokes in silo_layers.items():
+                    for spoke in spokes:
+                        match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
+                        if match:
+                            placed_nodes.append({
+                                "hub_idx": h_idx,
+                                "sub_silo_idx": s_idx,
+                                "layer_name": layer_name,
+                                "target_kw": match.group(1).strip()
+                            })
 
         for kw in remaining:
             phrase = kw["phrase"]
             best_hub_idx = 0
+            best_sub_silo_idx = None
             best_layer = "🧱 Foundations"
             best_sim = -1.0
             
@@ -330,22 +351,31 @@ async def generate_hub_spoke(
                 if sim > best_sim:
                     best_sim = sim
                     best_hub_idx = node["hub_idx"]
+                    best_sub_silo_idx = node["sub_silo_idx"]
                     best_layer = node["layer_name"]
                     
             if best_sim <= 0:
                 best_hub_idx = 0
+                best_sub_silo_idx = None
                 best_layer = "🧱 Foundations"
                 
+            # Place in the correct node
             hub = clusters["hubs"][best_hub_idx]
-            if "layers" not in hub:
-                hub["layers"] = {}
-            if best_layer not in hub["layers"]:
-                hub["layers"][best_layer] = []
+            if best_sub_silo_idx is not None:
+                target_node = hub.get("sub_silos", [])[best_sub_silo_idx]
+            else:
+                target_node = hub
                 
-            hub["layers"][best_layer].append(f"{phrase.title()} (Target Keyword: {phrase})")
+            if "layers" not in target_node:
+                target_node["layers"] = {}
+            if best_layer not in target_node["layers"]:
+                target_node["layers"][best_layer] = []
+                
+            target_node["layers"][best_layer].append(f"{phrase.title()} (Target Keyword: {phrase})")
             
             placed_nodes.append({
                 "hub_idx": best_hub_idx,
+                "sub_silo_idx": best_sub_silo_idx,
                 "layer_name": best_layer,
                 "target_kw": phrase
             })

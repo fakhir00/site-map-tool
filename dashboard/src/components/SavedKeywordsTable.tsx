@@ -60,6 +60,19 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
               <Button
                 size="sm"
                 variant="secondary"
+                disabled={selectedIds.size === 0}
+                onClick={() => {
+                  const selectedKeywordsText = keywords.filter(k => selectedIds.has(k.id)).map(k => k.phrase).join('\n')
+                  navigator.clipboard.writeText(selectedKeywordsText)
+                  alert('Copied to clipboard!')
+                }}
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Copy
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
                 disabled={bulkActionMutation.isPending}
                 onClick={() => handleBulkAction('mark_done')}
               >
