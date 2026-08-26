@@ -927,6 +927,7 @@ def _is_blocked_competitor_root(root: str) -> bool:
         "wikipedia.org",
         "x.com",
         "yahoo.com",
+        "yellowpages.com",
         "youtube.com",
     }
     return root in blocked_roots

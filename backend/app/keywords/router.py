@@ -380,6 +380,58 @@ async def generate_hub_spoke(
                 "target_kw": phrase
             })
 
+    # Phase 5: Semantic Deduplication
+    def semantic_tokenize(phrase: str) -> list[str]:
+        slug = re.sub(r'[^\w]+', '-', phrase.lower()).strip('-')
+        tokens = slug.split('-')
+        stopwords = {"guide", "how", "to", "use", "for", "and", "vs", "the", "of"}
+        filtered = [t for t in tokens if t not in stopwords and t]
+        return sorted(filtered)
+
+    seen_tokens_list = []
+
+    def is_duplicate(target_kw: str) -> bool:
+        tokens = semantic_tokenize(target_kw)
+        if not tokens:
+            return False
+        for seen_tokens in seen_tokens_list:
+            overlap = len(set(tokens) & set(seen_tokens))
+            max_len = max(len(tokens), len(seen_tokens))
+            if max_len > 0 and (overlap / max_len) >= 0.8:
+                return True
+        seen_tokens_list.append(tokens)
+        return False
+
+    if clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
+        for hub in clusters["hubs"]:
+            if "layers" in hub and isinstance(hub["layers"], dict):
+                for layer_name, spokes in hub["layers"].items():
+                    deduped_spokes = []
+                    for spoke in spokes:
+                        match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
+                        if match:
+                            target_kw = match.group(1).strip()
+                            if not is_duplicate(target_kw):
+                                deduped_spokes.append(spoke)
+                        else:
+                            deduped_spokes.append(spoke)
+                    hub["layers"][layer_name] = deduped_spokes
+            
+            if "sub_silos" in hub and isinstance(hub["sub_silos"], list):
+                for silo in hub["sub_silos"]:
+                    if "layers" in silo and isinstance(silo["layers"], dict):
+                        for layer_name, spokes in silo["layers"].items():
+                            deduped_spokes = []
+                            for spoke in spokes:
+                                match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
+                                if match:
+                                    target_kw = match.group(1).strip()
+                                    if not is_duplicate(target_kw):
+                                        deduped_spokes.append(spoke)
+                                else:
+                                    deduped_spokes.append(spoke)
+                            silo["layers"][layer_name] = deduped_spokes
+
     from app.models import HubSpokeCluster
     q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
     res_cluster = await db.execute(q_cluster)
