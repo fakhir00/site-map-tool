@@ -389,7 +389,32 @@ async def generate_hub_spoke(
         return sorted(filtered)
 
     seen_tokens_list = []
+    
+    def clean_hub_title(title: str) -> str:
+        # Replicates frontend cleanHubTitle to get the exact base keyword
+        title = re.sub(r'^(📍 MASTER HUB:|🪐 SUB-SILO \d+:)\s*', '', title)
+        return title.split('—')[0].strip()
 
+    # Preload Hub and Sub-Silo target keywords so spokes don't duplicate them
+    if clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
+        for hub in clusters["hubs"]:
+            hub_kw = hub.get("target_keyword")
+            if not hub_kw and "hub_title" in hub:
+                hub_kw = clean_hub_title(hub["hub_title"])
+            if hub_kw:
+                tokens = semantic_tokenize(hub_kw)
+                if tokens:
+                    seen_tokens_list.append(tokens)
+            
+            if "sub_silos" in hub and isinstance(hub["sub_silos"], list):
+                for silo in hub["sub_silos"]:
+                    silo_kw = silo.get("target_keyword")
+                    if not silo_kw and "hub_title" in silo:
+                        silo_kw = clean_hub_title(silo["hub_title"])
+                    if silo_kw:
+                        tokens = semantic_tokenize(silo_kw)
+                        if tokens:
+                            seen_tokens_list.append(tokens)
     def is_duplicate(target_kw: str) -> bool:
         tokens = semantic_tokenize(target_kw)
         if not tokens:
