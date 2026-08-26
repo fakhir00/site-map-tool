@@ -1389,23 +1389,37 @@ You must group keywords into a highly structured Topical Map consisting of a Mas
   ...
 
 Step 1: Master Hubs
-Identify the absolute broadest, most generic core entities and assign them as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+Identify the absolute broadest, most generic core entity and assign it as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
 The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub's target keyword (output this in the `target_keyword` field).
-You are NOT bound to a single Master Hub. If the keywords cover multiple distinct macro-topics, create MULTIPLE Master Hubs.
+HARD RULE: You MUST create exactly ONE (1) Master Hub. Do NOT create multiple Master Hubs.
 Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
-Under each Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
+Under the Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
 
 Step 2: Sub-Silos
-Identify distinct sub-themes or categories for EACH Master Hub. For each theme, create a Sub-Silo nested conceptually under its relevant Master Hub (though stored flat in the JSON array).
+Identify distinct sub-themes or categories for the Master Hub. For each theme, create a Sub-Silo nested conceptually under the Master Hub.
 Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview]". Output its explicit target keyword in the `target_keyword` field.
 Within each Sub-Silo, enforce the 3-Layer Stack:
 1. 🧱 Foundations: "What Is X?", "History of X", Databases.
 2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
 3. 💰 Money: "Best X", "Buy X", "X Services".
 
+HARD RULES FOR SUB-SILOS:
+- TOPICAL NEIGHBORHOOD: Keep only sub-topics within 2 semantic hops of the master hub. Is this sub-topic semantically within 2 hops of the master hub, or is it 5+ hops away? If it's 5+ hops away, it MUST be DISCARDED, not included as a sub-silo.
+- SUB-SILO CAP: You MUST NOT exceed 5 sub-silos. Limit to 3 to 5 sub-silos maximum. Rank by topical density, keep the top 5 only. If you generate a 6th sub-silo, you have failed.
+- ARTICLE THRESHOLD: Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
+
 Step 3: Intent Tags & Cannibalization Rules (CRITICAL)
 - If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title. Otherwise, do NOT append a [Blog] tag.
-- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice. Furthermore, if the keyword list contains multiple variations of the exact same search intent (e.g., "dot plot vs histogram difference", "advantages of dot plot vs histogram", "how to choose between dot plot and histogram"), YOU MUST DISCARD THE REDUNDANT ONES. Only create ONE single comprehensive article for that intent. Do not create 4 different articles that cannibalize each other. Just map the best keyword for it and ignore the rest.
+- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice. Furthermore, if the keyword list contains multiple variations of the exact same search intent, YOU MUST DISCARD THE REDUNDANT ONES. Only create ONE single comprehensive article for that intent. Merge any two articles with semantic similarity above 0.65 into a single article.
+
+HARD RULES SUMMARY (STRICT ENFORCEMENT):
+- EXACTLY 1 Master Hub only. No exceptions.
+- 3 to 5 Sub-Silos maximum. Never 6 or more.
+- 30 to 50 Articles total across the entire map.
+- No empty sub-silos.
+- No off-topic keywords.
+- No cannibal duplicates (merge >0.65 semantic similarity).
+- No sub-silos under 8 articles.
 
 Step 4: Handling Entities (CRITICAL RULE)
 Look closely at the "type" field of each keyword.
