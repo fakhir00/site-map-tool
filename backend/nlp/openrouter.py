@@ -1410,7 +1410,7 @@ HARD RULES FOR SUB-SILOS:
 
 Step 3: Intent Tags & Cannibalization Rules (CRITICAL)
 - If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title. Otherwise, do NOT append a [Blog] tag.
-- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice. Furthermore, if the keyword list contains multiple variations of the exact same search intent, YOU MUST DISCARD THE REDUNDANT ONES. Only create ONE single comprehensive article for that intent. Merge any two articles with semantic similarity above 0.65 into a single article.
+- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice. Furthermore, if the keyword list contains multiple variations of the exact same search intent (semantic similarity > 0.65), do NOT discard the redundant ones completely. Instead, keep the one with the highest search volume (which will appear earliest in the list) as the main Target Keyword for the article, and append the other redundant keywords as H2s using the `[Include H2: redundant_keyword]` format. Only create ONE single comprehensive article for that intent.
 
 HARD RULES SUMMARY (STRICT ENFORCEMENT):
 - EXACTLY 1 Master Hub only. No exceptions.
@@ -1418,7 +1418,7 @@ HARD RULES SUMMARY (STRICT ENFORCEMENT):
 - 30 to 50 Articles total across the entire map.
 - No empty sub-silos.
 - No off-topic keywords.
-- No cannibal duplicates (merge >0.65 semantic similarity).
+- No cannibal duplicates (merge >0.65 semantic similarity as [Include H2: keyword]).
 - No sub-silos under 8 articles.
 
 Step 4: Handling Entities (CRITICAL RULE)
