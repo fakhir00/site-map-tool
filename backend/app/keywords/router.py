@@ -291,18 +291,27 @@ async def generate_hub_spoke(
     if not clean_candidates:
         raise HTTPException(status_code=400, detail="No valid parent keywords found after filtering.")
 
-    # Phase 2: Send to LLM
+    # Phase 2: Upstream Relevance Gate
+    main_kw = project.target_keywords[0] if project.target_keywords else project.name
     top_candidates = clean_candidates[:300]
+    
+    from nlp.openrouter import llm_relevance_gate
+    raw_phrases = [kw["phrase"] for kw in top_candidates]
+    kept_phrases_set = set(await llm_relevance_gate(raw_phrases, main_kw))
+    
+    gated_candidates = [kw for kw in top_candidates if kw["phrase"] in kept_phrases_set]
+    if not gated_candidates:
+        gated_candidates = top_candidates # Fallback if LLM broke
+        
     remaining = clean_candidates[300:]
     
     clean_keywords_for_llm = [
         {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
-        for kw in top_candidates
+        for kw in gated_candidates
     ]
 
     # Phase 3: The AI Skeleton
     from nlp.openrouter import cluster_hub_and_spoke
-    main_kw = project.target_keywords[0] if project.target_keywords else project.name
     clusters = await cluster_hub_and_spoke(clean_keywords_for_llm, main_keyword=main_kw)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")

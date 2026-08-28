@@ -1,5 +1,6 @@
 import json
 import logging
+import asyncio
 from typing import Any
 
 from openai import AsyncOpenAI, OpenAI
@@ -1381,125 +1382,208 @@ def _validate_hub_and_spoke(payload: dict, total_kws: int) -> str | None:
     return None
 
 
-async def cluster_hub_and_spoke(keywords: list[dict[str, Any]], main_keyword: str = "your core topic") -> dict[str, Any] | None:
-    """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
+async def llm_relevance_gate(keywords: list[str], core_topic: str) -> list[str]:
+    """Filter raw keywords to remove completely irrelevant or 3rd-party SaaS drifts."""
+    if not is_ai_configured() or not keywords:
+        return keywords
+        
+    prompt = f"""
+You are a strict SEO Relevance Gatekeeper. 
+The Core Topic of this website is: "{core_topic}".
+
+Your ONLY job is to filter the provided list of keywords. 
+HARD RULES FOR REJECTION:
+1. Drop anything that is 3+ hops away from the Core Topic (e.g., if the topic is "circuit diagram maker", reject "volcano diagram" or "muscular system").
+2. Drop any keyword that drifts into 3rd-party SaaS workspace tools (e.g., Jira, SharePoint, Google Drive, Trello).
+
+Input Keywords:
+{json.dumps(keywords)}
+
+Output ONLY a JSON object with a single key "kept_keywords" containing an array of strings that passed the filter.
+"""
+    try:
+        payload = await _achat_json(
+            system_prompt="You are a strict filter. You output only valid JSON.",
+            user_prompt=prompt,
+            temperature=0.1,
+            max_tokens=4000,
+        )
+        if isinstance(payload, dict) and "kept_keywords" in payload:
+            return payload["kept_keywords"]
+    except Exception as exc:
+        logger.warning("LLM Relevance Gate failed: %s", exc)
+    
+    return keywords
+
+async def plan_hub_architecture(keywords: list[dict[str, Any]], core_topic: str) -> dict[str, Any] | None:
     if not is_ai_configured() or not keywords:
         return None
-
-    trimmed = keywords[:500]
+        
     prompt = f"""
-Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
-You are a Senior SEO Content Strategist and Topical Authority Architect.
+You are a Senior SEO Content Strategist. Your job is to design the overarching architecture for a Topical Map.
+The Core Topic is: "{core_topic}".
 
-[TASK - STEP-BY-STEP STRICT ENFORCEMENT]
-You must process the provided keywords sequentially following these steps to build the Topical Map:
+You are given a pool of {len(keywords)} candidate keywords:
+{json.dumps([kw["phrase"] for kw in keywords])}
 
-STEP 1: DYNAMIC TOPIC EXTRACTION & MASTER HUB
-Your Master Hub MUST be built around this core seed topic: "{main_keyword}".
-This is your "Primary Core Entity".
-Assign it as "📍 MASTER HUB: [Broadest Search Intent related to {main_keyword}]". 
-Output its explicit target keyword in the `target_keyword` field.
-HARD RULE: You MUST create exactly ONE (1) Master Hub based strictly on the core seed topic. Do NOT create multiple Master Hubs.
+STEP 1: Define exactly ONE (1) Master Hub based strictly on the Core Topic.
+STEP 2: Define 3 to 5 Sub-Silos that represent distinct, high-value sub-themes (1-2 hops away).
+HARD RULES:
+- Do NOT create Sub-Silos for 3rd-party software integrations (e.g. Jira, SharePoint).
+- The Master Hub target keyword MUST NOT be used by any Sub-Silo.
+- Ensure the Sub-Silos are broad enough to hold at least 8 articles each based on the provided keyword pool.
 
-STEP 2: HUB SLUG INTEGRITY & UNIQUENESS
-- The Master Hub's target keyword MUST perfectly match the Primary Core Entity tokens.
-- NO Sub-Silo is allowed to use that exact same target keyword.
-- If a Sub-Silo wants to use the Master Hub target keyword, you MUST append a unique suffix like `hub` or `overview` (e.g., if Master Hub is "japanese kana", the Sub-Silo must be "japanese kana hub").
-
-STEP 3: TOPICAL NEIGHBORHOOD FIREWALL (THE 2-HOP RULE)
-Identify distinct sub-themes for the Master Hub to create Sub-Silos.
-- CRITICAL: Every generated Sub-Silo and Spoke MUST be semantically within 1-2 hops of the Master Hub core entity.
-- If any keyword or Sub-Silo concept is 3+ hops away (e.g., "anime" for a "kana" hub, or "fishbone diagram" for a "circuit diagram" hub), you must DELETE it immediately. Do not include it in the JSON output at all.
-- 3RD-PARTY DRIFT: If a keyword shifts the primary focus to a 3rd-party software integration, workspace, or file storage (e.g., Jira, SharePoint, Google Drive, OneDrive, Trello) rather than the core entity itself, it is considered 3+ hops away and MUST be DELETED.
-- Limit to 3 to 5 Sub-Silos maximum. Rank by topical density, keep the top 5 only.
-- Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
-
-STEP 4: COMMERCIAL CONSOLIDATION
-- If you are generating Commercial/Money pages (keywords containing "best", "top", "review", "software", "tool"), you are only allowed to create ONE primary commercial URL per distinct product category.
-- DO NOT generate separate URLs for micro-audiences (e.g., "best kana apps for professionals", "best kana apps for students").
-- Instead, create ONE master commercial page (e.g., "best kana apps") and append the micro-audiences as H2 anchor links using `[Include H2: ...]`. Delete the extra spokes.
-
-STEP 5: BEGINNER PAGE LIMIT
-- If you are generating Action or Foundation pages for beginners (keywords containing "for beginners", "tutorial", "basics", "step-by-step"), limit to a maximum of TWO (2) beginner pages per silo:
-  - Page 1 (The Theory): "[Topic] Basics"
-  - Page 2 (The Action): "How to use [Topic] / Tutorial"
-- Consolidate any extras into H2 subheadings on these two pages using `[Include H2: ...]`.
-
-STEP 6: INTENT TAGS & ENTITIES
-- If a keyword is a tool/calculator/software, output it with a [Tool] tag in the title.
-- ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
-- ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append them as `[Include H2: entity]` to the most relevant article.
-
-[EXPLICIT FAILURE CONDITIONS]
-If you violate any of the following, your response will be programmatically REJECTED and you will be penalized:
-1. Creating a Sub-Silo with fewer than 8 total articles. (MERGE THEM!)
-2. Missing required layers within a Sub-Silo.
-3. Ignoring the 2-Hop rule for 3rd-party integrations.
-
-*Visually Optimized JSON Output.*
-• Output MUST be a valid JSON object matching the schema below exactly. 
-• DO NOT USE markdown ticks for the JSON output. Return pure JSON.
-• Treat both the Master Hub and each Sub-Silo as separate objects in the `hubs` array.
-• Each Hub MUST have a `target_keyword` field.
-• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword])" or "[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity]"
-
-EXPECTED JSON SCHEMA:
+Output ONLY a JSON object matching this schema:
 {{
-  "hubs": [
+  "master_hub": {{
+    "title": "📍 MASTER HUB: [Broadest Intent]",
+    "target_keyword": "[exact keyword]"
+  }},
+  "sub_silos": [
     {{
-      "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
-      "target_keyword": "[exact keyword]",
-      "layers": {{
-        "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
-        "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
-      }},
-      "sub_silos": [
-        {{
-          "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
-          "target_keyword": "[exact keyword]",
-          "layers": {{
-            "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
-            "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
-            "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
-          }}
-        }}
-      ]
-    }},
-    {{
-      "hub_title": "🗑️ NOISE / DISCARD",
-      "target_keyword": "noise",
-      "layers": {{
-        "Unrelated Keywords": ["(Target Keyword: [unrelated keyword])"]
-      }},
-      "sub_silos": []
+      "title": "🪐 SUB-SILO 1: [Theme]",
+      "target_keyword": "[exact keyword]"
     }}
   ]
 }}
-
-Main Keywords (Create Master Hubs and Spokes using ONLY these):
-{json.dumps([kw for kw in trimmed if kw.get("type") != "entity"])}
-
-Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include H2: entity] to the most relevant Spokes created above):
-{json.dumps([kw["phrase"] for kw in trimmed if kw.get("type") == "entity"])}
 """
-    max_retries = 3
+    try:
+        payload = await _achat_json(
+            system_prompt="You output valid JSON.",
+            user_prompt=prompt,
+            temperature=0.2,
+            max_tokens=2000,
+        )
+        return payload if isinstance(payload, dict) else None
+    except Exception as exc:
+        logger.error("Architecture planner failed: %s", exc)
+        return None
+
+async def build_sub_silo(silo_def: dict[str, str], all_keywords: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not is_ai_configured():
+        return None
+        
+    silo_title = silo_def.get("title", "")
+    silo_kw = silo_def.get("target_keyword", "")
+    
+    prompt = f"""
+You are a Senior SEO Content Architect. Your task is to populate ONE specific Sub-Silo.
+
+SUB-SILO TO BUILD:
+Title: {silo_title}
+Target Keyword: {silo_kw}
+
+CANDIDATE KEYWORDS POOL:
+Main Keywords:
+{json.dumps([kw["phrase"] for kw in all_keywords if kw.get("type") != "entity"])}
+
+Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include H2: entity] to relevant Spokes):
+{json.dumps([kw["phrase"] for kw in all_keywords if kw.get("type") == "entity"])}
+
+TASK:
+Select ONLY the keywords from the pool that strictly belong to THIS Sub-Silo.
+Organize them into structural layers (e.g. 🧱 Foundations, ⚙️ Action, 💰 Commercial).
+
+HARD RULES:
+1. MINIMUM 8 ARTICLES: You MUST select enough distinct keywords to create at least 8 Spokes. If the pool does not contain enough relevant keywords for this Sub-Silo, you MUST set "insufficient_depth": true.
+2. COMMERCIAL CONSOLIDATION: Create ONE primary commercial page per category (e.g., "best apps"). Append micro-audiences as H2s using [Include H2: micro-audience].
+3. BEGINNER LIMIT: Max 2 beginner/tutorial pages. Consolidate extras into H2s.
+4. FORMAT: Spokes must be formatted as: "[Optimized Title] (Target Keyword: [exact keyword])" or "[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity]"
+
+Output ONLY a JSON object matching this schema:
+{{
+  "insufficient_depth": false,
+  "layers": {{
+    "🧱 Foundations": ["Spoke 1", "Spoke 2"],
+    "⚙️ Action": ["Spoke 3"]
+  }}
+}}
+"""
+    max_retries = 2
     for attempt in range(max_retries):
         try:
             payload = await _achat_json(
-                system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the SEO architecture schema.",
+                system_prompt="You output valid JSON.",
                 user_prompt=prompt,
-                temperature=0.15 + (attempt * 0.1),
-                max_tokens=8000,
+                temperature=0.1 + (attempt * 0.1),
+                max_tokens=4000,
             )
             if isinstance(payload, dict):
-                err = _validate_hub_and_spoke(payload, len(trimmed))
-                if err and attempt < max_retries - 1:
-                    logger.warning(f"Validation failed on attempt {attempt+1}: {err}. Retrying...")
-                    prompt += f"\n\n[SYSTEM FEEDBACK - ATTEMPT {attempt+1} FAILED]\nYour previous output was REJECTED because: {err}\nYou MUST fix this immediately."
-                    continue
+                if not payload.get("insufficient_depth", False):
+                    layers = payload.get("layers", {})
+                    total = sum(len(s) for s in layers.values())
+                    if total < 8:
+                        if attempt < max_retries - 1:
+                            prompt += f"\n\n[FEEDBACK] You only provided {total} spokes. You MUST provide at least 8, or set insufficient_depth to true."
+                            continue
+                        else:
+                            payload["insufficient_depth"] = True
+                
+                payload["hub_title"] = silo_title
+                payload["target_keyword"] = silo_kw
                 return payload
-            return None
         except Exception as exc:
-            logger.error("Failed to cluster hub and spoke via %s on attempt %d: %s", ai_provider_name(), attempt+1, exc)
-            if attempt == max_retries - 1:
-                return None
+            logger.error("Build Sub-Silo failed: %s", exc)
+    return None
+
+async def cluster_hub_and_spoke(keywords: list[dict[str, Any]], main_keyword: str = "your core topic") -> dict[str, Any] | None:
+    """Cluster keywords into categorized Hub and Spoke architectures, using a multi-threaded cascade."""
+    if not is_ai_configured() or not keywords:
+        return None
+
+    trimmed = keywords[:300]
+    
+    # STEP 1: Plan Architecture
+    architecture = await plan_hub_architecture(trimmed, main_keyword)
+    if not architecture:
+        return None
+        
+    master_hub_def = architecture.get("master_hub", {})
+    sub_silo_defs = architecture.get("sub_silos", [])
+    
+    # STEP 2: Build Master Hub and Sub Silos Concurrently
+    tasks = []
+    # Builder for Master Hub
+    tasks.append(build_sub_silo(master_hub_def, trimmed))
+    # Builders for Sub-Silos
+    for s_def in sub_silo_defs:
+        tasks.append(build_sub_silo(s_def, trimmed))
+        
+    results = await asyncio.gather(*tasks)
+    
+    # STEP 3: Assemble & Handle Fallback
+    master_hub_result = results[0]
+    silo_results = results[1:]
+    
+    if not master_hub_result:
+        return None
+        
+    final_hubs = []
+    
+    master_hub_json = {
+        "hub_title": master_hub_def.get("title", f"📍 MASTER HUB: {main_keyword}"),
+        "target_keyword": master_hub_def.get("target_keyword", main_keyword),
+        "layers": master_hub_result.get("layers", {}),
+        "sub_silos": []
+    }
+    
+    # Fallback: merge insufficient silos into the master hub
+    for res in silo_results:
+        if not res:
+            continue
+        if res.get("insufficient_depth", False):
+            # Merge layers into master hub
+            for layer_name, spokes in res.get("layers", {}).items():
+                if layer_name not in master_hub_json["layers"]:
+                    master_hub_json["layers"][layer_name] = []
+                master_hub_json["layers"][layer_name].extend(spokes)
+        else:
+            master_hub_json["sub_silos"].append({
+                "hub_title": res.get("hub_title", ""),
+                "target_keyword": res.get("target_keyword", ""),
+                "layers": res.get("layers", {})
+            })
+            
+    final_hubs.append(master_hub_json)
+    
+    return {"hubs": final_hubs}
