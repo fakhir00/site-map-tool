@@ -1,0 +1,126 @@
+Topical Map
+===========
+
+MASTER HUB: 📍 MASTER HUB: Diagram Types & Examples
+
+  🧱 FOUNDATION SPOKES (Authority)
+  ├── Diagram Types Explained: From Flowcharts to UML (Target Keyword: diagram types explained)
+
+  ⚙️ CORE STRATEGY
+  ├── How to Choose the Right Diagram Type for Your Project (Target Keyword: how to choose diagram type)
+
+  MASTER HUB: 🪐 SUB-SILO 1: CIRCUIT DIAGRAMS — Examples, Symbols & Tutorials
+
+    🧱 Foundations
+    ├── What Is a Circuit Diagram? Complete Guide (Target Keyword: circuit diagram definition) [Include H2: circuit diagram meaning]
+    ├── Circuit Diagram Basics: Symbols, Layout, and Theory (Target Keyword: circuit diagram basics) [Include H2: circuit diagram symbols, electrical diagram symbols]
+    ├── Circuit Diagram vs Schematic: Key Differences (Target Keyword: schematic vs circuit diagram) [Include H2: circuit diagram schematic]
+
+    ⚙️ Action
+    ├── How to Draw Electrical Diagrams: Step-by-Step Tutorial (Target Keyword: how to draw electrical diagrams) [Include H2: circuit diagram drawing, circuit diagram layout]
+    ├── Circuit Diagram Tutorial for Beginners (Target Keyword: circuit diagram tutorial) [Include H2: circuit diagram for beginners, basic circuit diagram for beginners]
+    ├── Circuit Diagram Examples with Explanation (Target Keyword: circuit diagram examples with explanation) [Include H2: series circuit diagram examples, parallel circuit diagram examples, open circuit diagram examples, schematic circuit diagram examples]
+    ├── Circuit Diagram Examples for Students and Projects (Target Keyword: circuit diagram examples for students) [Include H2: circuit diagram examples for projects, circuit diagram examples for kids]
+    ├── Circuit Diagram Analysis: How to Read and Interpret (Target Keyword: circuit diagram analysis) [Include H2: circuit diagram explanation, circuit diagram concept]
+    ├── Circuit Diagram Design: Best Practices and Principles (Target Keyword: circuit diagram design) [Include H2: circuit diagram principle, circuit diagram theory]
+
+    ⚡️ ZERO COMPETITION QUICK-WINS
+    ├── Easy Circuit Diagram Examples for Beginners (Target Keyword: simple circuit diagram examples) [Include H2: circuit diagram examples for beginners]
+    ├── Common Circuit Diagram Examples Explained (Target Keyword: common circuit diagram examples explained)
+
+  MASTER HUB: 🪐 SUB-SILO 2: NETWORK DIAGRAMS — Examples, Templates & Troubleshooting
+
+    🧱 Foundations
+    ├── What Is a Network Diagram? Complete Guide (Target Keyword: what is a network diagram) [Include H2: network diagram]
+    ├── Network Diagram Examples and Templates (Target Keyword: network diagram examples) [Include H2: network diagram templates]
+
+    ⚙️ Action
+    ├── How to Draw Network Diagrams: Step-by-Step Guide (Target Keyword: how to draw network diagrams)
+    ├── Network Diagram Troubleshooting: Common Issues and Fixes (Target Keyword: network diagram troubleshooting)
+    ├── Network Diagram Software: Top Tools and Reviews (Target Keyword: network diagram software) [Include H2: free network diagram]
+
+    ⚡️ ZERO COMPETITION QUICK-WINS
+    ├── Network Diagram Examples for Beginners (Target Keyword: network diagram examples for beginners)
+
+  MASTER HUB: 🪐 SUB-SILO 3: SOFTWARE ARCHITECTURE DIAGRAMS — Types, Tools & Templates
+
+    🧱 Foundations
+    ├── Software Architecture Diagram Types: A Complete Guide (Target Keyword: software architecture diagram types)
+    ├── What Is a Software Architecture Diagram? (Target Keyword: what is a software architecture diagram)
+
+    ⚙️ Action
+    ├── How to Create Software Architecture Diagrams (Target Keyword: how to create software architecture diagrams)
+    ├── Software Design Diagram Templates and Examples (Target Keyword: software design diagram templates) [Include H2: azure diagram examples]
+
+    ⚡️ ZERO COMPETITION QUICK-WINS
+    ├── Software Architecture Diagram Examples for Beginners (Target Keyword: software architecture diagram examples)
+
+  MASTER HUB: 🪐 SUB-SILO 4: DIAGRAM TOOLS & SOFTWARE — Reviews and Comparisons
+
+    🧱 Foundations
+    ├── Best Diagram Tools and Software: Top Picks for Every Need (Target Keyword: best diagram tools) [Include H2: diagram tool]
+
+    ⚙️ Action
+    ├── How to Choose the Right Diagram Software (Target Keyword: how to choose diagram software)
+    ├── UML Diagram Tool: Features and Reviews (Target Keyword: uml diagram tool) [Include H2: class diagram tool]
+    ├── ER Diagram Tool: Features and Reviews (Target Keyword: er diagram tool) [Include H2: database diagram tool]
+    ├── Venn Diagram Software: Features and Reviews (Target Keyword: venn diagram software) [Include H2: venn diagram]
+    ├── Fishbone Diagram Maker: Features and Reviews (Target Keyword: fishbone diagram maker) [Include H2: fishbone diagram, ishikawa diagram]
+    ├── Block Diagram Maker: Features and Reviews (Target Keyword: block diagram maker) [Include H2: block diagram]
+    ├── Sankey Diagram Maker: Features and Reviews (Target Keyword: sankey diagram maker)
+
+    ⚡️ ZERO COMPETITION QUICK-WINS
+    ├── Free Network Diagram Software: Top Picks (Target Keyword: free network diagram software)
+
+  MASTER HUB: 🪐 SUB-SILO 5: SPECIALIZED DIAGRAMS — Examples and Use Cases
+
+    🧱 Foundations
+    ├── What Is a Cause and Effect Diagram? (Target Keyword: what is a cause and effect diagram) [Include H2: cause and effect diagram]
+    ├── Cause and Effect Diagram Examples: A Complete Guide (Target Keyword: cause and effect diagram examples) [Include H2: 5 whys fishbone diagram]
+
+    ⚙️ Action
+    ├── How to Create a Fishbone Diagram (Target Keyword: how to create a fishbone diagram) [Include H2: fishbone diagram templates]
+    ├── Swim Lane Diagram Examples and Templates (Target Keyword: swim lane diagram examples) [Include H2: swim lane diagram]
+    ├── Workflow Diagram Examples and Templates (Target Keyword: workflow diagram examples) [Include H2: workflow diagram]
+    ├── Venn Diagram Examples and Use Cases (Target Keyword: venn diagram examples) [Include H2: venn diagram]
+    ├── EPC Diagram Examples and Use Cases (Target Keyword: epc diagram examples) [Include H2: epc diagram]
+    ├── Target Diagram Examples and Use Cases (Target Keyword: target diagram examples) [Include H2: target diagram]
+
+    ⚡️ ZERO COMPETITION QUICK-WINS
+
+------------------------
+
+MASTER HUB: 🗑️ NOISE / DISCARD
+
+  Unrelated Keywords
+  ├── (Target Keyword: network jack pinning diagram)
+  ├── (Target Keyword: piping and instrumentation diagram software)
+  ├── (Target Keyword: accident reconstruction diagram software)
+  ├── (Target Keyword: affinity diagram software)
+  ├── (Target Keyword: pest analysis example)
+  ├── (Target Keyword: organizational chart example)
+  ├── (Target Keyword: data flow diagram rules and symbols)
+  ├── (Target Keyword: data flow diagram tutorial)
+  ├── (Target Keyword: deployment diagram software)
+  ├── (Target Keyword: wiring diagram software)
+  ├── (Target Keyword: schematic diagram software)
+  ├── (Target Keyword: schematics diagram software)
+  ├── (Target Keyword: electrical schematic diagram)
+  ├── (Target Keyword: circuit diagram maker)
+  ├── (Target Keyword: circuit diagram creator)
+  ├── (Target Keyword: circuit diagram online)
+  ├── (Target Keyword: circuit diagram software)
+  ├── (Target Keyword: circuit diagram template)
+  ├── (Target Keyword: circuit diagram generator)
+  ├── (Target Keyword: circuit diagram simulation)
+  ├── (Target Keyword: circuit simulation tool)
+  ├── (Target Keyword: circuit diagram tool)
+  ├── (Target Keyword: online circuit editor)
+  ├── (Target Keyword: linux circuit diagram software)
+  ├── (Target Keyword: electrical diagram examples)
+  ├── (Target Keyword: electrical diagram tutorial)
+  ├── (Target Keyword: diagrams to visualize processes)
+  ├── (Target Keyword: spaghetti diagram)
+
+------------------------
+

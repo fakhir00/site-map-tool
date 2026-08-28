@@ -1364,7 +1364,7 @@ Return ONLY a JSON object in this exact format:
         return None
 
 
-async def cluster_hub_and_spoke(keywords: list[dict[str, Any]]) -> dict[str, Any] | None:
+async def cluster_hub_and_spoke(keywords: list[dict[str, Any]], main_keyword: str = "your core topic") -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
     if not is_ai_configured() or not keywords:
         return None
@@ -1378,11 +1378,11 @@ You are a Senior SEO Content Strategist and Topical Authority Architect.
 You must process the provided keywords sequentially following these steps to build the Topical Map:
 
 STEP 1: DYNAMIC TOPIC EXTRACTION & MASTER HUB
-Identify the absolute broadest, most generic core entity from the highest-volume keyword (the first in the list). 
+Your Master Hub MUST be built around this core seed topic: "{main_keyword}".
 This is your "Primary Core Entity".
-Assign it as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+Assign it as "📍 MASTER HUB: [Broadest Search Intent related to {main_keyword}]". 
 Output its explicit target keyword in the `target_keyword` field.
-HARD RULE: You MUST create exactly ONE (1) Master Hub. Do NOT create multiple Master Hubs.
+HARD RULE: You MUST create exactly ONE (1) Master Hub based strictly on the core seed topic. Do NOT create multiple Master Hubs.
 
 STEP 2: HUB SLUG INTEGRITY & UNIQUENESS
 - The Master Hub's target keyword MUST perfectly match the Primary Core Entity tokens.
