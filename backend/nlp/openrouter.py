@@ -1364,6 +1364,23 @@ Return ONLY a JSON object in this exact format:
         return None
 
 
+def _validate_hub_and_spoke(payload: dict, total_kws: int) -> str | None:
+    if not payload or "hubs" not in payload:
+        return "Missing 'hubs' array."
+    for hub in payload.get("hubs", []):
+        if hub.get("hub_title", "").startswith("🗑️"):
+            continue
+        for silo in hub.get("sub_silos", []):
+            layers = silo.get("layers", {})
+            total_articles = sum(len(spokes) for spokes in layers.values())
+            if total_kws > 40 and total_articles < 8:
+                return f"Sub-Silo '{silo.get('hub_title')}' has only {total_articles} articles. You MUST merge it into a neighboring sub-silo to meet the 8-article minimum."
+            layer_names = " ".join(layers.keys()).lower()
+            if "foundation" not in layer_names and "action" not in layer_names:
+                return f"Sub-Silo '{silo.get('hub_title')}' is missing required structural layers (Foundations or Action)."
+    return None
+
+
 async def cluster_hub_and_spoke(keywords: list[dict[str, Any]], main_keyword: str = "your core topic") -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
     if not is_ai_configured() or not keywords:
@@ -1413,6 +1430,12 @@ STEP 6: INTENT TAGS & ENTITIES
 - ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
 - ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append them as `[Include H2: entity]` to the most relevant article.
 
+[EXPLICIT FAILURE CONDITIONS]
+If you violate any of the following, your response will be programmatically REJECTED and you will be penalized:
+1. Creating a Sub-Silo with fewer than 8 total articles. (MERGE THEM!)
+2. Missing required layers within a Sub-Silo.
+3. Ignoring the 2-Hop rule for 3rd-party integrations.
+
 *Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly. 
 • DO NOT USE markdown ticks for the JSON output. Return pure JSON.
@@ -1459,18 +1482,24 @@ Main Keywords (Create Master Hubs and Spokes using ONLY these):
 Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include H2: entity] to the most relevant Spokes created above):
 {json.dumps([kw["phrase"] for kw in trimmed if kw.get("type") == "entity"])}
 """
-    try:
-        payload = await _achat_json(
-            system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the SEO architecture schema.",
-            user_prompt=prompt,
-            temperature=0.15,
-            max_tokens=8000,
-        )
-        if isinstance(payload, dict):
-            # We accept the nested dictionary as-is, but we could do minor type validation.
-            # Assuming payload is dict[str, dict[str, list[str]]]
-            return payload
-        return None
-    except Exception as exc:
-        logger.error("Failed to cluster hub and spoke via %s: %s", ai_provider_name(), exc)
-        return None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            payload = await _achat_json(
+                system_prompt="You are a Senior SEO Content Strategist. You output only valid JSON objects matching the SEO architecture schema.",
+                user_prompt=prompt,
+                temperature=0.15 + (attempt * 0.1),
+                max_tokens=8000,
+            )
+            if isinstance(payload, dict):
+                err = _validate_hub_and_spoke(payload, len(trimmed))
+                if err and attempt < max_retries - 1:
+                    logger.warning(f"Validation failed on attempt {attempt+1}: {err}. Retrying...")
+                    prompt += f"\n\n[SYSTEM FEEDBACK - ATTEMPT {attempt+1} FAILED]\nYour previous output was REJECTED because: {err}\nYou MUST fix this immediately."
+                    continue
+                return payload
+            return None
+        except Exception as exc:
+            logger.error("Failed to cluster hub and spoke via %s on attempt %d: %s", ai_provider_name(), attempt+1, exc)
+            if attempt == max_retries - 1:
+                return None
