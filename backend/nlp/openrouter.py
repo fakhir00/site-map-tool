@@ -1393,6 +1393,7 @@ STEP 3: TOPICAL NEIGHBORHOOD FIREWALL (THE 2-HOP RULE)
 Identify distinct sub-themes for the Master Hub to create Sub-Silos.
 - CRITICAL: Every generated Sub-Silo and Spoke MUST be semantically within 1-2 hops of the Master Hub core entity.
 - If any keyword or Sub-Silo concept is 3+ hops away (e.g., "anime" for a "kana" hub, or "fishbone diagram" for a "circuit diagram" hub), you must DELETE it immediately. Do not include it in the JSON output at all.
+- 3RD-PARTY DRIFT: If a keyword shifts the primary focus to a 3rd-party software integration, workspace, or file storage (e.g., Jira, SharePoint, Google Drive, OneDrive, Trello) rather than the core entity itself, it is considered 3+ hops away and MUST be DELETED.
 - Limit to 3 to 5 Sub-Silos maximum. Rank by topical density, keep the top 5 only.
 - Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
 
