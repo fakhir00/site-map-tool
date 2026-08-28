@@ -265,21 +265,26 @@ async def generate_hub_spoke(
     current_year = datetime.now().year
 
     # Phase 1: Filter
+
+    h2_map = {}
     clean_candidates = []
     for kw in existing_keywords:
         phrase_lower = kw["phrase"].lower()
             
         # Drop keywords containing past years (e.g., 2023, 2024, 2025 when we are in 2026)
-        # Looks for any 4-digit number starting with 19 or 20
         year_match = re.search(r'\b(19\d{2}|20\d{2})\b', phrase_lower)
         if year_match:
             keyword_year = int(year_match.group(1))
             if keyword_year < current_year:
                 continue
 
-        # Drop merged duplicates and subheadings (they don't need their own spoke node)
-        if kw["tier"] in ("merge", "subheading_group"):
-            continue
+        extras = []
+        if kw.get("merged_from"):
+            extras.extend(kw["merged_from"])
+        if kw.get("h_tags"):
+            extras.extend(kw["h_tags"])
+        if extras:
+            h2_map[phrase_lower] = extras
             
         clean_candidates.append(kw)
 
@@ -287,12 +292,12 @@ async def generate_hub_spoke(
         raise HTTPException(status_code=400, detail="No valid parent keywords found after filtering.")
 
     # Phase 2: Send to LLM
-    top_200 = clean_candidates[:200]
-    remaining = clean_candidates[200:]
+    top_candidates = clean_candidates[:300]
+    remaining = clean_candidates[300:]
     
     clean_keywords_for_llm = [
         {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
-        for kw in top_200
+        for kw in top_candidates
     ]
 
     # Phase 3: The AI Skeleton
@@ -385,7 +390,12 @@ async def generate_hub_spoke(
     def semantic_tokenize(phrase: str) -> list[str]:
         slug = re.sub(r'[^\w]+', '-', phrase.lower()).strip('-')
         tokens = slug.split('-')
-        stopwords = {"guide", "how", "to", "use", "for", "and", "vs", "the", "of", "a", "an", "is", "what", "with", "in", "on", "at"}
+        stopwords = {
+            "guide", "how", "to", "use", "for", "and", "vs", "the", "of", "a", "an", "is", "what", "with", "in", "on", "at",
+            "tool", "tools", "software", "app", "apps", "maker", "makers", "creator", "creators", "generator", "generators",
+            "builder", "builders", "service", "services", "agency", "agencies", "company", "companies", "calculator", "calculators",
+            "converter", "converters", "online", "free", "cheap", "best", "near", "tutorial", "tutorials"
+        }
         filtered = [t for t in tokens if t not in stopwords and t]
         return sorted(filtered)
 
@@ -433,6 +443,15 @@ async def generate_hub_spoke(
             seen_tokens_list.append(tokens)
 
     if clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
+        def inject_h2s(spoke_str: str, target_kw: str) -> str:
+            extras = h2_map.get(target_kw.lower(), [])
+            if extras:
+                if "[Include H2:" in spoke_str:
+                    spoke_str = re.sub(r'\]\s*$', f", {', '.join(extras)}]", spoke_str)
+                else:
+                    spoke_str += f" [Include H2: {', '.join(extras)}]"
+            return spoke_str
+
         for hub in clusters["hubs"]:
             if "layers" in hub and isinstance(hub["layers"], dict):
                 for layer_name, spokes in hub["layers"].items():
@@ -445,11 +464,11 @@ async def generate_hub_spoke(
                             if not check_duplicate(target_kw) and not check_duplicate(title):
                                 add_to_seen(target_kw)
                                 add_to_seen(title)
-                                deduped_spokes.append(spoke)
+                                deduped_spokes.append(inject_h2s(spoke, target_kw))
                         else:
                             if not check_duplicate(spoke):
                                 add_to_seen(spoke)
-                                deduped_spokes.append(spoke)
+                                deduped_spokes.append(inject_h2s(spoke, spoke))
                     hub["layers"][layer_name] = deduped_spokes
             
             if "sub_silos" in hub and isinstance(hub["sub_silos"], list):
@@ -465,11 +484,11 @@ async def generate_hub_spoke(
                                     if not check_duplicate(target_kw) and not check_duplicate(title):
                                         add_to_seen(target_kw)
                                         add_to_seen(title)
-                                        deduped_spokes.append(spoke)
+                                        deduped_spokes.append(inject_h2s(spoke, target_kw))
                                 else:
                                     if not check_duplicate(spoke):
                                         add_to_seen(spoke)
-                                        deduped_spokes.append(spoke)
+                                        deduped_spokes.append(inject_h2s(spoke, spoke))
                             silo["layers"][layer_name] = deduped_spokes
 
     from app.models import HubSpokeCluster
