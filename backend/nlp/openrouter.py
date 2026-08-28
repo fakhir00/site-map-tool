@@ -634,11 +634,13 @@ For every raw keyword, rewrite it into a natural human search query:
 - Prioritize shorter, standard collocations (3-4 words) over longer descriptive phrases.
 - If the normalized query sounds unnatural, rewrite it again until it passes the "Would a real human type this?" test.
 
-**Step 1: STRICT SEED RELEVANCE GATE (CRITICAL)**
+**Step 1: TOPICAL NEIGHBORHOOD & STRICT SEED RELEVANCE (CRITICAL)**
 Compare the normalized query against the seed keyword set: {json.dumps(seed_keywords)}
+Is this query semantically within 1-2 hops of the seed keywords, or is it 3+ hops away? If it is beyond the immediate topical neighborhood of the exact seed, it MUST be DISCARDED.
 If the query does NOT directly support, align with, or fall under the exact mechanical use-cases of the seed keywords, REJECT IT IMMEDIATELY. Aggressively reject:
 - Generic umbrella terms that are too broad.
 - Tangential topics (e.g., if the seed is "lunar age calculator", reject "chinese new year traditions").
+- Other categories in the same broad niche (e.g., if the seed is "circuit diagram", reject "fishbone diagram", "network diagram", or other unrelated diagram types).
 - Completely unrelated niches.
 
 **Step 2: ANTI-CANNIBALIZATION & DEDUPLICATION (CRITICAL)**
