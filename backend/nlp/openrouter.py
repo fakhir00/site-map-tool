@@ -1366,7 +1366,11 @@ Return ONLY a JSON object in this exact format:
 
 async def cluster_hub_and_spoke(keywords: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
-    if not is_ai_configured() or not keywords:    prompt = f"""
+    if not is_ai_configured() or not keywords:
+        return None
+
+    trimmed = keywords[:500]
+    prompt = f"""
 Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
 You are a Senior SEO Content Strategist and Topical Authority Architect.
 
