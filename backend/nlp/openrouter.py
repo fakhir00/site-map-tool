@@ -1366,77 +1366,47 @@ Return ONLY a JSON object in this exact format:
 
 async def cluster_hub_and_spoke(keywords: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
-    if not is_ai_configured() or not keywords:
-        return None
-
-    trimmed = keywords[:500]
-    prompt = f"""
+    if not is_ai_configured() or not keywords:    prompt = f"""
 Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
-You are a Senior SEO Content Strategist and Topical Authority Architect with 10+ years of experience in semantic SEO, content gap analysis, and large-scale keyword clustering for Fortune 500 brands.
+You are a Senior SEO Content Strategist and Topical Authority Architect.
 
-[TASK - STRICT ENFORCEMENT]
+[TASK - STEP-BY-STEP STRICT ENFORCEMENT]
+You must process the provided keywords sequentially following these steps to build the Topical Map:
 
-You must group keywords into a highly structured Topical Map consisting of a Master Hub and several Sub-Silos, similar to this example structure:
-
-📍 MASTER HUB: The Ultimate Guide to [Core Topic]
-  ├── 🧱 FOUNDATION SPOKES (Authority)
-  └── 💰 MASTER COMMERCIAL SPOKES
-
-🪐 SUB-SILO 1: [Sub-Topic]
-  ├── 🧱 Foundations
-  ├── ⚙️ Action
-  └── 💰 Money
-
-🪐 SUB-SILO 2: [Sub-Topic]
-  ...
-
-Step 1: Master Hubs
-Identify the absolute broadest, most generic core entity and assign it as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
-The provided keyword list is sorted by search volume/competitiveness from highest to lowest. You MUST use the very first keyword in the list (the most competitive one) as the primary Master Hub's target keyword (output this in the `target_keyword` field).
+STEP 1: DYNAMIC TOPIC EXTRACTION & MASTER HUB
+Identify the absolute broadest, most generic core entity from the highest-volume keyword (the first in the list). 
+This is your "Primary Core Entity".
+Assign it as "📍 MASTER HUB: [Broadest Search Intent / Topic]". 
+Output its explicit target keyword in the `target_keyword` field.
 HARD RULE: You MUST create exactly ONE (1) Master Hub. Do NOT create multiple Master Hubs.
-Do NOT just default to "The Ultimate Guide to...". Instead, smartly name the Hub title based on the broadest, most natural search intent that a human would actually search for in this niche.
-Under the Master Hub, create layers such as "🧱 FOUNDATION SPOKES (Authority)" and "💰 MASTER COMMERCIAL SPOKES" for high-level overviews and top-level commercial intent.
 
-Step 2: Sub-Silos
-Identify distinct sub-themes or categories for the Master Hub. For each theme, create a Sub-Silo nested conceptually under the Master Hub.
-Format the title as "🪐 SUB-SILO [Number]: [Category Name] — [Sub-Topic Overview]". Output its explicit target keyword in the `target_keyword` field.
-Within each Sub-Silo, enforce the 3-Layer Stack:
-1. 🧱 Foundations: "What Is X?", "History of X", Databases.
-2. ⚙️ Action: "How to X", "Step-by-Step", Tutorials, Tools.
-3. 💰 Money: "Best X", "Buy X", "X Services".
+STEP 2: HUB SLUG INTEGRITY & UNIQUENESS
+- The Master Hub's target keyword MUST perfectly match the Primary Core Entity tokens.
+- NO Sub-Silo is allowed to use that exact same target keyword.
+- If a Sub-Silo wants to use the Master Hub target keyword, you MUST append a unique suffix like `hub` or `overview` (e.g., if Master Hub is "japanese kana", the Sub-Silo must be "japanese kana hub").
 
-HARD RULES FOR SUB-SILOS:
-- TOPICAL NEIGHBORHOOD: Keep only sub-topics within 2 semantic hops of the master hub. Is this sub-topic semantically within 2 hops of the master hub, or is it 5+ hops away? If it's 5+ hops away, it MUST be DISCARDED, not included as a sub-silo.
-- SUB-SILO CAP: You MUST NOT exceed 5 sub-silos. Limit to 3 to 5 sub-silos maximum. Rank by topical density, keep the top 5 only. If you generate a 6th sub-silo, you have failed.
-- ARTICLE THRESHOLD: Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
+STEP 3: TOPICAL NEIGHBORHOOD FIREWALL (THE 2-HOP RULE)
+Identify distinct sub-themes for the Master Hub to create Sub-Silos.
+- CRITICAL: Every generated Sub-Silo and Spoke MUST be semantically within 1-2 hops of the Master Hub core entity.
+- If any keyword or Sub-Silo concept is 3+ hops away (e.g., "anime" for a "kana" hub, or "fishbone diagram" for a "circuit diagram" hub), you must DELETE it immediately. Do not include it in the JSON output at all.
+- Limit to 3 to 5 Sub-Silos maximum. Rank by topical density, keep the top 5 only.
+- Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
 
-Step 3: Intent Tags & Cannibalization Rules (CRITICAL)
-- If a keyword is clearly a tool (calculator, generator, software), output it with a [Tool] tag in the title. Otherwise, do NOT append a [Blog] tag.
-- ANTI-CANNIBALIZATION: You must NEVER use the exact same Target Keyword twice. Furthermore, if the keyword list contains multiple variations of the exact same search intent (semantic similarity > 0.65), do NOT discard the redundant ones completely. Instead, keep the one with the highest search volume (which will appear earliest in the list) as the main Target Keyword for the article, and append the other redundant keywords as H2s using the `[Include H2: redundant_keyword]` format. Only create ONE single comprehensive article for that intent.
+STEP 4: COMMERCIAL CONSOLIDATION
+- If you are generating Commercial/Money pages (keywords containing "best", "top", "review", "software", "tool"), you are only allowed to create ONE primary commercial URL per distinct product category.
+- DO NOT generate separate URLs for micro-audiences (e.g., "best kana apps for professionals", "best kana apps for students").
+- Instead, create ONE master commercial page (e.g., "best kana apps") and append the micro-audiences as H2 anchor links using `[Include H2: ...]`. Delete the extra spokes.
 
-HARD RULES SUMMARY (STRICT ENFORCEMENT):
-- EXACTLY 1 Master Hub only. No exceptions.
-- 3 to 5 Sub-Silos maximum. Never 6 or more.
-- 30 to 50 Articles total across the entire map.
-- No empty sub-silos.
-- No off-topic keywords.
-- No cannibal duplicates (merge >0.65 semantic similarity as [Include H2: keyword]).
-- No sub-silos under 8 articles.
+STEP 5: BEGINNER PAGE LIMIT
+- If you are generating Action or Foundation pages for beginners (keywords containing "for beginners", "tutorial", "basics", "step-by-step"), limit to a maximum of TWO (2) beginner pages per silo:
+  - Page 1 (The Theory): "[Topic] Basics"
+  - Page 2 (The Action): "How to use [Topic] / Tutorial"
+- Consolidate any extras into H2 subheadings on these two pages using `[Include H2: ...]`.
 
-Step 4: Handling Entities (CRITICAL RULE)
-Look closely at the "type" field of each keyword.
-If "type" == "entity":
-- YOU ARE STRICTLY FORBIDDEN from creating a standalone article or tool page for it.
-- DO NOT assign an "entity" keyword as a "Target Keyword".
-- Instead, you MUST group it under a related article (which has a primary/long-tail target keyword) by appending it as an H2 suggestion.
-Format for appending entities to an article:
-"[Optimized Title] (Target Keyword: [primary/long-tail keyword]) [Include H2: entity1, entity2]"
-
-Step 5: Zero Competition Quick-Wins
-If a keyword in the provided list has `"is_ai": true`, place it in a special layer named "⚡️ ZERO COMPETITION QUICK-WINS" within the most relevant Hub or Sub-Silo.
-
-Step 6: The NOISE / DISCARD Bin
-If you encounter keywords in the list that are COMPLETELY unrelated to the main topic (e.g. completely different niche, completely different language, etc.) and they do not belong in ANY Hub or Sub-Silo, you MUST place them in a special top-level hub called "🗑️ NOISE / DISCARD" so they do not pollute the real topical map.
+STEP 6: INTENT TAGS & ENTITIES
+- If a keyword is a tool/calculator/software, output it with a [Tool] tag in the title.
+- ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
+- ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append them as `[Include H2: entity]` to the most relevant article.
 
 *Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly. 
