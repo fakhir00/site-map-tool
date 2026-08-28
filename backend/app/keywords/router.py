@@ -297,7 +297,8 @@ async def generate_hub_spoke(
 
     # Phase 3: The AI Skeleton
     from nlp.openrouter import cluster_hub_and_spoke
-    clusters = await cluster_hub_and_spoke(clean_keywords_for_llm, main_keyword=project.main_keyword)
+    main_kw = project.target_keywords[0] if project.target_keywords else project.name
+    clusters = await cluster_hub_and_spoke(clean_keywords_for_llm, main_keyword=main_kw)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")
 
