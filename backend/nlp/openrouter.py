@@ -522,13 +522,19 @@ Each object must have:
         return []
 
 
-def extract_keywords_from_urls_ai(seed_keywords: list[str], urls: list[Any]) -> list[dict[str, Any]]:
+def extract_keywords_from_urls_ai(
+    seed_keywords: list[str],
+    urls: list[Any],
+    topic_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Uses LLM to intelligently extract SEO keywords from competitor URL slugs."""
     if not is_ai_configured() or not urls:
         return []
 
     from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
-    topic_terms = seed_keyword_terms(seed_keywords)
+    if not topic_terms:
+        topic_terms = seed_keyword_terms(seed_keywords)
     
     all_results = []
     chunk_size = 100
@@ -580,7 +586,7 @@ Example output format:
                 if not isinstance(item, dict):
                     continue
                 phrase = clean_phrase(str(item.get("phrase", "")))
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
                     continue
                     
                 kw_type = normalize_keyword_type(item.get("type"))

@@ -202,7 +202,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                     
                     if competitor_url_objects:
                         logger.info("[%s] Extracting AI keywords from %s competitor URLs", project_id, len(competitor_url_objects))
-                        ai_extracted = extract_keywords_from_urls_ai(seed_keywords, competitor_url_objects)
+                        ai_extracted = extract_keywords_from_urls_ai(seed_keywords, competitor_url_objects, topic_terms=topic_terms, negative_terms=negative_terms)
                         
                         if ai_extracted:
                             # Apply strict LLM filter incrementally
