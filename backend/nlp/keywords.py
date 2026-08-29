@@ -130,12 +130,19 @@ def is_publishable_keyword(
     phrase: str,
     min_words: int = 2,
     topic_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
 ) -> bool:
     """Validate final keywords that are safe to store, export, or show."""
     cleaned = clean_phrase(phrase)
     if not is_valid_keyword(cleaned, min_words=min_words):
         return False
-    if topic_terms and not (keyword_terms(cleaned, min_len=2) & topic_terms):
+        
+    terms = keyword_terms(cleaned, min_len=2)
+    
+    if negative_terms and (terms & negative_terms):
+        return False
+        
+    if topic_terms and not (terms & topic_terms):
         return False
     return True
 

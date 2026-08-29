@@ -212,6 +212,65 @@ def _chat_text(
         raise e
 
 
+_semantic_cache = {}
+
+async def generate_core_domain_terms(target_keywords: list[str], audit_summary: str | None = None) -> dict[str, list[str]]:
+    """
+    Generate dynamic Core Domain Terms and Generic Terms for upstream semantic filtering.
+    """
+    from .openrouter import is_ai_configured, _achat_json
+    import json
+    
+    if not is_ai_configured() or not target_keywords:
+        return {"core_terms": [], "generic_terms": [], "negative_terms": []}
+
+    cache_key = json.dumps(target_keywords)
+    if cache_key in _semantic_cache:
+        return _semantic_cache[cache_key]
+
+    prompt = f"""
+You are an expert SEO taxonomist and NLP analyzer. 
+I have a website defined by these Seed Keywords: {json.dumps(target_keywords)}
+And this Context/Audit Summary:
+{audit_summary or "No summary provided. Rely solely on seed keywords."}
+
+Your task is to analyze the semantic core of this website and break it down into three distinct JSON arrays to be used as a Python stopword/gate filter.
+
+1. "core_terms": A comprehensive array of the core domain entities, including synonyms, closely related niches, and semantic variations. (e.g., if the seed is "circuit diagram maker", the core terms are "circuit", "wiring", "electronics", "electric", "schematic", "pcb").
+2. "generic_terms": An array of generic modifiers that often appear in keywords but DO NOT define the niche (e.g., "diagram", "software", "maker", "tool", "app", "system", "calculator").
+3. "negative_terms": An array of terms representing 3rd-party drift (e.g. "jira", "sharepoint", "trello") or distinctly unrelated niches that might mistakenly overlap (e.g. "volcano", "muscular", "urinary").
+
+Ensure all terms are lowercase strings.
+Do not output anything except valid JSON matching this schema:
+{{
+  "core_terms": ["..."],
+  "generic_terms": ["..."],
+  "negative_terms": ["..."]
+}}
+"""
+    try:
+        payload = await _achat_json(
+            system_prompt="You output only valid JSON.",
+            user_prompt=prompt,
+            temperature=0.1,
+            max_tokens=500,
+        )
+        if isinstance(payload, dict):
+            res = {
+                "core_terms": payload.get("core_terms", []),
+                "generic_terms": payload.get("generic_terms", []),
+                "negative_terms": payload.get("negative_terms", [])
+            }
+            _semantic_cache[cache_key] = res
+            return res
+    except Exception as exc:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("generate_core_domain_terms failed: %s", exc)
+        
+    return {"core_terms": [], "generic_terms": []}
+
+
 def verify_cluster_intent(cluster: list[dict]) -> dict:
     """
     Verifies a tight (Level-2) cluster. Returns one of:
@@ -1404,23 +1463,20 @@ HARD RULE: You MUST create exactly ONE (1) Master Hub based strictly on the core
 STEP 2: HUB SLUG INTEGRITY & UNIQUENESS
 - The Master Hub's target keyword MUST perfectly match the Primary Core Entity tokens.
 - NO Sub-Silo is allowed to use that exact same target keyword.
-- If a Sub-Silo wants to use the Master Hub target keyword, you MUST append a unique suffix like `hub` or `overview` (e.g., if Master Hub is "japanese kana", the Sub-Silo must be "japanese kana hub").
+- If a Sub-Silo wants to use the Master Hub target keyword, you MUST append a unique suffix like `hub` or `overview`.
 
-STEP 3: TOPICAL NEIGHBORHOOD FIREWALL (THE 2-HOP RULE)
+STEP 3: TOPICAL NEIGHBORHOOD FIREWALL
 Identify distinct sub-themes for the Master Hub to create Sub-Silos.
-- CRITICAL: Every generated Sub-Silo and Spoke MUST be semantically within 1-2 hops of the Master Hub core entity.
-- If any keyword or Sub-Silo concept is 3+ hops away (e.g., "anime" for a "kana" hub, or "fishbone diagram" for a "circuit diagram" hub), you must DELETE it immediately. Do not include it in the JSON output at all.
-- 3RD-PARTY DRIFT: If a keyword shifts the primary focus to a 3rd-party software integration, workspace, or file storage (e.g., Jira, SharePoint, Google Drive, OneDrive, Trello) rather than the core entity itself, it is considered 3+ hops away and MUST be DELETED.
 - Limit to 3 to 5 Sub-Silos maximum. Rank by topical density, keep the top 5 only.
 - Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
 
 STEP 4: COMMERCIAL CONSOLIDATION
-- If you are generating Commercial/Money pages (keywords containing "best", "top", "review", "software", "tool"), you are only allowed to create ONE primary commercial URL per distinct product category.
-- DO NOT generate separate URLs for micro-audiences (e.g., "best kana apps for professionals", "best kana apps for students").
-- Instead, create ONE master commercial page (e.g., "best kana apps") and append the micro-audiences as H2 anchor links using `[Include H2: ...]`. Delete the extra spokes.
+- If you are generating Commercial/Money pages, you are only allowed to create ONE primary commercial URL per distinct product category.
+- DO NOT generate separate URLs for micro-audiences (e.g., "best apps for professionals", "best apps for students").
+- Instead, create ONE master commercial page and append the micro-audiences as H2 anchor links using `[Include H2: ...]`. Delete the extra spokes.
 
 STEP 5: BEGINNER PAGE LIMIT
-- If you are generating Action or Foundation pages for beginners (keywords containing "for beginners", "tutorial", "basics", "step-by-step"), limit to a maximum of TWO (2) beginner pages per silo:
+- If you are generating Action or Foundation pages for beginners, limit to a maximum of TWO (2) beginner pages per silo:
   - Page 1 (The Theory): "[Topic] Basics"
   - Page 2 (The Action): "How to use [Topic] / Tutorial"
 - Consolidate any extras into H2 subheadings on these two pages using `[Include H2: ...]`.
@@ -1428,13 +1484,7 @@ STEP 5: BEGINNER PAGE LIMIT
 STEP 6: INTENT TAGS & ENTITIES
 - If a keyword is a tool/calculator/software, output it with a [Tool] tag in the title.
 - ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
-- ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append them as `[Include H2: entity]` to the most relevant article.
-
-[EXPLICIT FAILURE CONDITIONS]
-If you violate any of the following, your response will be programmatically REJECTED and you will be penalized:
-1. Creating a Sub-Silo with fewer than 8 total articles. (MERGE THEM!)
-2. Missing required layers within a Sub-Silo.
-3. Ignoring the 2-Hop rule for 3rd-party integrations.
+- ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append the as `[Include H2: entity]` to the most relevant article.
 
 *Visually Optimized JSON Output.*
 • Output MUST be a valid JSON object matching the schema below exactly. 
@@ -1445,6 +1495,7 @@ If you violate any of the following, your response will be programmatically REJE
 
 EXPECTED JSON SCHEMA:
 {{
+  "_planning_thought": "Before generating URLs, explain your logic. E.g., 'I will create 3 sub-silos. Sub-Silo 1 has 12 articles. Sub-Silo 2 has 9 articles. I am verifying no sub-silos have fewer than 8 articles.'",
   "hubs": [
     {{
       "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
@@ -1460,6 +1511,7 @@ EXPECTED JSON SCHEMA:
           "layers": {{
             "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
             "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
+            "💰 Money": [],
             "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
           }}
         }}
@@ -1475,6 +1527,14 @@ EXPECTED JSON SCHEMA:
     }}
   ]
 }}
+
+[EXPLICIT FAILURE CONDITIONS]
+If you violate any of the following, your response will be programmatically REJECTED and you will be penalized:
+1. Creating a Sub-Silo with fewer than 8 total articles. (MERGE THEM!)
+2. Missing required layers within a Sub-Silo.
+
+Target Keywords List:
+{json.dumps(trimmed)}
 
 Main Keywords (Create Master Hubs and Spokes using ONLY these):
 {json.dumps([kw for kw in trimmed if kw.get("type") != "entity"])}

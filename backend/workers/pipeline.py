@@ -61,8 +61,9 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         _mark_running(db, project, job)
         logger.info("[%s] Starting concurrent scan for %s", project_id, project.domain)
         seed_keywords = _clean_seed_keywords(project.target_keywords)
-        topic_terms = _topic_terms(seed_keywords)
         audit_summary = project.audit_summary
+        topic_terms = _topic_terms(seed_keywords, audit_summary)
+        negative_terms = _negative_terms(seed_keywords, audit_summary)
 
         if resume_existing:
             pending_urls = _pending_urls(db, project_uuid)
@@ -190,8 +191,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         u.readability_score = 0.0
                         u.scraped_at = datetime.utcnow()
                         
-                        if u.source_type == "own":
-                            own_phrases.update(_url_keyword_candidates(u.url, topic_terms, include_single_terms=True))
+                        if u.url:
+                            own_phrases.update(_url_keyword_candidates(u.url, topic_terms, negative_terms, include_single_terms=True))
                         else:
                             competitor_url_objects.append(u)
                             
@@ -259,12 +260,13 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             _mark_complete(db, project, job, "paused")
             return
             
-
-
         ai_keywords = generate_ai_keywords_sync(seed_keywords)
         if ai_keywords:
             existing_phrases = {row[0] for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_uuid)).all()}
-            own_keyword_phrases = _own_sitemap_keyword_phrases(db, project_uuid, topic_terms)
+            if project.own_domain:
+                own_keyword_phrases = _own_sitemap_keyword_phrases(db, project_uuid, topic_terms, negative_terms)
+            else:
+                own_keyword_phrases = set()
             all_excluded = existing_phrases | own_keyword_phrases
             
             strict_filtered_ai = filter_keyword_gap_recommendations(
@@ -433,6 +435,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
     required_terms = _search_required_terms(seed_keywords)
     competitor_limit = max(10, settings.MAX_COMPETITOR_DOMAINS)
     candidate_limit = max(competitor_limit * 2, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
+    per_kw_limit = max(1, candidate_limit // max(1, len(seed_keywords)))
     search_locale = getattr(project, 'search_locale', 'us') or 'us'
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
@@ -469,6 +472,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
         if not kw: continue
         
         logger.info(f"Discovering competitors for keyword: {kw}")
+        start_count = len(competitor_domains)
         
         # 1. Primary explicit search for this specific keyword
         primary_results_added = False
@@ -477,17 +481,17 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
             for res in apify_results:
                 add_domain(res["url"], require_relevance=False, query=kw, source="apify_page_1")
                 primary_results_added = True
-                if len(competitor_domains) >= candidate_limit:
+                if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
                     break
                     
-        if not primary_results_added and len(competitor_domains) < candidate_limit:
+        if not primary_results_added and len(competitor_domains) - start_count < per_kw_limit and len(competitor_domains) < candidate_limit:
             for href in _search_result_urls(kw, include_google=True, locale=search_locale):
                 add_domain(href, require_relevance=False, query=kw, source="google_page_1")
-                if len(competitor_domains) >= candidate_limit:
+                if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
                     break
 
-        if len(competitor_domains) >= candidate_limit:
-            break
+        if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+            continue
             
         # 2. Secondary variant searches for this keyword
         for query in _competitor_search_queries([kw]):
@@ -497,16 +501,16 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
                 for res in apify_results:
                     add_domain(res["url"], query=query)
                     query_results_added = True
-                    if len(competitor_domains) >= candidate_limit:
+                    if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
                         break
                         
-            if not query_results_added and len(competitor_domains) < candidate_limit:
+            if not query_results_added and len(competitor_domains) - start_count < per_kw_limit and len(competitor_domains) < candidate_limit:
                 for href in _search_result_urls(query, include_google=True, locale=search_locale):
                     add_domain(href, query=query)
-                    if len(competitor_domains) >= candidate_limit:
+                    if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
                         break
                         
-            if len(competitor_domains) >= candidate_limit:
+            if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
                 break
                 
         if len(competitor_domains) >= candidate_limit:
@@ -536,7 +540,7 @@ def _primary_competitor_search_query(seed_keywords: list[str]) -> str:
 
 
 def _fallback_competitor_domains(seed_keywords: list[str]) -> list[str]:
-    topic_terms = _topic_terms(seed_keywords)
+    topic_terms = _topic_terms(seed_keywords, None)
     if {"circuit", "diagram"} & topic_terms or {"schematic", "electronics"} & topic_terms:
         return [
             "https://www.smartdraw.com",
@@ -1076,37 +1080,80 @@ def _keyword_phrases(keyword_result: Any, min_words: int) -> set[str]:
     return phrases
 
 
-def _topic_terms(seed_keywords: list[str]) -> set[str]:
+def _topic_terms(seed_keywords: list[str], audit_summary: str | None = None) -> set[str]:
+    from nlp.openrouter import generate_core_domain_terms
     from nlp.keywords import seed_keyword_terms
+    import asyncio
 
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    if loop.is_running():
+        # In case we are already in an event loop, fallback to simple extraction
+        return seed_keyword_terms(seed_keywords)
+        
+    try:
+        result = loop.run_until_complete(generate_core_domain_terms(seed_keywords, audit_summary))
+        core_terms = set(result.get("core_terms", []))
+        if core_terms:
+            return core_terms
+    except Exception as e:
+        logger.error(f"Failed to generate dynamic core terms: {e}")
+
+    # Fallback if LLM fails
     terms = seed_keyword_terms(seed_keywords)
     expansions = {
         "circuit": {"circuits", "electrical", "electronics", "schematic", "schematics", "wiring"},
         "diagram": {"diagrams", "drawing", "drawings", "schematic", "schematics"},
         "maker": {"builder", "creator", "editor", "generator", "software", "tool", "tools"},
-        "wheel": {"picker", "random", "spinner", "spin"},
-        "yes": {"no", "picker", "random", "spinner"},
-        "no": {"yes", "picker", "random", "spinner"},
     }
     expanded = set(terms)
     for term in terms:
         expanded.update(expansions.get(term, set()))
     return expanded
 
+def _negative_terms(seed_keywords: list[str], audit_summary: str | None = None) -> set[str]:
+    from nlp.openrouter import generate_core_domain_terms
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    if loop.is_running():
+        return set()
+        
+    try:
+        result = loop.run_until_complete(generate_core_domain_terms(seed_keywords, audit_summary))
+        return set(result.get("negative_terms", []))
+    except Exception as e:
+        logger.error(f"Failed to generate dynamic negative terms: {e}")
+
+    return set()
+
 
 def _own_sitemap_keyword_phrases(
     db: Session,
     project_id: uuid.UUID,
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
 ) -> set[str]:
     from app.models import Url
-
-    rows = db.execute(
-        select(Url.url).where(Url.project_id == project_id, Url.source_type == "own")
-    ).all()
+    from scraping.sitemap import load_sitemap_urls
+    
+    project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+    if not project or not project.own_domain:
+        return set()
+        
+    urls = load_sitemap_urls(project.own_domain)
     phrases: set[str] = set()
-    for (url,) in rows:
-        phrases.update(_url_keyword_candidates(url, topic_terms, include_single_terms=True))
+    for url in urls:
+        phrases.update(_url_keyword_candidates(url, topic_terms, negative_terms, include_single_terms=True))
     return phrases
 
 
@@ -1140,6 +1187,7 @@ def _url_words(url: str) -> list[str]:
 def _url_keyword_candidates(
     url: str,
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
     include_single_terms: bool = False,
 ) -> set[str]:
     from nlp.keywords import clean_phrase, is_publishable_keyword, is_valid_keyword
@@ -1155,7 +1203,7 @@ def _url_keyword_candidates(
     for size in range(max_ngram, 1, -1):
         for index in range(0, len(words) - size + 1):
             phrase = clean_phrase(" ".join(words[index:index + size]))
-            if is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+            if is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
                 candidates.add(phrase)
 
     return candidates
@@ -1174,8 +1222,9 @@ def _collect_sitemap_keywords(
     url: str,
     url_id: uuid.UUID,
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
 ) -> None:
-    for phrase in _url_keyword_candidates(url, topic_terms, include_single_terms=False):
+    for phrase in _url_keyword_candidates(url, topic_terms, negative_terms, include_single_terms=False):
         if phrase not in accumulator:
             accumulator[phrase] = {
                 "type": "primary",
@@ -1193,12 +1242,13 @@ def _collect_keywords(
     keyword_result: Any,
     url_id: uuid.UUID,
     topic_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
 ) -> None:
     from nlp.keywords import clean_phrase, is_publishable_keyword
 
     def add_keyword(phrase: str, keyword_type: str, score: float = 1.0) -> None:
         key = clean_phrase(phrase)
-        if not is_publishable_keyword(key, min_words=2):
+        if not is_publishable_keyword(key, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
             return
         if key not in accumulator:
             accumulator[key] = {"type": keyword_type, "count": 0, "url_ids": set(), "score": score}
@@ -1344,12 +1394,13 @@ def _refine_keyword_gap_recommendations(
     seed_keywords: list[str],
     accumulator: dict[str, dict[str, Any]],
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
     audit_summary: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     if not accumulator:
         return accumulator
 
-    candidate_rows = _keyword_gap_candidate_rows(db, project_id, accumulator, topic_terms)
+    candidate_rows = _keyword_gap_candidate_rows(db, project_id, accumulator, topic_terms, negative_terms)
     if not candidate_rows:
         return {}
 
@@ -1371,6 +1422,7 @@ def _refine_keyword_gap_recommendations(
             accumulator,
             ai_recommendations,
             topic_terms,
+            negative_terms,
         )
         if refined:
             logger.info("AI keyword gap filter kept %s of %s candidates", len(refined), len(accumulator))
@@ -1379,7 +1431,7 @@ def _refine_keyword_gap_recommendations(
             logger.info("AI keyword gap filter correctly rejected all %s candidates", len(accumulator))
             return {}
 
-    fallback = _build_heuristic_gap_accumulator(accumulator, candidate_rows, topic_terms)
+    fallback = _build_heuristic_gap_accumulator(accumulator, candidate_rows, topic_terms, negative_terms)
     logger.info("Heuristic keyword gap filter kept %s of %s candidates", len(fallback), len(accumulator))
     return fallback
 
@@ -1389,6 +1441,7 @@ def _keyword_gap_candidate_rows(
     project_id: uuid.UUID,
     accumulator: dict[str, dict[str, Any]],
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
 ) -> list[dict[str, Any]]:
     from app.models import Url
 
@@ -1415,7 +1468,7 @@ def _keyword_gap_candidate_rows(
             for url_id in url_ids
             if url_id in domain_by_url_id
         })
-        score = _gap_candidate_score(phrase, data, domains, topic_terms)
+        score = _gap_candidate_score(phrase, data, domains, topic_terms, negative_terms)
         candidates.append({
             "phrase": phrase,
             "type": data.get("type", "primary"),
@@ -1442,6 +1495,7 @@ def _gap_candidate_score(
     data: dict[str, Any],
     domains: list[str],
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
 ) -> float:
     terms = _phrase_terms(phrase)
     word_count = len(phrase.split())
@@ -1450,6 +1504,8 @@ def _gap_candidate_score(
     score = frequency * 2.0 + domain_count * 4.0
     if topic_terms:
         score += len(terms & topic_terms) * 3.0
+    if negative_terms:
+        score -= len(terms & negative_terms) * 10.0
     if 2 <= word_count <= 5:
         score += 2.0
     if any(term in phrase for term in ("template", "generator", "software", "checker", "calculator", "guide")):
@@ -1463,6 +1519,7 @@ def _build_ai_refined_accumulator(
     accumulator: dict[str, dict[str, Any]],
     ai_recommendations: list[dict[str, Any]],
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
     from nlp.keywords import clean_phrase, is_publishable_keyword, check_intent_cannibalization
     from nlp.openrouter import normalize_keyword_type
@@ -1480,7 +1537,7 @@ def _build_ai_refined_accumulator(
             source_phrase = phrase
             
         source_data = source_lookup.get(source_phrase)
-        if not source_data or not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+        if not source_data or not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
             continue
 
         # Check against all previously seen phrases for cannibalization (subsets or high jaccard)
@@ -1518,6 +1575,7 @@ def _build_heuristic_gap_accumulator(
     accumulator: dict[str, dict[str, Any]],
     candidate_rows: list[dict[str, Any]],
     topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
     limit = max(1, settings.AI_KEYWORD_GAP_RESULT_LIMIT)
     
