@@ -293,9 +293,19 @@ async def generate_hub_spoke(
     # Phase 1: Filter
 
     h2_map = {}
+
+    from nlp.openrouter import generate_core_domain_terms
+    semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
+    negative_terms = set(semantic_res.get("negative_terms", []))
+    
     clean_candidates = []
     for kw in existing_keywords:
         phrase_lower = kw["phrase"].lower()
+        
+        # Retroactive garbage collection: block any keywords containing negative terms
+        phrase_terms = set(re.findall(r'[a-z0-9]+', phrase_lower))
+        if phrase_terms & negative_terms:
+            continue
             
         # Drop keywords containing past years (e.g., 2023, 2024, 2025 when we are in 2026)
         year_match = re.search(r'\b(19\d{2}|20\d{2})\b', phrase_lower)
