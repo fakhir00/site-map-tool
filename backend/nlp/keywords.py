@@ -94,7 +94,7 @@ def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
     if sum(c.isdigit() for c in phrase) / len(phrase) > 0.25:
         return False
     # Too many individual chars
-    if any(len(w) == 1 for w in words if w.isalpha()):
+    if sum(1 for w in words if w.isalpha() and len(w) == 1 and w not in STOPWORDS) > 0:
         return False
     if re.search(r"(.)\1{4,}", phrase):
         return False

@@ -236,9 +236,9 @@ And this Context/Audit Summary:
 
 Your task is to analyze the semantic core of this website and break it down into three distinct JSON arrays to be used as a Python stopword/gate filter.
 
-1. "core_terms": A comprehensive array of the core domain entities, including synonyms, closely related niches, and semantic variations. (e.g., if the seed is "circuit diagram maker", the core terms are "circuit", "wiring", "electronics", "electric", "schematic", "pcb").
-2. "generic_terms": An array of generic modifiers that often appear in keywords but DO NOT define the niche (e.g., "diagram", "software", "maker", "tool", "app", "system", "calculator").
-3. "negative_terms": An array of terms representing 3rd-party drift (e.g. "jira", "sharepoint", "trello") or distinctly unrelated niches that might mistakenly overlap (e.g. "volcano", "muscular", "urinary").
+1. "core_terms": A comprehensive array of the core domain entities, including synonyms, closely related niches, and semantic variations. (e.g., if the seed is "circuit diagram maker", the core terms are "circuit", "wiring", "electronics", "electric", "schematic", "pcb"). Limit to max 30 terms.
+2. "generic_terms": An array of generic modifiers that often appear in keywords but DO NOT define the niche (e.g., "diagram", "software", "maker", "tool", "app", "system", "calculator"). Limit to max 30 terms.
+3. "negative_terms": An array of terms representing 3rd-party drift (e.g. "jira", "sharepoint", "trello") or distinctly unrelated niches that might mistakenly overlap (e.g. "volcano", "muscular", "urinary"). Limit to max 20 terms.
 
 Ensure all terms are lowercase strings.
 Do not output anything except valid JSON matching this schema:
@@ -253,13 +253,23 @@ Do not output anything except valid JSON matching this schema:
             system_prompt="You output only valid JSON.",
             user_prompt=prompt,
             temperature=0.1,
-            max_tokens=500,
+            max_tokens=2000,
         )
         if isinstance(payload, dict):
+            # Ensure we only have single words
+            def _extract_words(term_list):
+                words = set()
+                for term in term_list:
+                    for w in str(term).lower().replace("-", " ").split():
+                        w = ''.join(c for c in w if c.isalnum())
+                        if len(w) > 1:
+                            words.add(w)
+                return list(words)
+                
             res = {
-                "core_terms": payload.get("core_terms", []),
-                "generic_terms": payload.get("generic_terms", []),
-                "negative_terms": payload.get("negative_terms", [])
+                "core_terms": _extract_words(payload.get("core_terms", [])),
+                "generic_terms": _extract_words(payload.get("generic_terms", [])),
+                "negative_terms": _extract_words(payload.get("negative_terms", []))
             }
             _semantic_cache[cache_key] = res
             return res

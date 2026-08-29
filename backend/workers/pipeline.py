@@ -191,7 +191,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         u.readability_score = 0.0
                         u.scraped_at = datetime.utcnow()
                         
-                        if u.url:
+                        if u.source_type == "own":
                             own_phrases.update(_url_keyword_candidates(u.url, topic_terms, negative_terms, include_single_terms=True))
                         else:
                             competitor_url_objects.append(u)
