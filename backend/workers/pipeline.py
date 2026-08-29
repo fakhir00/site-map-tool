@@ -1144,15 +1144,12 @@ def _own_sitemap_keyword_phrases(
     negative_terms: set[str] | None,
 ) -> set[str]:
     from app.models import Url
-    from scraping.sitemap import load_sitemap_urls
-    
-    project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
-    if not project or not project.own_domain:
-        return set()
-        
-    urls = load_sitemap_urls(project.own_domain)
+
+    rows = db.execute(
+        select(Url.url).where(Url.project_id == project_id, Url.source_type == "own")
+    ).all()
     phrases: set[str] = set()
-    for url in urls:
+    for (url,) in rows:
         phrases.update(_url_keyword_candidates(url, topic_terms, negative_terms, include_single_terms=True))
     return phrases
 
