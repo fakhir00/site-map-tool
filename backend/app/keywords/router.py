@@ -386,17 +386,45 @@ async def generate_hub_spoke(
                 "target_kw": phrase
             })
 
-    # Phase 5: Semantic Deduplication
+    # Phase 5: Semantic Deduplication (The Bouncer)
     def semantic_tokenize(phrase: str) -> list[str]:
         slug = re.sub(r'[^\w]+', '-', phrase.lower()).strip('-')
         tokens = slug.split('-')
-        stopwords = {
-            "guide", "how", "to", "use", "for", "and", "vs", "the", "of", "a", "an", "is", "what", "with", "in", "on", "at",
-            "tool", "tools", "software", "app", "apps", "maker", "makers", "creator", "creators", "generator", "generators",
-            "builder", "builders", "service", "services", "agency", "agencies", "company", "companies", "calculator", "calculators",
-            "converter", "converters", "online", "free", "cheap", "best", "near", "tutorial", "tutorials"
+        
+        # Layer 2: Synonym Normalization
+        synonym_map = {
+            "guide": "tutorial",
+            "understanding": "meaning",
+            "meanings": "meaning",
+            "test": "quiz",
+            "software": "tool",
+            "tools": "tool",
+            "best": "top",
+            "creator": "maker",
+            "creators": "maker",
+            "builder": "maker",
+            "builders": "maker",
+            "generator": "maker",
+            "generators": "maker",
+            "service": "agency",
+            "services": "agency",
+            "company": "agency",
+            "companies": "agency",
+            "online": "web"
         }
-        filtered = [t for t in tokens if t not in stopwords and t]
+        
+        stopwords = {
+            "how", "to", "use", "for", "and", "vs", "the", "of", "a", "an", "is", "what", "with", "in", "on", "at"
+        }
+        
+        filtered = []
+        for t in tokens:
+            if t not in stopwords and t:
+                # Apply synonym map
+                mapped_t = synonym_map.get(t, t)
+                filtered.append(mapped_t)
+                
+        # Layer 1: Sorted to catch swapped words
         return sorted(filtered)
 
     seen_tokens_list = []
@@ -430,11 +458,22 @@ async def generate_hub_spoke(
         tokens = semantic_tokenize(phrase)
         if not tokens:
             return False
+            
+        phrase_normalized = " ".join(tokens)
+        
         for seen_tokens in seen_tokens_list:
+            seen_normalized = " ".join(seen_tokens)
+            
+            # Layer 1 & Layer 2: Exact match after swapping and synonyms
+            if phrase_normalized == seen_normalized:
+                return True
+                
+            # Layer 3: > 70% Overlap
             overlap = len(set(tokens) & set(seen_tokens))
             max_len = max(len(tokens), len(seen_tokens))
-            if max_len > 0 and (overlap / max_len) >= 0.8:
+            if max_len > 0 and (overlap / max_len) > 0.70:
                 return True
+                
         return False
 
     def add_to_seen(phrase: str):

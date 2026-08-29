@@ -1496,16 +1496,14 @@ STEP 6: INTENT TAGS & ENTITIES
 - ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
 - ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append the as `[Include H2: entity]` to the most relevant article.
 
-*Visually Optimized JSON Output.*
-• Output MUST be a valid JSON object matching the schema below exactly. 
-• DO NOT USE markdown ticks for the JSON output. Return pure JSON.
-• Treat both the Master Hub and each Sub-Silo as separate objects in the `hubs` array.
-• Each Hub MUST have a `target_keyword` field.
-• Format for spokes: "[Optimized Title] (Target Keyword: [exact keyword])" or "[Optimized Title] (Target Keyword: [exact keyword]) [Include H2: entity]"
-
-EXPECTED JSON SCHEMA:
+[OUTPUT SCHEMA - STRICT JSON ONLY]
 {{
   "_planning_thought": "Before generating URLs, explain your logic. E.g., 'I will create 3 sub-silos. Sub-Silo 1 has 12 articles. Sub-Silo 2 has 9 articles. I am verifying no sub-silos have fewer than 8 articles.'",
+  "_deduplication_check": {{
+    "layer_1_swapped_words": "Checked: Did any URLs swap words? If yes, I deleted the weaker one.",
+    "layer_2_synonyms": "Checked: Did any URLs use synonyms like 'understanding' vs 'meanings', 'test' vs 'quiz', 'guide' vs 'tutorial'? If yes, I merged them.",
+    "layer_3_overlap_70_percent": "Checked: Do any URLs share more than 70% of the same words (e.g., 'how-to-draw' vs 'step-by-step-draw')? If yes, I deleted the weaker one."
+  }},
   "hubs": [
     {{
       "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
