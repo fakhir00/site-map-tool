@@ -423,8 +423,9 @@ async def generate_hub_spoke(
             "understanding": "meaning",
             "meanings": "meaning",
             "test": "quiz",
-            "software": "tool",
-            "tools": "tool",
+            "software": "maker",
+            "tool": "maker",
+            "tools": "maker",
             "best": "top",
             "creator": "maker",
             "creators": "maker",
@@ -445,15 +446,21 @@ async def generate_hub_spoke(
         
         filtered = []
         for t in tokens:
-            if t not in stopwords and t:
-                # Apply synonym map
-                mapped_t = synonym_map.get(t, t)
-                filtered.append(mapped_t)
+            if not t or t in stopwords:
+                continue
+                
+            # Basic stemming: remove trailing 's' (unless it ends in 'ss')
+            if t.endswith('s') and not t.endswith('ss') and len(t) > 3:
+                t = t[:-1]
+                
+            # Apply synonym map
+            mapped_t = synonym_map.get(t, t)
+            filtered.append(mapped_t)
                 
         # Layer 1: Sorted to catch swapped words
         return sorted(filtered)
 
-    seen_tokens_list = []
+    seen_tokens_map = {}
     
     def clean_hub_title(title: str) -> str:
         title = re.sub(r'^(📍 MASTER HUB:|🪐 SUB-SILO \d+:)\s*', '', title)
@@ -465,96 +472,129 @@ async def generate_hub_spoke(
             hub_kw = hub.get("target_keyword")
             if hub_kw:
                 tokens = semantic_tokenize(hub_kw)
-                if tokens: seen_tokens_list.append(tokens)
+                if tokens: seen_tokens_map[tuple(tokens)] = hub_kw
             if "hub_title" in hub:
-                title_tokens = semantic_tokenize(clean_hub_title(hub["hub_title"]))
-                if title_tokens: seen_tokens_list.append(title_tokens)
+                title_clean = clean_hub_title(hub["hub_title"])
+                title_tokens = semantic_tokenize(title_clean)
+                if title_tokens: seen_tokens_map[tuple(title_tokens)] = title_clean
             
             if "sub_silos" in hub and isinstance(hub["sub_silos"], list):
                 for silo in hub["sub_silos"]:
                     silo_kw = silo.get("target_keyword")
                     if silo_kw:
                         tokens = semantic_tokenize(silo_kw)
-                        if tokens: seen_tokens_list.append(tokens)
+                        if tokens: seen_tokens_map[tuple(tokens)] = silo_kw
                     if "hub_title" in silo:
-                        title_tokens = semantic_tokenize(clean_hub_title(silo["hub_title"]))
-                        if title_tokens: seen_tokens_list.append(title_tokens)
+                        title_clean = clean_hub_title(silo["hub_title"])
+                        title_tokens = semantic_tokenize(title_clean)
+                        if title_tokens: seen_tokens_map[tuple(title_tokens)] = title_clean
 
-    def check_duplicate(phrase: str) -> bool:
+    def check_duplicate(phrase: str) -> str | None:
+        """Returns the original phrase of the survivor if duplicate, else None."""
         tokens = semantic_tokenize(phrase)
         if not tokens:
-            return False
+            return None
             
         phrase_normalized = " ".join(tokens)
         
-        for seen_tokens in seen_tokens_list:
+        for seen_tokens, survivor_phrase in seen_tokens_map.items():
             seen_normalized = " ".join(seen_tokens)
             
             # Layer 1 & Layer 2: Exact match after swapping and synonyms
             if phrase_normalized == seen_normalized:
-                return True
+                return survivor_phrase
                 
-            # Layer 3: > 70% Overlap
+            # Layer 3: >= 50% Overlap
             overlap = len(set(tokens) & set(seen_tokens))
             max_len = max(len(tokens), len(seen_tokens))
-            if max_len > 0 and (overlap / max_len) > 0.70:
-                return True
+            if max_len > 0 and (overlap / max_len) >= 0.50:
+                return survivor_phrase
                 
-        return False
+        return None
 
     def add_to_seen(phrase: str):
         tokens = semantic_tokenize(phrase)
         if tokens:
-            seen_tokens_list.append(tokens)
+            seen_tokens_map[tuple(tokens)] = phrase
 
     if clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
         def inject_h2s(spoke_str: str, target_kw: str) -> str:
             extras = h2_map.get(target_kw.lower(), [])
             if extras:
+                # Deduplicate H2s uniquely to avoid repetitive appends
+                unique_extras = list(dict.fromkeys(extras))
                 if "[Include H2:" in spoke_str:
-                    spoke_str = re.sub(r'\]\s*$', f", {', '.join(extras)}]", spoke_str)
+                    spoke_str = re.sub(r'\]\s*$', f", {', '.join(unique_extras)}]", spoke_str)
                 else:
-                    spoke_str += f" [Include H2: {', '.join(extras)}]"
+                    spoke_str += f" [Include H2: {', '.join(unique_extras)}]"
             return spoke_str
 
+        surviving_spokes_map = [] # stores dicts: {"node": layer_dict, "layer_name": name, "spoke": str, "target_kw": str}
+        
         for hub in clusters["hubs"]:
             if "layers" in hub and isinstance(hub["layers"], dict):
                 for layer_name, spokes in hub["layers"].items():
-                    deduped_spokes = []
+                    hub["layers"][layer_name] = [] # clear for pass 2
                     for spoke in spokes:
                         match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
                         if match:
                             target_kw = match.group(1).strip()
                             title = spoke[:match.start()].strip()
-                            if not check_duplicate(target_kw) and not check_duplicate(title):
+                            survivor_target = check_duplicate(target_kw)
+                            survivor_title = check_duplicate(title)
+                            survivor = survivor_target or survivor_title
+                            if not survivor:
                                 add_to_seen(target_kw)
                                 add_to_seen(title)
-                                deduped_spokes.append(inject_h2s(spoke, target_kw))
+                                surviving_spokes_map.append({"node": hub["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": target_kw})
+                            else:
+                                if survivor.lower() not in h2_map:
+                                    h2_map[survivor.lower()] = []
+                                h2_map[survivor.lower()].append(target_kw.title())
                         else:
-                            if not check_duplicate(spoke):
+                            survivor = check_duplicate(spoke)
+                            if not survivor:
                                 add_to_seen(spoke)
-                                deduped_spokes.append(inject_h2s(spoke, spoke))
-                    hub["layers"][layer_name] = deduped_spokes
+                                surviving_spokes_map.append({"node": hub["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": spoke})
+                            else:
+                                if survivor.lower() not in h2_map:
+                                    h2_map[survivor.lower()] = []
+                                h2_map[survivor.lower()].append(spoke.title())
             
             if "sub_silos" in hub and isinstance(hub["sub_silos"], list):
                 for silo in hub["sub_silos"]:
                     if "layers" in silo and isinstance(silo["layers"], dict):
                         for layer_name, spokes in silo["layers"].items():
-                            deduped_spokes = []
+                            silo["layers"][layer_name] = [] # clear for pass 2
                             for spoke in spokes:
                                 match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
                                 if match:
                                     target_kw = match.group(1).strip()
                                     title = spoke[:match.start()].strip()
-                                    if not check_duplicate(target_kw) and not check_duplicate(title):
+                                    survivor_target = check_duplicate(target_kw)
+                                    survivor_title = check_duplicate(title)
+                                    survivor = survivor_target or survivor_title
+                                    if not survivor:
                                         add_to_seen(target_kw)
                                         add_to_seen(title)
-                                        deduped_spokes.append(inject_h2s(spoke, target_kw))
+                                        surviving_spokes_map.append({"node": silo["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": target_kw})
+                                    else:
+                                        if survivor.lower() not in h2_map:
+                                            h2_map[survivor.lower()] = []
+                                        h2_map[survivor.lower()].append(target_kw.title())
                                 else:
-                                    if not check_duplicate(spoke):
+                                    survivor = check_duplicate(spoke)
+                                    if not survivor:
                                         add_to_seen(spoke)
-                                        deduped_spokes.append(inject_h2s(spoke, spoke))
-                            silo["layers"][layer_name] = deduped_spokes
+                                        surviving_spokes_map.append({"node": silo["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": spoke})
+                                    else:
+                                        if survivor.lower() not in h2_map:
+                                            h2_map[survivor.lower()] = []
+                                        h2_map[survivor.lower()].append(spoke.title())
+
+        # Pass 2: Inject all H2s into surviving spokes
+        for s in surviving_spokes_map:
+            s["node"][s["layer_name"]].append(inject_h2s(s["spoke"], s["target_kw"]))
 
     from app.models import HubSpokeCluster
     q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
