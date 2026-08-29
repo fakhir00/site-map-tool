@@ -504,10 +504,15 @@ async def generate_hub_spoke(
             if phrase_normalized == seen_normalized:
                 return survivor_phrase
                 
-            # Layer 3: >= 50% Overlap
-            overlap = len(set(tokens) & set(seen_tokens))
-            max_len = max(len(tokens), len(seen_tokens))
-            if max_len > 0 and (overlap / max_len) >= 0.50:
+            # Layer 3: Perfect Subset OR Jaccard >= 0.70
+            set1 = set(tokens)
+            set2 = set(seen_tokens)
+            if set1.issubset(set2) or set2.issubset(set1):
+                return survivor_phrase
+                
+            intersection = set1.intersection(set2)
+            union = set1.union(set2)
+            if union and (len(intersection) / len(union)) >= 0.70:
                 return survivor_phrase
                 
         return None
