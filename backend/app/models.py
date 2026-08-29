@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, List
 from sqlalchemy import (
     String, Boolean, Integer, Float, Text, DateTime, Date,
@@ -20,8 +20,8 @@ class User(Base):
     google_id: Mapped[Optional[str]] = mapped_column(String(255))
     plan: Mapped[str] = mapped_column(String(50), default="free")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     projects: Mapped[List["Project"]] = relationship("Project", back_populates="user", cascade="all, delete-orphan")
     keyword_bank: Mapped[List["KeywordBank"]] = relationship("KeywordBank", back_populates="user", cascade="all, delete-orphan")
@@ -46,7 +46,7 @@ class Project(Base):
     urls_processed: Mapped[int] = mapped_column(Integer, default=0)
     urls_failed: Mapped[int] = mapped_column(Integer, default=0)
     total_keywords: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_scanned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     next_scan_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
@@ -67,7 +67,7 @@ class ScanJob(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     project: Mapped["Project"] = relationship("Project", back_populates="scan_jobs")
 
@@ -106,8 +106,8 @@ class Keyword(Base):
     frequency: Mapped[int] = mapped_column(Integer, default=1)
     search_volume: Mapped[Optional[int]] = mapped_column(Integer)
     difficulty: Mapped[Optional[float]] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # 4-Tier Classification (nullable — only set for primary/long-tail keywords)
     tier: Mapped[Optional[str]] = mapped_column(String(50))  # merge | subheading_group | related | outlier
@@ -142,7 +142,7 @@ class KeywordBank(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     keyword_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     is_done: Mapped[bool] = mapped_column(Boolean, default=False)
     done_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
@@ -158,7 +158,7 @@ class HubSpokeCluster(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True)
     mapping_data: Mapped[dict] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     project: Mapped["Project"] = relationship("Project")
 
@@ -176,8 +176,8 @@ class ArticleDraft(Base):
     generation_attempts: Mapped[int] = mapped_column(Integer, default=0)
     research_summary: Mapped[Optional[dict]] = mapped_column(JSON)
     audit_feedback: Mapped[Optional[dict]] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     project: Mapped["Project"] = relationship("Project", back_populates="article_drafts")
     keyword: Mapped["Keyword"] = relationship("Keyword", back_populates="article_drafts")
@@ -194,6 +194,6 @@ class GoldHunterScan(Base):
     input_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     audit_summary: Mapped[Optional[str]] = mapped_column(Text)
     seeds: Mapped[Optional[list]] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship("User", back_populates="goldhunter_scans")

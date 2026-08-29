@@ -62,8 +62,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         logger.info("[%s] Starting concurrent scan for %s", project_id, project.domain)
         seed_keywords = _clean_seed_keywords(project.target_keywords)
         audit_summary = project.audit_summary
-        topic_terms = _topic_terms(seed_keywords, audit_summary)
-        negative_terms = _negative_terms(seed_keywords, audit_summary)
+        topic_terms, negative_terms = _semantic_terms(seed_keywords, audit_summary)
 
         if resume_existing:
             pending_urls = _pending_urls(db, project_uuid)
@@ -260,7 +259,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             _mark_complete(db, project, job, "paused")
             return
             
-        ai_keywords = generate_ai_keywords_sync(seed_keywords)
+        ai_keywords = generate_ai_keywords_sync(seed_keywords, topic_terms=topic_terms, negative_terms=negative_terms)
         if ai_keywords:
             existing_phrases = {row[0] for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_uuid)).all()}
             if project.own_domain:
@@ -540,22 +539,8 @@ def _primary_competitor_search_query(seed_keywords: list[str]) -> str:
 
 
 def _fallback_competitor_domains(seed_keywords: list[str]) -> list[str]:
-    topic_terms = _topic_terms(seed_keywords, None)
-    if {"circuit", "diagram"} & topic_terms or {"schematic", "electronics"} & topic_terms:
-        return [
-            "https://www.smartdraw.com",
-            "https://www.lucidchart.com",
-            "https://www.edrawsoft.com",
-            "https://www.visual-paradigm.com",
-            "https://www.circuit-diagram.org",
-        ]
-    if "wheel" in topic_terms or {"picker", "spinner"} & topic_terms:
-        return [
-            "https://pickerwheel.com",
-            "https://spinthewheel.app",
-            "https://pickeronlinewheel.com",
-            "https://wheelofnames.com",
-        ]
+    # We no longer use hardcoded fallback domains as it violates niche-agnosticism.
+    # Rely entirely on the Google/Bing/DDG/Apify scrapers.
     return []
 
 
@@ -570,35 +555,23 @@ def _search_result_urls(query: str, include_google: bool = False, locale: str = 
 
 
 def _competitor_search_queries(seed_keywords: list[str]) -> list[str]:
-    base = " ".join(seed_keywords[:4]).strip()
-    queries = [
-        f'"{base}" tool',
-        f'"{base}" software',
-        f'"{base}" generator',
-        f'"{base}" maker',
-        f'"{base}" alternative',
-        f'"{base}" competitor',
-        f'"{base}" online',
-        f'"{base}"',
-        f'{base} online',
-        f'{base} tool',
-    ]
-    if " and " in base:
-        rewritten = base.replace(" and ", " or ")
-        queries.extend([
-            f'"{rewritten}"',
-            f'"{rewritten}" online',
-            f'{rewritten} tool',
-        ])
-    base_terms = set(base.replace("-", " ").split())
-    if "wheel" in base_terms and {"yes", "no"}.issubset(base_terms):
-        queries = [
-            "yes no picker wheel",
-            "yes or no picker wheel",
-            "yes no decision wheel",
-            "yes or no spinner wheel",
-            *queries,
-        ]
+    queries: list[str] = []
+    modifiers = ["alternative", "competitor", "review", "comparison", "online"]
+
+    for keyword in seed_keywords:
+        queries.append(keyword)
+        base_terms = set(keyword.lower().split())
+
+        for mod in modifiers:
+            if mod not in base_terms:
+                queries.append(f'{keyword} {mod}')
+
+        if len(base_terms) >= 2:
+            longest_word = max(base_terms, key=len)
+            for mod in modifiers:
+                if mod not in base_terms:
+                    queries.append(f'{longest_word} {mod}')
+
     return list(dict.fromkeys(query for query in queries if query.strip()))
 
 
@@ -796,54 +769,11 @@ def _clean_seed_keywords(raw_keywords: list[str] | None) -> list[str]:
     return cleaned_keywords
 
 
-COMPOUND_KEYWORD_PARTS = [
-    "schematic",
-    "diagram",
-    "circuit",
-    "generator",
-    "picker",
-    "spinner",
-    "random",
-    "maker",
-    "wheel",
-    "logic",
-    "gate",
-    "truth",
-    "table",
-    "breadboard",
-    "sitemap",
-    "keyword",
-    "and",
-    "yes",
-    "no",
-    "seo",
-]
-
-
 def _expand_seed_keyword(keyword: str) -> list[str]:
-    if " " in keyword or "-" in keyword:
-        return [keyword]
-    split_words = _split_compound_keyword(keyword)
-    if len(split_words) <= 1:
-        return [keyword]
-    expanded = " ".join(word for word in split_words if word != "and")
-    return [expanded, keyword] if expanded != keyword else [keyword]
-
-
-def _split_compound_keyword(keyword: str) -> list[str]:
-    words: list[str] = []
-    index = 0
-    while index < len(keyword):
-        match = ""
-        for part in COMPOUND_KEYWORD_PARTS:
-            if keyword.startswith(part, index) and len(part) > len(match):
-                match = part
-        if match:
-            words.append(match)
-            index += len(match)
-        else:
-            index += 1
-    return words
+    # We no longer split compound keywords using hardcoded dictionary lookups
+    # (e.g. splitting "circuitdiagrammaker" to "circuit diagram maker")
+    # since it violates niche-agnosticism.
+    return [keyword]
 
 
 def _origin(url: str | None) -> str | None:
@@ -1028,7 +958,8 @@ def _llm_filter_competitor_domains(
     competitor_limit: int,
     audit_summary: str | None = None,
 ) -> list[str] | None:
-    if not candidates or not (settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY):
+    from nlp.openrouter import is_ai_configured
+    if not candidates or not is_ai_configured():
         return None
     try:
         from nlp.openrouter import judge_competitor_domains
@@ -1080,11 +1011,13 @@ def _keyword_phrases(keyword_result: Any, min_words: int) -> set[str]:
     return phrases
 
 
-def _topic_terms(seed_keywords: list[str], audit_summary: str | None = None) -> set[str]:
+def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) -> tuple[set[str], set[str]]:
     from nlp.openrouter import generate_core_domain_terms
     from nlp.keywords import seed_keyword_terms
     import asyncio
 
+    fallback_topic_terms = seed_keyword_terms(seed_keywords)
+    
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -1093,48 +1026,19 @@ def _topic_terms(seed_keywords: list[str], audit_summary: str | None = None) -> 
         
     if loop.is_running():
         # In case we are already in an event loop, fallback to simple extraction
-        return seed_keyword_terms(seed_keywords)
+        return fallback_topic_terms, set()
         
     try:
         result = loop.run_until_complete(generate_core_domain_terms(seed_keywords, audit_summary))
         core_terms = set(result.get("core_terms", []))
+        negative_terms = set(result.get("negative_terms", []))
         if core_terms:
-            return core_terms
+            return core_terms, negative_terms
     except Exception as e:
-        logger.error(f"Failed to generate dynamic core terms: {e}")
+        logger.error(f"Failed to generate dynamic semantic terms: {e}")
 
     # Fallback if LLM fails
-    terms = seed_keyword_terms(seed_keywords)
-    expansions = {
-        "circuit": {"circuits", "electrical", "electronics", "schematic", "schematics", "wiring"},
-        "diagram": {"diagrams", "drawing", "drawings", "schematic", "schematics"},
-        "maker": {"builder", "creator", "editor", "generator", "software", "tool", "tools"},
-    }
-    expanded = set(terms)
-    for term in terms:
-        expanded.update(expansions.get(term, set()))
-    return expanded
-
-def _negative_terms(seed_keywords: list[str], audit_summary: str | None = None) -> set[str]:
-    from nlp.openrouter import generate_core_domain_terms
-    import asyncio
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-    if loop.is_running():
-        return set()
-        
-    try:
-        result = loop.run_until_complete(generate_core_domain_terms(seed_keywords, audit_summary))
-        return set(result.get("negative_terms", []))
-    except Exception as e:
-        logger.error(f"Failed to generate dynamic negative terms: {e}")
-
-    return set()
+    return fallback_topic_terms, set()
 
 
 def _own_sitemap_keyword_phrases(
@@ -1505,8 +1409,6 @@ def _gap_candidate_score(
         score -= len(terms & negative_terms) * 10.0
     if 2 <= word_count <= 5:
         score += 2.0
-    if any(term in phrase for term in ("template", "generator", "software", "checker", "calculator", "guide")):
-        score += 1.5
     if frequency <= 1 and domain_count <= 1:
         score -= 0.5
     return score

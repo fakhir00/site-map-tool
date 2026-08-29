@@ -83,7 +83,20 @@ async def generate_keywords(
     if not project.target_keywords:
         raise HTTPException(status_code=400, detail="Project has no target keywords to generate from")
         
-    ai_keywords = await generate_ai_keywords(project.target_keywords)
+    from nlp.openrouter import generate_core_domain_terms
+    from nlp.keywords import seed_keyword_terms
+    
+    semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
+    topic_terms = set(semantic_res.get("core_terms", []))
+    negative_terms = set(semantic_res.get("negative_terms", []))
+    if not topic_terms:
+        topic_terms = seed_keyword_terms(project.target_keywords)
+        
+    ai_keywords = await generate_ai_keywords(
+        project.target_keywords,
+        topic_terms=topic_terms,
+        negative_terms=negative_terms
+    )
     if not ai_keywords:
         raise HTTPException(status_code=500, detail="Failed to generate AI keywords")
         
@@ -174,8 +187,21 @@ async def generate_top_picks(
         raise HTTPException(status_code=400, detail="Not enough keywords found yet. Please run a competitor scan or generate keywords first.")
 
     # 2. Ask AI to pick top keywords FROM existing phrases
-    from nlp.openrouter import generate_ai_top_picks
-    ai_keywords = await generate_ai_top_picks(project.target_keywords, existing_phrases)
+    from nlp.openrouter import generate_core_domain_terms, generate_ai_top_picks
+    from nlp.keywords import seed_keyword_terms
+    
+    semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
+    topic_terms = set(semantic_res.get("core_terms", []))
+    negative_terms = set(semantic_res.get("negative_terms", []))
+    if not topic_terms:
+        topic_terms = seed_keyword_terms(project.target_keywords)
+        
+    ai_keywords = await generate_ai_top_picks(
+        project.target_keywords, 
+        existing_phrases,
+        topic_terms=topic_terms,
+        negative_terms=negative_terms
+    )
     if not ai_keywords:
         raise HTTPException(status_code=500, detail="Failed to generate AI top picks")
         

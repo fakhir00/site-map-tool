@@ -218,7 +218,6 @@ async def generate_core_domain_terms(target_keywords: list[str], audit_summary: 
     """
     Generate dynamic Core Domain Terms and Generic Terms for upstream semantic filtering.
     """
-    from .openrouter import is_ai_configured, _achat_json
     import json
     
     if not is_ai_configured() or not target_keywords:
@@ -342,7 +341,11 @@ Return ONLY the JSON object, nothing else.
         return {"verdict": "related_nuance"}
 
 
-async def generate_ai_keywords(seed_keywords: list[str]) -> list[dict[str, Any]]:
+async def generate_ai_keywords(
+    seed_keywords: list[str],
+    topic_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Generate SEO keyword recommendations using the configured AI provider."""
     if not is_ai_configured():
         logger.error("AI API key not configured")
@@ -350,7 +353,8 @@ async def generate_ai_keywords(seed_keywords: list[str]) -> list[dict[str, Any]]
 
     from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
 
-    topic_terms = seed_keyword_terms(seed_keywords)
+    if topic_terms is None:
+        topic_terms = seed_keyword_terms(seed_keywords)
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
 Generate exactly 25 high-quality keyword opportunities: exactly 5 primary, 5 LSI, 5 long-tail, 5 entity, and 5 heading keywords.
@@ -400,7 +404,7 @@ Each object must have:
                 kw_type = normalize_keyword_type(kw.get("type"))
                 if phrase in seen_phrases:
                     continue
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
@@ -414,7 +418,7 @@ Each object must have:
                 filter_keyword_gap_recommendations,
                 seed_keywords,
                 valid_keywords,
-                25
+                max_keywords=25
             )
             # Ensure phrase fallback
             for kw in filtered:
@@ -432,7 +436,11 @@ Each object must have:
         return []
 
 
-def generate_ai_keywords_sync(seed_keywords: list[str]) -> list[dict[str, Any]]:
+def generate_ai_keywords_sync(
+    seed_keywords: list[str],
+    topic_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Synchronous version of generate_ai_keywords for background worker pipelines."""
     if not is_ai_configured():
         logger.error("AI API key not configured")
@@ -440,7 +448,8 @@ def generate_ai_keywords_sync(seed_keywords: list[str]) -> list[dict[str, Any]]:
 
     from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
 
-    topic_terms = seed_keyword_terms(seed_keywords)
+    if topic_terms is None:
+        topic_terms = seed_keyword_terms(seed_keywords)
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
 Generate exactly 25 high-quality keyword opportunities: exactly 5 primary, 5 LSI, 5 long-tail, 5 entity, and 5 heading keywords.
@@ -490,7 +499,7 @@ Each object must have:
                 kw_type = normalize_keyword_type(kw.get("type"))
                 if phrase in seen_phrases:
                     continue
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
@@ -502,7 +511,7 @@ Each object must have:
             filtered = filter_keyword_gap_recommendations(
                 seed_keywords,
                 valid_keywords,
-                25
+                max_keywords=25
             )
             if not filtered:
                 return []
@@ -608,15 +617,20 @@ Example output format:
     return all_results
 
 
-async def generate_ai_top_picks(seed_keywords: list[str], existing_keywords: list[str]) -> list[dict[str, Any]]:
-    """Generate a curated list of the absolute top 5 best keywords using the configured AI provider, from existing keywords."""
+async def generate_ai_top_picks(
+    seed_keywords: list[str],
+    existing_keywords: list[str],
+    topic_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Generate top pick recommendations from existing keywords."""
     if not is_ai_configured():
-        logger.error("AI API key not configured")
         return []
 
     from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
 
-    topic_terms = seed_keyword_terms(seed_keywords)
+    if topic_terms is None:
+        topic_terms = seed_keyword_terms(seed_keywords)
     prompt = f"""
 You are an expert SEO keyword strategist. 
 You are provided with a list of already found keywords. Your task is to select the absolute best 5 to 10 keywords STRICTLY FROM THIS LIST that are highly relevant to the seed keywords.
@@ -658,7 +672,7 @@ Each object must have:
                 kw_type = normalize_keyword_type(kw.get("type"))
                 if phrase in seen_phrases:
                     continue
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms):
+                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
