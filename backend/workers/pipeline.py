@@ -183,11 +183,14 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                     own_phrases = set()
                     
                     for u in chunk_urls:
+                        # Actually scrape the page content (Option B)
+                        scrape_result = scrape_page(u.url, timeout=10)
                         u.status = "scraped"
                         u.error_reason = None
-                        u.h1 = _url_display_title(u.url)
-                        u.word_count = len(_url_words(u.url))
-                        u.readability_score = 0.0
+                        u.scraped_text = scrape_result.text_content if scrape_result else ""
+                        u.h1 = scrape_result.h1 if scrape_result and scrape_result.h1 else _url_display_title(u.url)
+                        u.word_count = scrape_result.word_count if scrape_result else len(_url_words(u.url))
+                        u.readability_score = scrape_result.readability_score if scrape_result else 0.0
                         u.scraped_at = datetime.utcnow()
                         
                         if u.source_type == "own":
@@ -602,20 +605,20 @@ def _url_relevance_score(url: str, ranking_terms: set[str]) -> int:
 
 
 def _is_relevant_result_url(url: str | None, required_terms: set[str]) -> bool:
-    if not url or not required_terms:
-        return True
-    parsed = urlparse(url)
-    lowered = unquote(f"{parsed.netloc} {parsed.path}").lower()
-    matched_terms = {term for term in required_terms if term in lowered}
-    required_matches = 1 if len(required_terms) <= 2 else 2
-    return len(matched_terms) >= required_matches
+    # We trust Google's search results. If it ranked, it's relevant enough to be a competitor.
+    return True
 
 
 def _is_relevant_content_url(url: str, required_terms: set[str]) -> bool:
-    if not required_terms:
-        return True
+    # Keep all blog posts and articles, regardless of whether the seed keyword is perfectly in the URL slug.
+    if not url: return False
     lowered = urlparse(url).path.lower()
-    return any(term in lowered for term in required_terms)
+    
+    # Filter out junk extensions, but keep all potential content pages
+    if lowered.endswith((".pdf", ".jpg", ".png", ".gif", ".zip", ".exe")):
+        return False
+        
+    return True
 
 
 def _search_google_result_urls(query: str, max_results: int = 10, locale: str = "us") -> list[str]:

@@ -537,82 +537,56 @@ def extract_keywords_from_urls_ai(
     topic_terms: set[str] | None = None,
     negative_terms: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Uses LLM to intelligently extract SEO keywords from competitor URL slugs."""
-    if not is_ai_configured() or not urls:
+    """Extracts SEO keywords from scraped full text using RAKE and KeyBERT (Option B)."""
+    if not urls:
         return []
 
-    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
+    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms, extract_keywords_from_page
+    
     if not topic_terms:
         topic_terms = seed_keyword_terms(seed_keywords)
     
     all_results = []
-    chunk_size = 100
+    seen_phrases = set()
     
-    for i in range(0, len(urls), chunk_size):
-        chunk = urls[i:i + chunk_size]
-        url_payload = [{"id": str(u.id), "url": u.url} for u in chunk]
-        
-        prompt = f"""
-[SYSTEM COMMAND — URL KEYWORD EXTRACTION]
-You are an expert SEO data analyst.
-Seed topic: {json.dumps(seed_keywords)}
-
-I will provide a JSON array of competitor URLs.
-Your job is to read the URL slugs and intelligently INFER the exact core SEO keywords those pages are targeting.
-
-Rules:
-- You must ONLY extract keywords that are highly relevant to the seed topic. Discard completely unrelated URLs.
-- Normalize keywords to a natural search phrase (lowercase, 2 to 6 words). DO NOT just output a hyphenated slug.
-- You must include the exact UUIDs of the URLs that target each keyword in the "url_ids" array.
-- "type" should be one of: primary, lsi, long-tail, entity.
-
-Input URLs:
-{json.dumps(url_payload, ensure_ascii=False)}
-
-Return ONLY a JSON array of objects. Do not include markdown or explanations.
-Example output format:
-[
-  {{
-    "phrase": "circuit diagram maker",
-    "type": "primary",
-    "url_ids": ["uuid-1", "uuid-2"]
-  }}
-]
-"""
+    for u in urls:
+        if not getattr(u, "scraped_text", None):
+            continue
+            
         try:
-            payload = _chat_json(
-                system_prompt="You output only valid JSON arrays.",
-                user_prompt=prompt,
-                temperature=0.1,
-                max_tokens=2500,
+            kw_result = extract_keywords_from_page(
+                u.scraped_text,
+                h1=u.h1,
+                use_keybert=True,
+                use_spacy=True
             )
-            if isinstance(payload, dict) and "keywords" in payload:
-                payload = payload["keywords"]
-            if not isinstance(payload, list):
-                continue
+            
+            candidates = []
+            # Primary keywords (RAKE)
+            for phrase, score in kw_result.primary:
+                candidates.append((phrase, "primary"))
+            # LSI keywords (KeyBERT)
+            for phrase, score in kw_result.lsi:
+                candidates.append((phrase, "lsi"))
+            # Entities
+            for phrase, label in kw_result.entities:
+                candidates.append((phrase, "entity"))
                 
-            for item in payload:
-                if not isinstance(item, dict):
-                    continue
-                phrase = clean_phrase(str(item.get("phrase", "")))
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+            for phrase, kw_type in candidates:
+                if phrase in seen_phrases:
                     continue
                     
-                kw_type = normalize_keyword_type(item.get("type"))
-                url_ids = item.get("url_ids", [])
-                if not isinstance(url_ids, list):
-                    continue
-                    
-                valid_ids = [uid for uid in url_ids if isinstance(uid, str)]
-                if valid_ids:
+                if is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+                    seen_phrases.add(phrase)
                     all_results.append({
+                        "source_phrase": phrase,
                         "phrase": phrase,
                         "type": kw_type,
-                        "url_ids": valid_ids
+                        "volume": "Medium",
+                        "url_ids": [str(u.id)]
                     })
         except Exception as exc:
-            logger.error("AI URL extraction failed for chunk: %s", exc)
-            continue
+            logger.error("Error extracting keywords from page: %s", exc)
 
     return all_results
 
@@ -1529,18 +1503,18 @@ STEP 6: INTENT TAGS & ENTITIES
       "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
       "target_keyword": "[exact keyword]",
       "layers": {{
-        "🧱 FOUNDATION SPOKES (Authority)": ["What Is [Core Entity]? Complete Guide (Target Keyword: what is [core entity])"],
-        "⚙️ CORE STRATEGY": ["How to Implement [Core Entity] (Target Keyword: how to implement [core entity])"]
+        "🧱 FOUNDATION SPOKES (Authority)": ["[Compelling Article Title 1] (Target Keyword: [exact keyword 1])"],
+        "⚙️ CORE STRATEGY": ["[Compelling Article Title 2] (Target Keyword: [exact keyword 2])"]
       }},
       "sub_silos": [
         {{
-          "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — How to Use [Core Entity]",
+          "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — [Sub-Topic Name]",
           "target_keyword": "[exact keyword]",
           "layers": {{
-            "🧱 Foundations": ["How to Use [Core Entity] (Target Keyword: how to use [core entity])"],
-            "⚙️ Action": ["Best Practices for [Core Entity] [Tool] (Target Keyword: best practices for [core entity]) [Include H2: entity_from_list]"],
-            "💰 Money": [],
-            "⚡️ ZERO COMPETITION QUICK-WINS": ["Easy [Core Entity] Writing (Target Keyword: easy [core entity] writing)"]
+            "🧱 Foundations": ["[Compelling Article Title 3] (Target Keyword: [exact keyword 3])"],
+            "⚙️ Action": ["[Compelling Article Title 4] (Target Keyword: [exact keyword 4]) [Include H2: entity_from_list]"],
+            "💰 Money": ["[Compelling Article Title 5] (Target Keyword: [exact keyword 5])"],
+            "⚡️ ZERO COMPETITION QUICK-WINS": ["[Compelling Article Title 6] (Target Keyword: [exact keyword 6])"]
           }}
         }}
       ]
