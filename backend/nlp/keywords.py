@@ -142,8 +142,18 @@ def is_publishable_keyword(
     if negative_terms and (terms & negative_terms):
         return False
         
-    if topic_terms and not (terms & topic_terms):
-        return False
+    if topic_terms:
+        overlap = terms & topic_terms
+        if not overlap:
+            return False
+        # If it's a longer phrase, require it to have at least one meaningful core word, 
+        # not just a coincidental short word match. We check if the overlap has words > 3 chars
+        # or if there's multiple overlapping words.
+        if len(terms) >= 3 and len(overlap) == 1:
+            single_match = list(overlap)[0]
+            if len(single_match) <= 3 and single_match not in COMMON_SHORT_TOKENS:
+                return False
+                
     return True
 
 

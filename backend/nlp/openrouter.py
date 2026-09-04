@@ -1444,15 +1444,29 @@ def _validate_hub_and_spoke(payload: dict, total_kws: int) -> str | None:
     return None
 
 
-async def cluster_hub_and_spoke(keywords: list[dict[str, Any]], main_keyword: str = "your core topic") -> dict[str, Any] | None:
+async def cluster_hub_and_spoke(
+    keywords: list[dict[str, Any]], 
+    main_keyword: str = "your core topic",
+    audit_summary: str | None = None
+) -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
     if not is_ai_configured() or not keywords:
         return None
 
     trimmed = keywords[:500]
+    
+    audit_context = f"""
+[WEBSITE CONTEXT (CRITICAL)]
+You MUST filter and organize the keywords based on this actual website context. 
+If a keyword does not make sense for a website with this profile, do NOT include it in the hubs.
+{audit_summary}
+""" if audit_summary else ""
+
     prompt = f"""
 Take a raw, flat Hub-and-Spoke list of keywords and transform it into a visually optimized, layered, ranking-ready SEO architecture.
 You are a Senior SEO Content Strategist and Topical Authority Architect.
+
+{audit_context}
 
 [TASK - STEP-BY-STEP STRICT ENFORCEMENT]
 You must process the provided keywords sequentially following these steps to build the Topical Map:

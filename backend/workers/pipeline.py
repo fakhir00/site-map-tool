@@ -116,7 +116,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         else:
             _clear_previous_results(db, project_uuid)
             own_domain = _origin(project.own_domain or project.domain) or project.domain
-            competitor_domains = _discover_competitor_domains(project, seed_keywords)
+            competitor_domains = _discover_competitor_domains(project, seed_keywords, negative_terms=negative_terms)
             required_terms = _search_required_terms(seed_keywords)
             ranking_terms = _search_ranking_terms(seed_keywords)
             total_allowed_urls = settings.MAX_URLS_PER_SCAN * max(1, len(seed_keywords))
@@ -163,6 +163,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         crawl_limit,
                         required_terms,
                         ranking_terms,
+                        negative_terms,
                         include_homepage=(source_type == "own"),
                         source_type=source_type,
                     )
@@ -389,6 +390,7 @@ def _discover_content_urls(
     limit: int,
     required_terms: set[str] | None = None,
     ranking_terms: set[str] | None = None,
+    negative_terms: set[str] | None = None,
     include_homepage: bool = False,
     source_type: str = "competitor",
 ) -> list[str]:
@@ -406,6 +408,7 @@ def _discover_content_urls(
         patterns=patterns,
         domain=domain,
     )
+    content_urls = [url for url in content_urls if _is_relevant_content_url(url, required_terms or set(), negative_terms)]
     content_urls.sort(key=lambda url: _url_relevance_score(url, ranking_terms or set()), reverse=True)
     if include_homepage:
         homepage = _origin(domain)
@@ -465,7 +468,7 @@ def _queue_discovered_urls(
         _sync_project_counts(db, project)
 
 
-def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list[str]:
+def _discover_competitor_domains(project: Any, seed_keywords: list[str], negative_terms: set[str] | None = None) -> list[str]:
     if not seed_keywords:
         logger.warning("No primary keyword provided, competitor discovery skipped")
         return []
@@ -484,7 +487,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str]) -> list
 
     def add_domain(url: str | None, require_relevance: bool = True, query: str | None = None, source: str = "search") -> None:
         unwrapped_url = _unwrap_result_url(url)
-        if require_relevance and not _is_relevant_result_url(unwrapped_url, required_terms):
+        if require_relevance and not _is_relevant_result_url(unwrapped_url, required_terms, negative_terms):
             return
         domain = _origin(unwrapped_url)
         root = _registered_domain(domain)
