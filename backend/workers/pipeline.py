@@ -62,6 +62,43 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         logger.info("[%s] Starting concurrent scan for %s", project_id, project.domain)
         seed_keywords = _clean_seed_keywords(project.target_keywords)
         audit_summary = project.audit_summary
+        
+        # Fix 0: Auto-generate audit context from homepage if missing
+        if not audit_summary:
+            logger.info("[%s] No audit_summary found — scraping homepage for context", project_id)
+            try:
+                homepage_url = project.own_domain or project.domain
+                if not homepage_url.startswith(("http://", "https://")):
+                    homepage_url = f"https://{homepage_url}"
+                homepage_result = scrape_page(homepage_url, timeout=15)
+                if homepage_result and homepage_result.text_content and len(homepage_result.text_content) > 100:
+                    import asyncio
+                    from nlp.openrouter import generate_gold_hunter_seeds
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    if loop.is_running():
+                        # Can't await in running loop — use thread
+                        import concurrent.futures as cf
+                        with cf.ThreadPoolExecutor(max_workers=1) as ex:
+                            fut = ex.submit(asyncio.run, generate_gold_hunter_seeds(homepage_url, homepage_result.text_content))
+                            gh_result = fut.result(timeout=60)
+                    else:
+                        gh_result = loop.run_until_complete(generate_gold_hunter_seeds(homepage_url, homepage_result.text_content))
+                    if gh_result and isinstance(gh_result, dict):
+                        audit_summary = gh_result.get("audit_summary", "")
+                        if isinstance(audit_summary, dict):
+                            import json as _json
+                            audit_summary = _json.dumps(audit_summary, indent=2)
+                        if audit_summary:
+                            project.audit_summary = audit_summary
+                            db.commit()
+                            logger.info("[%s] Auto-generated audit_summary from homepage", project_id)
+            except Exception as e:
+                logger.warning("[%s] Failed to auto-generate audit_summary: %s", project_id, e)
+        
         topic_terms, negative_terms = _semantic_terms(seed_keywords, audit_summary)
 
         if resume_existing:
@@ -604,19 +641,35 @@ def _url_relevance_score(url: str, ranking_terms: set[str]) -> int:
     return sum(1 for term in ranking_terms if term in lowered)
 
 
-def _is_relevant_result_url(url: str | None, required_terms: set[str]) -> bool:
-    # We trust Google's search results. If it ranked, it's relevant enough to be a competitor.
+def _is_relevant_result_url(url: str | None, required_terms: set[str], negative_terms: set[str] | None = None) -> bool:
+    """Filter competitor discovery URLs. Trust Google rankings but block obviously irrelevant URLs."""
+    if not url:
+        return False
+    lowered = unquote(urlparse(url).path).lower()
+    # Block URLs whose path contains negative terms from the audit
+    if negative_terms:
+        path_words = set(re.findall(r'[a-z]{3,}', lowered))
+        if path_words & negative_terms:
+            return False
+    # Trust Google's ranking — if it returned this result for our seed query, accept it
     return True
 
 
-def _is_relevant_content_url(url: str, required_terms: set[str]) -> bool:
-    # Keep all blog posts and articles, regardless of whether the seed keyword is perfectly in the URL slug.
-    if not url: return False
+def _is_relevant_content_url(url: str, required_terms: set[str], negative_terms: set[str] | None = None) -> bool:
+    """Filter sitemap URLs. Accept content pages, reject junk and negatively-tagged URLs."""
+    if not url:
+        return False
     lowered = urlparse(url).path.lower()
     
-    # Filter out junk extensions, but keep all potential content pages
-    if lowered.endswith((".pdf", ".jpg", ".png", ".gif", ".zip", ".exe")):
+    # Filter out binary/junk extensions
+    if lowered.endswith((".pdf", ".jpg", ".png", ".gif", ".zip", ".exe", ".mp3", ".mp4", ".svg")):
         return False
+    
+    # Block URLs whose path contains negative terms from the audit
+    if negative_terms:
+        path_words = set(re.findall(r'[a-z]{3,}', lowered))
+        if path_words & negative_terms:
+            return False
         
     return True
 
