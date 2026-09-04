@@ -79,9 +79,9 @@ def is_blog_url(url: str, patterns: List[str] = None) -> bool:
         if re.search(pat, path, re.IGNORECASE):
             return True
 
-    # Heuristic: path with 2+ segments and a slug-like final segment
+    # Heuristic: path with a slug-like final segment
     segments = [s for s in path.split("/") if s]
-    if len(segments) >= 2:
+    if len(segments) >= 1:
         last = segments[-1]
         # Slug-like: contains hyphens, at least 15 chars, looks like a title
         if len(last) > 15 and "-" in last and not last.endswith((".html", ".php")):

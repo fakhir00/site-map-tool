@@ -403,11 +403,16 @@ def _discover_content_urls(
     )
         
     logger.info("Found %s sitemap URLs for %s", len(all_urls), domain)
-    content_urls = filter_blog_urls(
-        all_urls,
-        patterns=patterns,
-        domain=domain,
-    )
+    if source_type == "own":
+        # For the user's own domain, we want to analyze ALL content to find gaps, 
+        # not just blogs. Our negative_terms filter will still remove junk.
+        content_urls = list(all_urls)
+    else:
+        content_urls = filter_blog_urls(
+            all_urls,
+            patterns=patterns,
+            domain=domain,
+        )
     content_urls = [url for url in content_urls if _is_relevant_content_url(url, required_terms or set(), negative_terms)]
     content_urls.sort(key=lambda url: _url_relevance_score(url, ranking_terms or set()), reverse=True)
     if include_homepage:
