@@ -177,6 +177,14 @@ class ScrapedPage:
         self.status_code = status_code
         self.error = error
 
+    @property
+    def text_content(self) -> str:
+        return self.text
+
+    @text_content.setter
+    def text_content(self, value: str) -> None:
+        self.text = value
+
 
 def scrape_page(
     url: str,

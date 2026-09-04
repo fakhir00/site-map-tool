@@ -71,7 +71,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 if not homepage_url.startswith(("http://", "https://")):
                     homepage_url = f"https://{homepage_url}"
                 homepage_result = scrape_page(homepage_url, timeout=15)
-                if homepage_result and homepage_result.text_content and len(homepage_result.text_content) > 100:
+                homepage_text = _scrape_result_text(homepage_result)
+                if homepage_result and not getattr(homepage_result, "error", None) and len(homepage_text) > 100:
                     import asyncio
                     from nlp.openrouter import generate_gold_hunter_seeds
                     try:
@@ -83,10 +84,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         # Can't await in running loop — use thread
                         import concurrent.futures as cf
                         with cf.ThreadPoolExecutor(max_workers=1) as ex:
-                            fut = ex.submit(asyncio.run, generate_gold_hunter_seeds(homepage_url, homepage_result.text_content))
+                            fut = ex.submit(asyncio.run, generate_gold_hunter_seeds(homepage_url, homepage_text))
                             gh_result = fut.result(timeout=60)
                     else:
-                        gh_result = loop.run_until_complete(generate_gold_hunter_seeds(homepage_url, homepage_result.text_content))
+                        gh_result = loop.run_until_complete(generate_gold_hunter_seeds(homepage_url, homepage_text))
                     if gh_result and isinstance(gh_result, dict):
                         audit_summary = gh_result.get("audit_summary", "")
                         if isinstance(audit_summary, dict):
@@ -219,25 +220,31 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                     
                     competitor_url_objects = []
                     own_phrases = set()
+                    scraped_count = 0
+                    failed_count = 0
                     
                     for u in chunk_urls:
-                        # Actually scrape the page content (Option B)
-                        scrape_result = scrape_page(u.url, timeout=10)
-                        u.status = "scraped"
-                        u.error_reason = None
-                        u.scraped_text = scrape_result.text_content if scrape_result else ""
-                        u.h1 = scrape_result.h1 if scrape_result and scrape_result.h1 else _url_display_title(u.url)
-                        u.word_count = scrape_result.word_count if scrape_result else len(_url_words(u.url))
-                        u.readability_score = scrape_result.readability_score if scrape_result else 0.0
-                        u.scraped_at = datetime.utcnow()
+                        try:
+                            scrape_result = scrape_page(u.url, timeout=10)
+                        except Exception as exc:
+                            logger.warning("Scrape failed for %s: %s", u.url, exc)
+                            scrape_result = None
                         
+                        scraped_ok = _apply_scrape_result(u, scrape_result)
+                        if scraped_ok:
+                            scraped_count += 1
+                        else:
+                            failed_count += 1
+                            continue
+
                         if u.source_type == "own":
                             own_phrases.update(_url_keyword_candidates(u.url, topic_terms, negative_terms, include_single_terms=True))
                         else:
                             competitor_url_objects.append(u)
                             
                     if proj:
-                        proj.urls_processed += len(chunk_urls)
+                        proj.urls_processed += scraped_count
+                        proj.urls_failed += failed_count
                     local_db.commit()
                     
                     if competitor_url_objects:
@@ -471,6 +478,66 @@ def _queue_discovered_urls(
     if queued:
         db.commit()
         _sync_project_counts(db, project)
+
+
+def _scrape_result_text(scrape_result: Any) -> str:
+    if not scrape_result:
+        return ""
+
+    text = getattr(scrape_result, "text_content", None)
+    if text is None:
+        text = getattr(scrape_result, "text", "")
+    return text if isinstance(text, str) else str(text or "")
+
+
+def _scrape_error_reason(scrape_result: Any, text: str) -> str | None:
+    if not scrape_result:
+        return "No scrape response"
+
+    error = getattr(scrape_result, "error", None)
+    if error:
+        return str(error)
+
+    if not text.strip():
+        return "No readable text extracted"
+
+    return None
+
+
+def _apply_scrape_result(url_record: Any, scrape_result: Any) -> bool:
+    text = _scrape_result_text(scrape_result)
+    url_record.scraped_text = text
+    url_record.h1 = (
+        getattr(scrape_result, "h1", None)
+        if scrape_result
+        else None
+    ) or _url_display_title(url_record.url)
+    url_record.word_count = (
+        getattr(scrape_result, "word_count", 0)
+        if scrape_result
+        else 0
+    ) or (len(text.split()) if text else 0)
+    url_record.readability_score = (
+        getattr(scrape_result, "readability_score", 0.0)
+        if scrape_result
+        else 0.0
+    ) or 0.0
+    url_record.publish_date = (
+        getattr(scrape_result, "publish_date", None)
+        if scrape_result
+        else None
+    )
+    url_record.scraped_at = datetime.utcnow()
+
+    error_reason = _scrape_error_reason(scrape_result, text)
+    if error_reason:
+        url_record.status = "failed"
+        url_record.error_reason = error_reason[:500]
+        return False
+
+    url_record.status = "scraped"
+    url_record.error_reason = None
+    return True
 
 
 def _discover_competitor_domains(project: Any, seed_keywords: list[str], negative_terms: set[str] | None = None) -> list[str]:
