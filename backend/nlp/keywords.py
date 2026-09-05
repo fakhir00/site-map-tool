@@ -10,6 +10,7 @@ from collections import Counter
 
 logger = logging.getLogger(__name__)
 _SPACY_MODEL = None
+_KEYBERT_MODEL = None
 
 COMMON_SHORT_TOKENS = {
     "ai", "api", "b2b", "b2c", "crm", "erp", "hr", "it", "ppc", "roi",
@@ -212,11 +213,15 @@ def extract_statistical_keywords(text: str, max_keywords: int = 20) -> List[Tupl
 def extract_keybert_keywords(text: str, max_keywords: int = 15) -> List[Tuple[str, float]]:
     """Extract keywords using KeyBERT (semantic similarity)."""
     try:
-        from keybert import KeyBERT
+        global _KEYBERT_MODEL
+        if _KEYBERT_MODEL is None:
+            from keybert import KeyBERT
+
+            _KEYBERT_MODEL = KeyBERT(model="all-MiniLM-L6-v2")
+
         # Truncate to avoid OOM
         truncated = text[:8000]
-        kw_model = KeyBERT(model="all-MiniLM-L6-v2")
-        keywords = kw_model.extract_keywords(
+        keywords = _KEYBERT_MODEL.extract_keywords(
             truncated,
             keyphrase_ngram_range=(1, 3),
             stop_words="english",
@@ -569,4 +574,3 @@ def classify_keyword_tiers(keywords: list[dict], call_llm_fn) -> list[dict]:
             })
 
     return results
-

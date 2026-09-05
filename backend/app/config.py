@@ -33,10 +33,10 @@ class Settings(BaseSettings):
     AI_KEYWORD_GAP_RESULT_LIMIT: int = 60
     ARTICLE_RESEARCH_SOURCE_LIMIT: int = 5
     ARTICLE_GENERATION_MAX_ATTEMPTS: int = 5
-    SCRAPE_DELAY_MIN: float = 1.0
-    SCRAPE_DELAY_MAX: float = 3.0
+    SCRAPE_DELAY_MIN: float = 0.05
+    SCRAPE_DELAY_MAX: float = 0.2
     REQUEST_TIMEOUT: int = 5
-    MAX_RETRIES: int = 3
+    MAX_RETRIES: int = 1
     ENABLE_KEYBERT: bool = False
     ENABLE_SPACY: bool = True
 

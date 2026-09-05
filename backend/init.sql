@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS urls (
     source_domain VARCHAR(512),
     status VARCHAR(50) DEFAULT 'pending',
     error_reason TEXT,
+    scraped_text TEXT,
     h1 TEXT,
     word_count INTEGER,
     readability_score FLOAT,

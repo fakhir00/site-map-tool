@@ -345,6 +345,8 @@ async def generate_ai_keywords(
     seed_keywords: list[str],
     topic_terms: set[str] | None = None,
     negative_terms: set[str] | None = None,
+    audit_summary: str | None = None,
+    apply_gap_filter: bool = True,
 ) -> list[dict[str, Any]]:
     """Generate SEO keyword recommendations using the configured AI provider."""
     if not is_ai_configured():
@@ -413,13 +415,19 @@ Each object must have:
                 seen_phrases.add(phrase)
         
         if valid_keywords:
+            if not apply_gap_filter:
+                return valid_keywords
+
             import asyncio
             filtered = await asyncio.to_thread(
                 filter_keyword_gap_recommendations,
                 seed_keywords,
                 valid_keywords,
-                max_keywords=25
+                audit_summary=audit_summary,
+                max_keywords=25,
             )
+            if not filtered:
+                return []
             # Ensure phrase fallback
             for kw in filtered:
                 if not kw.get("phrase") and kw.get("source_phrase"):
@@ -440,6 +448,8 @@ def generate_ai_keywords_sync(
     seed_keywords: list[str],
     topic_terms: set[str] | None = None,
     negative_terms: set[str] | None = None,
+    audit_summary: str | None = None,
+    apply_gap_filter: bool = True,
 ) -> list[dict[str, Any]]:
     """Synchronous version of generate_ai_keywords for background worker pipelines."""
     if not is_ai_configured():
@@ -508,10 +518,14 @@ Each object must have:
                 seen_phrases.add(phrase)
         
         if valid_keywords:
+            if not apply_gap_filter:
+                return valid_keywords
+
             filtered = filter_keyword_gap_recommendations(
                 seed_keywords,
                 valid_keywords,
-                max_keywords=25
+                audit_summary=audit_summary,
+                max_keywords=25,
             )
             if not filtered:
                 return []
@@ -546,8 +560,8 @@ def extract_keywords_from_urls_ai(
     if not topic_terms:
         topic_terms = seed_keyword_terms(seed_keywords)
     
-    all_results = []
-    seen_phrases = set()
+    results_by_phrase: dict[str, dict[str, Any]] = {}
+    type_priority = {"entity": 1, "heading": 2, "lsi": 3, "primary": 4}
     
     for u in urls:
         if not getattr(u, "scraped_text", None):
@@ -557,8 +571,8 @@ def extract_keywords_from_urls_ai(
             kw_result = extract_keywords_from_page(
                 u.scraped_text,
                 h1=u.h1,
-                use_keybert=True,
-                use_spacy=True
+                use_keybert=settings.ENABLE_KEYBERT,
+                use_spacy=settings.ENABLE_SPACY,
             )
             
             candidates = []
@@ -571,24 +585,43 @@ def extract_keywords_from_urls_ai(
             # Entities
             for phrase, label in kw_result.entities:
                 candidates.append((phrase, "entity"))
+            # Heading terms
+            for phrase in kw_result.heading_keywords:
+                candidates.append((phrase, "heading"))
                 
             for phrase, kw_type in candidates:
-                if phrase in seen_phrases:
-                    continue
-                    
                 if is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
-                    seen_phrases.add(phrase)
-                    all_results.append({
-                        "source_phrase": phrase,
-                        "phrase": phrase,
-                        "type": kw_type,
-                        "volume": "Medium",
-                        "url_ids": [str(u.id)]
-                    })
+                    phrase = clean_phrase(phrase)
+                    entry = results_by_phrase.setdefault(
+                        phrase,
+                        {
+                            "source_phrase": phrase,
+                            "phrase": phrase,
+                            "type": kw_type,
+                            "volume": "Medium",
+                            "url_ids": [],
+                            "frequency": 0,
+                        },
+                    )
+                    if type_priority.get(kw_type, 0) > type_priority.get(entry.get("type", ""), 0):
+                        entry["type"] = kw_type
+                    url_id = str(u.id)
+                    if url_id not in entry["url_ids"]:
+                        entry["url_ids"].append(url_id)
+                    entry["frequency"] += 1
         except Exception as exc:
             logger.error("Error extracting keywords from page: %s", exc)
 
-    return all_results
+    results = list(results_by_phrase.values())
+    results.sort(
+        key=lambda item: (
+            len(item.get("url_ids", [])),
+            int(item.get("frequency") or 0),
+            len(str(item.get("phrase") or "").split()),
+        ),
+        reverse=True,
+    )
+    return results
 
 
 async def generate_ai_top_picks(
@@ -742,29 +775,37 @@ Candidates:
         if not isinstance(payload, list):
             return None
 
+        from nlp.keywords import clean_phrase
+
         valid: list[dict[str, Any]] = []
-        candidate_phrases = {
-            str(candidate.get("phrase", "")).strip().lower()
+        source_candidates = {
+            clean_phrase(str(candidate.get("phrase", ""))): candidate
             for candidate in trimmed_candidates
             if candidate.get("phrase")
         }
+        candidate_phrases = set(source_candidates)
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            source_phrase = str(item.get("source_phrase") or item.get("source") or "").strip().lower()
-            phrase = str(item.get("phrase") or "").strip().lower()
+            source_phrase = clean_phrase(str(item.get("source_phrase") or item.get("source") or ""))
+            phrase = clean_phrase(str(item.get("phrase") or ""))
             keyword_type = normalize_keyword_type(item.get("type"))
             volume = str(item.get("volume") or "")
             if not source_phrase and phrase in candidate_phrases:
                 source_phrase = phrase
             if not source_phrase or source_phrase not in candidate_phrases or not phrase:
                 continue
-            valid.append({
+            source_candidate = source_candidates[source_phrase]
+            valid_item = {
                 "source_phrase": source_phrase,
                 "phrase": phrase,
                 "type": keyword_type,
                 "volume": volume,
-            })
+            }
+            for field in ("url_ids", "frequency", "competitor_domain_count", "competitor_domains", "score"):
+                if field in source_candidate:
+                    valid_item[field] = source_candidate[field]
+            valid.append(valid_item)
             if len(valid) >= max_keywords:
                 break
 

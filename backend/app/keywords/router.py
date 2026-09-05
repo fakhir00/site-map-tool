@@ -95,7 +95,8 @@ async def generate_keywords(
     ai_keywords = await generate_ai_keywords(
         project.target_keywords,
         topic_terms=topic_terms,
-        negative_terms=negative_terms
+        negative_terms=negative_terms,
+        audit_summary=project.audit_summary,
     )
     if not ai_keywords:
         raise HTTPException(status_code=500, detail="Failed to generate AI keywords")
@@ -114,7 +115,7 @@ async def generate_keywords(
     from workers.pipeline import _url_keyword_candidates
     own_phrases: set[str] = set()
     for url in own_urls:
-        own_phrases.update(_url_keyword_candidates(url, topic_terms, include_single_terms=True))
+        own_phrases.update(_url_keyword_candidates(url, topic_terms, negative_terms, include_single_terms=True))
     
     # Combine both sets for filtering
     all_excluded = existing_phrases | own_phrases

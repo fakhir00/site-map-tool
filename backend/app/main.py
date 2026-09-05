@@ -43,6 +43,8 @@ async def _ensure_runtime_schema(conn):
             await conn.execute(text("ALTER TABLE urls ADD COLUMN source_type VARCHAR(50) DEFAULT 'competitor'"))
         if "source_domain" not in url_columns:
             await conn.execute(text("ALTER TABLE urls ADD COLUMN source_domain VARCHAR(512)"))
+        if "scraped_text" not in url_columns:
+            await conn.execute(text("ALTER TABLE urls ADD COLUMN scraped_text TEXT"))
 
         # 4-Tier Classification columns on keywords
         result = await conn.execute(text("PRAGMA table_info(keywords)"))
@@ -99,6 +101,8 @@ async def _ensure_runtime_schema(conn):
         await conn.execute(text("ALTER TABLE urls ADD COLUMN source_type VARCHAR(50) DEFAULT 'competitor'"))
     if "source_domain" not in url_columns:
         await conn.execute(text("ALTER TABLE urls ADD COLUMN source_domain VARCHAR(512)"))
+    if "scraped_text" not in url_columns:
+        await conn.execute(text("ALTER TABLE urls ADD COLUMN scraped_text TEXT"))
 
     # 4-Tier Classification columns on keywords
     result = await conn.execute(

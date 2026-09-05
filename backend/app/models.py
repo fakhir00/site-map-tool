@@ -83,6 +83,7 @@ class Url(Base):
     source_domain: Mapped[Optional[str]] = mapped_column(String(512))
     status: Mapped[str] = mapped_column(String(50), default="pending")
     error_reason: Mapped[Optional[str]] = mapped_column(Text)
+    scraped_text: Mapped[Optional[str]] = mapped_column(Text)
     h1: Mapped[Optional[str]] = mapped_column(Text)
     word_count: Mapped[Optional[int]] = mapped_column(Integer)
     readability_score: Mapped[Optional[float]] = mapped_column(Float)
