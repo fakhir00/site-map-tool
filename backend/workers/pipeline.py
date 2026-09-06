@@ -179,12 +179,12 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         )
 
                         saved_urls = local_db.execute(
-                            select(Url).where(Url.project_id == project_uuid, Url.source_domain == domain)
-                        ).scalars().all()
+                            select(Url.id, Url.status).where(Url.project_id == project_uuid, Url.source_domain == domain)
+                        ).all()
                         
-                        for u in saved_urls:
-                            if u.status == "pending":
-                                url_queue.put(u.id)
+                        for u_id, u_status in saved_urls:
+                            if u_status == "pending":
+                                url_queue.put(u_id)
                     except Exception as e:
                         local_db.rollback()
                         logger.error("Discover worker error for %s: %s", domain, e, exc_info=True)
@@ -535,22 +535,27 @@ def _process_competitor_keyword_gaps(
 ) -> int:
     from app.models import Url
 
-    competitor_urls = db.execute(
+    base_query = (
         select(Url)
         .where(
             Url.project_id == project_id,
             Url.source_type == "competitor",
             Url.status == "scraped",
         )
-        .order_by(Url.source_domain.asc(), Url.url.asc())
-    ).scalars().all()
-    if not competitor_urls:
+    )
+    count = db.execute(select(func.count()).select_from(base_query.subquery())).scalar()
+    if not count:
         return 0
 
-    logger.info("Extracting keyword candidates from %s scraped competitor URLs", len(competitor_urls))
+    logger.info("Extracting keyword candidates from %s scraped competitor URLs", count)
+    
+    url_stream = db.execute(
+        base_query.order_by(Url.source_domain.asc(), Url.url.asc())
+    ).yield_per(10).scalars()
+
     extracted = extract_keywords_from_urls_ai(
         seed_keywords,
-        competitor_urls,
+        url_stream,
         topic_terms=topic_terms,
         negative_terms=negative_terms,
     )
@@ -1309,10 +1314,10 @@ def _queue_url(
     from app.models import Url
 
     existing = db.execute(
-        select(Url).where(Url.project_id == project_id, Url.url == url)
+        select(Url.id).where(Url.project_id == project_id, Url.url == url)
     ).scalar_one_or_none()
     if existing:
-        existing.scan_job_id = job_id
+        db.execute(update(Url).where(Url.id == existing).values(scan_job_id=job_id))
         return
 
     db.add(
@@ -1331,10 +1336,10 @@ def _pending_urls(db: Session, project_id: uuid.UUID) -> list[Any]:
     from app.models import Url
 
     rows = db.execute(
-        select(Url)
+        select(Url.url, Url.source_type)
         .where(Url.project_id == project_id, Url.status == "pending")
         .order_by(Url.url.asc())
-    ).scalars().all()
+    ).all()
     return sorted(rows, key=lambda row: (row.source_type != "own", row.url))
 
 
@@ -1454,21 +1459,16 @@ def _own_content_keyword_phrases(
     from app.models import Url
     from nlp.keywords import extract_keywords_from_page
 
-    rows = db.execute(
-        select(Url)
-        .where(Url.project_id == project_id, Url.source_type == "own")
-        .order_by(Url.url.asc())
-    ).scalars().all()
-
+    query = select(Url.url, Url.scraped_text, Url.h1).where(Url.project_id == project_id, Url.source_type == "own")
+    
     phrases: set[str] = set()
-    for row in rows:
-        phrases.update(_url_keyword_candidates(row.url, topic_terms, negative_terms, include_single_terms=True))
-        scraped_text = getattr(row, "scraped_text", None)
+    for url, scraped_text, h1 in db.execute(query).yield_per(100):
+        phrases.update(_url_keyword_candidates(url, topic_terms, negative_terms, include_single_terms=True))
         if not scraped_text:
             continue
         keyword_result = extract_keywords_from_page(
             scraped_text,
-            h1=row.h1,
+            h1=h1,
             use_keybert=settings.ENABLE_KEYBERT,
             use_spacy=settings.ENABLE_SPACY,
         )
