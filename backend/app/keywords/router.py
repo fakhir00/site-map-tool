@@ -299,11 +299,15 @@ async def generate_hub_spoke(
 
     from nlp.openrouter import generate_core_domain_terms
     semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
+    topic_terms = set(semantic_res.get("core_terms", [])) | seed_keyword_terms(project.target_keywords)
     negative_terms = set(semantic_res.get("negative_terms", []))
+    from nlp.keywords import is_topic_relevant_keyword
     
     clean_candidates = []
     for kw in existing_keywords:
         phrase_lower = kw["phrase"].lower()
+        if not is_topic_relevant_keyword(phrase_lower, project.target_keywords, topic_terms, negative_terms):
+            continue
         
         # Retroactive garbage collection: block any keywords containing negative terms
         phrase_terms = set(re.findall(r'[a-z0-9]+', phrase_lower))
@@ -398,6 +402,15 @@ async def generate_hub_spoke(
                     best_hub_idx = node["hub_idx"]
                     best_sub_silo_idx = node["sub_silo_idx"]
                     best_layer = node["layer_name"]
+
+            if kw.get("type") == "entity":
+                if best_sim > 0 and placed_nodes:
+                    best_target = max(
+                        placed_nodes,
+                        key=lambda node: phrase_similarity(phrase, node["target_kw"]),
+                    )["target_kw"]
+                    h2_map.setdefault(best_target.lower(), []).append(phrase)
+                continue
                     
             if best_sim <= 0:
                 best_hub_idx = 0
@@ -494,15 +507,13 @@ async def generate_hub_spoke(
             if phrase_normalized == seen_normalized:
                 return survivor_phrase
                 
-            # Layer 3: Perfect Subset OR Jaccard >= 0.70
+            # Layer 3: strong token overlap. Subset matching was too aggressive
+            # and collapsed distinct long-tail search intents.
             set1 = set(tokens)
             set2 = set(seen_tokens)
-            if set1.issubset(set2) or set2.issubset(set1):
-                return survivor_phrase
-                
             intersection = set1.intersection(set2)
             union = set1.union(set2)
-            if union and (len(intersection) / len(union)) >= 0.70:
+            if union and (len(intersection) / len(union)) >= 0.80:
                 return survivor_phrase
                 
         return None
@@ -590,6 +601,23 @@ async def generate_hub_spoke(
         # Pass 2: Inject all H2s into surviving spokes
         for s in surviving_spokes_map:
             s["node"][s["layer_name"]].append(inject_h2s(s["spoke"], s["target_kw"]))
+
+    from nlp.openrouter import _validate_hub_and_spoke
+    allowed_keywords = {
+        ("entity:" if kw.get("type") == "entity" else "") + kw["phrase"]
+        for kw in existing_keywords
+    }
+    validation_error = _validate_hub_and_spoke(
+        clusters,
+        len(existing_keywords),
+        main_keyword=main_kw,
+        allowed_keywords=allowed_keywords,
+    )
+    if validation_error:
+        raise HTTPException(
+            status_code=502,
+            detail=f"The AI map failed a required constraint: {validation_error} Please generate it again.",
+        )
 
     from app.models import HubSpokeCluster
     q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)

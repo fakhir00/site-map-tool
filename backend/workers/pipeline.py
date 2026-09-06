@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -298,6 +298,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             negative_terms=negative_terms,
             apply_gap_filter=False,
         )
+        ai_keywords = [
+            item for item in ai_keywords
+            if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
+        ]
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
         if ai_keywords:
@@ -559,6 +563,10 @@ def _process_competitor_keyword_gaps(
         topic_terms=topic_terms,
         negative_terms=negative_terms,
     )
+    extracted = [
+        item for item in extracted
+        if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
+    ]
     if not extracted:
         return 0
 
@@ -570,6 +578,10 @@ def _process_competitor_keyword_gaps(
     )
     if filtered is None:
         filtered = _fallback_gap_recommendations(extracted, settings.AI_KEYWORD_GAP_RESULT_LIMIT)
+    filtered = [
+        item for item in filtered
+        if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
+    ]
     filtered = _with_source_url_ids(filtered, extracted)
     if not filtered:
         return 0
@@ -758,7 +770,9 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
     required_terms = _search_required_terms(seed_keywords)
     competitor_limit = max(10, settings.MAX_COMPETITOR_DOMAINS)
     candidate_limit = max(competitor_limit * 2, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
-    per_kw_limit = max(1, candidate_limit // max(1, len(seed_keywords)))
+    # Reserve discovery capacity for every Gold Hunter seed. A global limit here
+    # previously let the first seed exhaust the pool before later seeds ran.
+    per_kw_limit = max(4, min(settings.GOOGLE_SERP_RESULT_LIMIT, candidate_limit // len(seed_keywords)))
     search_locale = getattr(project, 'search_locale', 'us') or 'us'
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
@@ -804,20 +818,17 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
             for res in apify_results:
                 add_domain(res["url"], require_relevance=False, query=kw, source="apify_page_1")
                 primary_results_added = True
-                if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+                if len(competitor_domains) - start_count >= per_kw_limit:
                     break
                     
-        if not primary_results_added and len(competitor_domains) - start_count < per_kw_limit and len(competitor_domains) < candidate_limit:
-            remaining = min(
-                per_kw_limit - (len(competitor_domains) - start_count),
-                candidate_limit - len(competitor_domains),
-            )
+        if not primary_results_added and len(competitor_domains) - start_count < per_kw_limit:
+            remaining = per_kw_limit - (len(competitor_domains) - start_count)
             for href in _search_result_urls(kw, include_google=True, locale=search_locale, max_results=remaining):
                 add_domain(href, require_relevance=False, query=kw, source="google_page_1")
-                if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+                if len(competitor_domains) - start_count >= per_kw_limit:
                     break
 
-        if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+        if len(competitor_domains) - start_count >= per_kw_limit:
             continue
             
         # 2. Secondary variant searches for this keyword
@@ -832,41 +843,66 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
                 for res in apify_results:
                     add_domain(res["url"], query=query)
                     query_results_added = True
-                    if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+                    if len(competitor_domains) - start_count >= per_kw_limit:
                         break
                         
-            if not query_results_added and len(competitor_domains) - start_count < per_kw_limit and len(competitor_domains) < candidate_limit:
-                remaining = min(
-                    per_kw_limit - (len(competitor_domains) - start_count),
-                    candidate_limit - len(competitor_domains),
-                )
+            if not query_results_added and len(competitor_domains) - start_count < per_kw_limit:
+                remaining = per_kw_limit - (len(competitor_domains) - start_count)
                 for href in _search_result_urls(query, include_google=True, locale=search_locale, max_results=remaining):
                     add_domain(href, query=query)
-                    if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+                    if len(competitor_domains) - start_count >= per_kw_limit:
                         break
                         
-            if len(competitor_domains) - start_count >= per_kw_limit or len(competitor_domains) >= candidate_limit:
+            if len(competitor_domains) - start_count >= per_kw_limit:
                 break
-                
-        if len(competitor_domains) >= candidate_limit:
-            break
 
     for domain in _fallback_competitor_domains(seed_keywords):
         add_domain(domain, require_relevance=False, source="fallback")
         if len(competitor_domains) >= candidate_limit:
             break
 
+    balanced_domains = _balanced_competitor_domains(
+        competitor_domains, candidate_signals, seed_keywords, candidate_limit,
+    )
     llm_domains = _llm_filter_competitor_domains(
         seed_keywords,
         project.own_domain or project.domain,
-        [candidate_signals[domain] for domain in competitor_domains if domain in candidate_signals],
+        [candidate_signals[domain] for domain in balanced_domains if domain in candidate_signals],
         competitor_limit,
         project.audit_summary,
     )
     if llm_domains is not None:
         return llm_domains
 
-    return competitor_domains[:competitor_limit]
+    return balanced_domains[:competitor_limit]
+
+
+def _balanced_competitor_domains(
+    domains: list[str],
+    signals: dict[str, dict[str, Any]],
+    seed_keywords: list[str],
+    limit: int,
+) -> list[str]:
+    """Round-robin candidates so each seed is represented before filling extras."""
+    buckets = [
+        [domain for domain in domains if seed in signals.get(domain, {}).get("queries", [])]
+        for seed in seed_keywords
+    ]
+    result: list[str] = []
+    index = 0
+    while len(result) < limit and any(index < len(bucket) for bucket in buckets):
+        for bucket in buckets:
+            if index < len(bucket) and bucket[index] not in result:
+                result.append(bucket[index])
+                if len(result) >= limit:
+                    return result
+        index += 1
+    for domain in domains:
+        if domain not in result:
+            result.append(domain)
+            if len(result) >= limit:
+                break
+    return result
 
 
 def _primary_competitor_search_query(seed_keywords: list[str]) -> str:
@@ -1706,6 +1742,17 @@ def _phrase_terms(phrase: str) -> set[str]:
     from nlp.keywords import STOPWORDS
 
     return {word for word in phrase.split() if word not in STOPWORDS and len(word) > 2}
+
+
+def _keyword_matches_topic(
+    phrase: str,
+    seed_keywords: list[str],
+    topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
+) -> bool:
+    """Deterministic relevance fence applied after extraction and AI rewriting."""
+    from nlp.keywords import is_topic_relevant_keyword
+    return is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms)
 
 
 def _refine_keyword_gap_recommendations(

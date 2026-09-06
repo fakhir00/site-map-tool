@@ -159,6 +159,7 @@ export function GoldHunter() {
                         own_domain: siteUrl,
                         scan_frequency: 'once',
                         target_keywords: allKeywords,
+                        audit_summary: scan.audit_summary,
                         search_locale: 'us',
                       })
                     }}

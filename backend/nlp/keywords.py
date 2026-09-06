@@ -59,6 +59,7 @@ IGNORED_TOPIC_TERMS = {
     "calculator", "calculators", "maker", "makers", "converter", "converters",
     "generator", "generators", "creator", "creators", "software", "app", "apps",
     "builder", "builders", "service", "services", "agency", "agencies",
+    "diagram", "diagrams", "chart", "charts",
     "company", "companies", "free", "cheap", "guide", "tutorial", "tutorials",
 }
 
@@ -156,6 +157,22 @@ def is_publishable_keyword(
                 return False
                 
     return True
+
+
+def is_topic_relevant_keyword(
+    phrase: str,
+    seed_keywords: Iterable[str] | None,
+    topic_terms: set[str] | None,
+    negative_terms: set[str] | None = None,
+) -> bool:
+    """Require a seed anchor or multiple semantic signals from the site context."""
+    phrase_terms = keyword_terms(phrase, min_len=2)
+    if not phrase_terms or (negative_terms and phrase_terms & negative_terms):
+        return False
+    anchors = seed_keyword_terms(seed_keywords)
+    if phrase_terms & anchors:
+        return True
+    return len(phrase_terms & (topic_terms or set())) >= 2
 
 
 def extract_rake_keywords(text: str, max_keywords: int = 20) -> List[Tuple[str, float]]:

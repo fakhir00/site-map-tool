@@ -159,7 +159,8 @@ class WorkflowTests(unittest.TestCase):
         from scraping.crawler import ScrapedPage
         pid = self.project()
         def extract(seeds, urls, **kwargs):
-            return [dict(phrase='circuit board layout', type='lsi', url_ids=[str(urls[0].id)])]
+            first_url = next(iter(urls))
+            return [dict(phrase='circuit board layout', type='lsi', url_ids=[str(first_url.id)])]
         with ExitStack() as mocks:
             mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit'}, set())))
             mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=['https://competitor.example']))

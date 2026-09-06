@@ -3,15 +3,76 @@ from unittest import TestCase
 from unittest.mock import patch
 import uuid
 
-from nlp.openrouter import extract_keywords_from_urls_ai, filter_keyword_gap_recommendations
+from nlp.openrouter import _balanced_keyword_candidates, extract_keywords_from_urls_ai, filter_keyword_gap_recommendations
 from workers.pipeline import (
+    _balanced_competitor_domains,
+    _discover_competitor_domains,
     _discover_content_urls,
+    _keyword_matches_topic,
     _search_result_urls,
     _with_source_url_ids,
 )
 
 
 class PipelineFilterTests(TestCase):
+    def test_competitor_discovery_runs_every_seed_and_balances_results(self):
+        project = SimpleNamespace(
+            own_domain="https://own.example",
+            domain="https://own.example",
+            search_locale="us",
+            audit_summary="A focused circuit design tool",
+        )
+        calls = []
+
+        def search(query, **kwargs):
+            calls.append(query)
+            slug = query.split()[0]
+            return [f"https://{slug}{index}.example/blog/{slug}" for index in range(10)]
+
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=False),
+            patch("workers.pipeline._search_result_urls", side_effect=search),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=None),
+        ):
+            domains = _discover_competitor_domains(
+                project,
+                ["alpha circuit", "beta circuit", "gamma circuit"],
+            )
+
+        self.assertTrue({"alpha circuit", "beta circuit", "gamma circuit"}.issubset(calls))
+        self.assertTrue(any("alpha" in domain for domain in domains))
+        self.assertTrue(any("beta" in domain for domain in domains))
+        self.assertTrue(any("gamma" in domain for domain in domains))
+
+    def test_balancer_round_robins_seed_candidates(self):
+        domains = ["a1", "a2", "b1", "b2", "c1", "c2"]
+        signals = {
+            domain: {"queries": [domain[0]]} for domain in domains
+        }
+        self.assertEqual(
+            _balanced_competitor_domains(domains, signals, ["a", "b", "c"], 6),
+            ["a1", "b1", "c1", "a2", "b2", "c2"],
+        )
+
+    def test_keyword_candidates_are_balanced_across_seeds(self):
+        candidates = [
+            *({"phrase": f"alpha topic {index}"} for index in range(5)),
+            *({"phrase": f"beta topic {index}"} for index in range(5)),
+            *({"phrase": f"gamma topic {index}"} for index in range(5)),
+        ]
+        result = _balanced_keyword_candidates(["alpha", "beta", "gamma"], candidates, 6)
+        self.assertEqual(
+            [item["phrase"].split()[0] for item in result],
+            ["alpha", "beta", "gamma", "alpha", "beta", "gamma"],
+        )
+
+    def test_keyword_relevance_allows_semantic_support_but_rejects_drift(self):
+        topic_terms = {"circuit", "schematic", "electrical", "wiring"}
+        self.assertTrue(_keyword_matches_topic("circuit board tutorial", ["circuit diagram"], topic_terms, set()))
+        self.assertTrue(_keyword_matches_topic("electrical wiring guide", ["circuit diagram"], topic_terms, set()))
+        self.assertFalse(_keyword_matches_topic("fishbone diagram template", ["circuit diagram"], topic_terms, set()))
+        self.assertFalse(_keyword_matches_topic("electrical fitness guide", ["circuit diagram"], topic_terms, set()))
+
     def test_search_result_urls_stops_after_google_has_enough_results(self):
         with (
             patch(

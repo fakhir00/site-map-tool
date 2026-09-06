@@ -17,6 +17,7 @@ from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 import requests
 import xmltodict
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -219,12 +220,67 @@ def extract_all_urls_from_domain(
         if max_urls is not None and len(all_page_urls) >= max_urls:
             break
 
+    if len(all_page_urls) <= 1:
+        logger.info("Sitemap coverage was empty for %s; crawling internal HTML links", domain)
+        html_limit = min(max_urls or DEFAULT_MAX_PAGE_URLS, 100)
+        html_urls = crawl_internal_html_links(base_url, timeout=timeout, max_urls=html_limit)
+        all_page_urls.extend(html_urls)
+
     if not all_page_urls:
-        logger.info(f"Fallback: returning base URL {base_url} as sitemap discovery failed")
         all_page_urls.append(base_url)
 
     deduped_urls = list(dict.fromkeys(all_page_urls))
     return deduped_urls[:max_urls] if max_urls is not None else deduped_urls
+
+
+def crawl_internal_html_links(base_url: str, timeout: int = 10, max_urls: int = 100) -> List[str]:
+    """Bounded same-site crawl used when a site has no usable XML sitemap."""
+    parsed_base = urlparse(base_url)
+    allowed_host = parsed_base.netloc.lower().removeprefix("www.")
+    pending: list[tuple[str, int]] = [(base_url, 0)]
+    visited: set[str] = set()
+    discovered: list[str] = []
+
+    while pending and len(discovered) < max_urls:
+        current_url, depth = pending.pop(0)
+        normalized = current_url.split("#", 1)[0].rstrip("/") or base_url
+        if normalized in visited:
+            continue
+        visited.add(normalized)
+        try:
+            response = requests.get(normalized, headers=HEADERS, timeout=timeout, allow_redirects=True)
+            content_type = response.headers.get("content-type", "").lower()
+            if response.status_code >= 400 or "text/html" not in content_type:
+                continue
+        except requests.RequestException:
+            continue
+
+        final_url = response.url.split("#", 1)[0]
+        final_host = urlparse(final_url).netloc.lower().removeprefix("www.")
+        if final_host != allowed_host:
+            continue
+        discovered.append(final_url)
+        if depth >= 2:
+            continue
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        for anchor in soup.select("a[href]"):
+            candidate = urljoin(final_url, anchor.get("href", "")).split("#", 1)[0]
+            parsed = urlparse(candidate)
+            host = parsed.netloc.lower().removeprefix("www.")
+            if parsed.scheme not in {"http", "https"} or host != allowed_host:
+                continue
+            if _looks_like_sitemap_url(candidate) or parsed.path.lower().endswith(
+                (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".zip", ".xml")
+            ):
+                continue
+            candidate = candidate.rstrip("/") or base_url
+            if candidate not in visited and all(item[0] != candidate for item in pending):
+                pending.append((candidate, depth + 1))
+                if len(pending) + len(discovered) >= max_urls * 2:
+                    break
+
+    return list(dict.fromkeys(discovered))[:max_urls]
 
 
 def _collect_page_urls_from_sitemap(

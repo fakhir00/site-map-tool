@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
 from app.config import settings
@@ -32,7 +33,13 @@ def search_google_via_apify(query: str, max_results: int = 10, country_code: str
     
     try:
         logger.info(f"Running Apify google-search-scraper for query: {query}")
-        run = client.actor("apify/google-search-scraper").call(run_input=run_input)
+        run = client.actor("apify/google-search-scraper").call(
+            run_input=run_input,
+            run_timeout=timedelta(seconds=90),
+            wait_duration=timedelta(seconds=100),
+        )
+        if not run or run.get("status") != "SUCCEEDED":
+            return []
         
         results = []
         for item in client.dataset(run["defaultDatasetId"]).iterate_items():
@@ -72,7 +79,13 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
     
     try:
         logger.info(f"Running Apify website-content-crawler for: {domain_or_url}")
-        run = client.actor("alizarin_refrigerator-owner/website-crawler").call(run_input=run_input)
+        run = client.actor("alizarin_refrigerator-owner/website-crawler").call(
+            run_input=run_input,
+            run_timeout=timedelta(seconds=90),
+            wait_duration=timedelta(seconds=100),
+        )
+        if not run:
+            return []
         
         urls = []
         for item in client.dataset(run["defaultDatasetId"]).iterate_items():
@@ -101,7 +114,13 @@ def extract_apify_page_content(url: str) -> Optional[ScrapedPage]:
     }
     
     try:
-        run = client.actor("apify/cheerio-scraper").call(run_input=run_input)
+        run = client.actor("apify/cheerio-scraper").call(
+            run_input=run_input,
+            run_timeout=timedelta(seconds=60),
+            wait_duration=timedelta(seconds=70),
+        )
+        if not run:
+            return None
         
         for item in client.dataset(run["defaultDatasetId"]).iterate_items():
             if item.get("url") == url or url in item.get("url", ""):

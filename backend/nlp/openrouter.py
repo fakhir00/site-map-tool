@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any
 
 from openai import AsyncOpenAI, OpenAI
@@ -709,7 +710,11 @@ def filter_keyword_gap_recommendations(
     if not is_ai_configured() or not candidates:
         return None
 
-    trimmed_candidates = candidates[: settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT]
+    trimmed_candidates = _balanced_keyword_candidates(
+        seed_keywords,
+        candidates,
+        settings.AI_KEYWORD_GAP_CANDIDATE_LIMIT,
+    )
     
     audit_context = f"""
 **AGENT AUDIT SUMMARY (GOLD HUNTER)**
@@ -749,10 +754,9 @@ Look at all the keywords that passed Step 1. Many competitors use slightly varie
 - Keep ONLY ONE normalized, best-representing keyword per intent.
 - DISCARD the redundant variations. Do NOT allow multiple keywords with the same intent to pass.
 
-**Step 3: Volume Gate**
-- For the normalized query, estimate monthly search volume.
-- Keep if 500+ per month.
-- Reject if below 500.
+**Step 3: Evidence and usefulness gate**
+- Keep queries supported by the supplied competitor evidence and useful for a distinct search intent.
+- Do not invent search-volume numbers or discard a relevant query based on guessed volume.
 
 **Step 4: Final Output**
 - Return ALL deduplicated keywords that passed Steps 1-3 (maximum {max_keywords} total).
@@ -822,6 +826,48 @@ Candidates:
         return None
 
 
+def _balanced_keyword_candidates(
+    seed_keywords: list[str],
+    candidates: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Round-robin candidate phrases across seed anchors before the AI filter."""
+    from nlp.keywords import keyword_terms, seed_keyword_terms
+
+    buckets: list[list[dict[str, Any]]] = []
+    for seed in seed_keywords:
+        anchors = seed_keyword_terms([seed])
+        buckets.append([
+            item for item in candidates
+            if keyword_terms(str(item.get("phrase") or ""), min_len=2) & anchors
+        ])
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    index = 0
+    while len(result) < limit and any(index < len(bucket) for bucket in buckets):
+        for bucket in buckets:
+            if index >= len(bucket):
+                continue
+            item = bucket[index]
+            key = str(item.get("phrase") or "").strip().lower()
+            if key and key not in seen:
+                result.append(item)
+                seen.add(key)
+                if len(result) >= limit:
+                    return result
+        index += 1
+
+    for item in candidates:
+        key = str(item.get("phrase") or "").strip().lower()
+        if key and key not in seen:
+            result.append(item)
+            seen.add(key)
+            if len(result) >= limit:
+                break
+    return result
+
+
 def judge_competitor_domains(
     seed_keywords: list[str],
     own_domain: str,
@@ -856,6 +902,7 @@ Candidate competitors:
 {json.dumps(candidates, ensure_ascii=True)}
 
 Choose only domains that are true business/search competitors for the target site. 
+Maintain coverage across every seed keyword: when relevant candidates exist for a seed, accept at least two for that seed before adding extra domains for another seed. The candidate `queries` field shows which seed/search discovered it.
 Reject dictionaries, marketplaces, social networks, forums, docs portals, and generic informational sites.
 STRICT TOPICAL NICHE MATCH: You must aggressively reject any domain that belongs to a broader industry or different topical niche. 
 - If the target site is a dedicated micro-tool, localized business, or specialized service (like a specific calculator or trading strategy site), you MUST completely REJECT broad software tutorial blogs (e.g., Excel/Google Sheets blogs), generic IT/tech support sites, and generic directories.
@@ -877,7 +924,7 @@ Each object must include:
             max_tokens=1200,
         )
         if not isinstance(payload, list):
-            return []
+            return None
 
         accepted: list[dict[str, Any]] = []
         for item in payload:
@@ -897,7 +944,7 @@ Each object must include:
         return accepted[:max_domains]
     except Exception as exc:
         logger.warning("Competitor LLM judge failed: %s", exc)
-        return []
+        return None
 
 
 def build_article_brief(
@@ -1472,20 +1519,82 @@ Return ONLY a JSON object in this exact format:
         return None
 
 
-def _validate_hub_and_spoke(payload: dict, total_kws: int) -> str | None:
-    if not payload or "hubs" not in payload:
-        return "Missing 'hubs' array."
-    for hub in payload.get("hubs", []):
-        if hub.get("hub_title", "").startswith("🗑️"):
-            continue
-        for silo in hub.get("sub_silos", []):
-            layers = silo.get("layers", {})
-            total_articles = sum(len(spokes) for spokes in layers.values())
-            if total_kws > 40 and total_articles < 8:
-                return f"Sub-Silo '{silo.get('hub_title')}' has only {total_articles} articles. You MUST merge it into a neighboring sub-silo to meet the 8-article minimum."
-            layer_names = " ".join(layers.keys()).lower()
-            if "foundation" not in layer_names and "action" not in layer_names:
-                return f"Sub-Silo '{silo.get('hub_title')}' is missing required structural layers (Foundations or Action)."
+def _validate_hub_and_spoke(
+    payload: dict,
+    total_kws: int,
+    main_keyword: str | None = None,
+    allowed_keywords: set[str] | None = None,
+) -> str | None:
+    """Validate constraints that must hold regardless of model compliance."""
+    from nlp.keywords import clean_phrase
+
+    hubs = payload.get("hubs") if isinstance(payload, dict) else None
+    if not isinstance(hubs, list) or not hubs:
+        return "Missing or empty 'hubs' array."
+    content_hubs = [hub for hub in hubs if isinstance(hub, dict) and "NOISE" not in str(hub.get("hub_title", "")).upper()]
+    if len(content_hubs) != 1:
+        return f"Expected exactly one master hub, received {len(content_hubs)}."
+
+    master = content_hubs[0]
+    if main_keyword and set(clean_phrase(str(master.get("target_keyword") or "")).split()) != set(clean_phrase(main_keyword).split()):
+        return "Master hub target_keyword must match the primary seed keyword."
+
+    sub_silos = master.get("sub_silos", [])
+    if not isinstance(sub_silos, list):
+        return "Master hub sub_silos must be an array."
+    if len(sub_silos) > 5:
+        return f"A maximum of 5 sub-silos is allowed; received {len(sub_silos)}."
+    if total_kws >= 26 and len(sub_silos) < 3:
+        return f"At least 3 sub-silos are required when {total_kws} keywords are available."
+
+    seen_targets: set[str] = set()
+    entity_keywords = {
+        clean_phrase(keyword[7:]) for keyword in (allowed_keywords or set()) if keyword.startswith("entity:")
+    }
+    allowed = {
+        clean_phrase(keyword.removeprefix("entity:")) for keyword in (allowed_keywords or set())
+    }
+
+    def validate_layers(node: dict, label: str, minimum: int = 0) -> str | None:
+        layers = node.get("layers", {})
+        if not isinstance(layers, dict):
+            return f"{label} layers must be an object."
+        count = sum(len(items) for items in layers.values() if isinstance(items, list))
+        if count < minimum:
+            return f"{label} has {count} articles; at least {minimum} are required."
+        if minimum:
+            names = " ".join(str(name).lower() for name in layers)
+            for required in ("foundation", "action", "money", "quick"):
+                if required not in names:
+                    return f"{label} is missing its {required} layer."
+        for items in layers.values():
+            if not isinstance(items, list):
+                return f"{label} layer values must be arrays."
+            for spoke in items:
+                matches = re.findall(r"\(Target Keyword:\s*(.*?)\)", str(spoke), re.IGNORECASE)
+                if len(matches) != 1:
+                    return f"Every {label} spoke must contain exactly one Target Keyword."
+                target = clean_phrase(matches[0])
+                if target in seen_targets:
+                    return f"Duplicate target keyword: {target}."
+                if target in entity_keywords:
+                    return f"Entity keyword cannot be a standalone spoke: {target}."
+                if allowed and target not in allowed:
+                    return f"Spoke target keyword was not supplied by the scan: {target}."
+                seen_targets.add(target)
+        return None
+
+    error = validate_layers(master, "Master hub")
+    if error:
+        return error
+    for index, silo in enumerate(sub_silos, 1):
+        if not isinstance(silo, dict):
+            return f"Sub-silo {index} must be an object."
+        if clean_phrase(str(silo.get("target_keyword") or "")) == clean_phrase(str(master.get("target_keyword") or "")):
+            return f"Sub-silo {index} duplicates the master target keyword."
+        error = validate_layers(silo, f"Sub-silo {index}", minimum=8)
+        if error:
+            return error
     return None
 
 
@@ -1613,11 +1722,23 @@ Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [
                 max_tokens=8000,
             )
             if isinstance(payload, dict):
-                err = _validate_hub_and_spoke(payload, len(trimmed))
+                tagged_allowed = {
+                    ("entity:" if kw.get("type") == "entity" else "") + str(kw.get("phrase") or "")
+                    for kw in trimmed
+                }
+                err = _validate_hub_and_spoke(
+                    payload,
+                    len(trimmed),
+                    main_keyword=main_keyword,
+                    allowed_keywords=tagged_allowed,
+                )
                 if err and attempt < max_retries - 1:
                     logger.warning(f"Validation failed on attempt {attempt+1}: {err}. Retrying...")
                     prompt += f"\n\n[SYSTEM FEEDBACK - ATTEMPT {attempt+1} FAILED]\nYour previous output was REJECTED because: {err}\nYou MUST fix this immediately."
                     continue
+                if err:
+                    logger.error("Hub-and-spoke output remained invalid: %s", err)
+                    return None
                 return payload
             return None
         except Exception as exc:

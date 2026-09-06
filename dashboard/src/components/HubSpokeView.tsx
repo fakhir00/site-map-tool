@@ -472,7 +472,7 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {Object.entries(displayClusters as Record<string, any>).map(([category, hubMap]) => {
+            {Object.entries(displayClusters as OldSchema).map(([category, hubMap]) => {
               if (Array.isArray(hubMap)) {
                 return <OldTreeHub key={category} hub={category} spokes={hubMap} />
               } else {
