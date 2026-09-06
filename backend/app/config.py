@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT: int = 5
     MAX_RETRIES: int = 1
     ENABLE_KEYBERT: bool = False
-    ENABLE_SPACY: bool = True
+    ENABLE_SPACY: bool = False
     AI_REQUEST_TIMEOUT: float = 60.0
     SCAN_MAX_SECONDS: int = 1800
 
