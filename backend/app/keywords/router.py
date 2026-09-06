@@ -37,7 +37,9 @@ async def list_keywords(
     if keyword_type:
         q = q.where(Keyword.keyword_type == keyword_type)
     if search:
-        q = q.where(Keyword.phrase.ilike(f"%{search}%"))
+        search_terms = [t.strip() for t in search.split() if t.strip()]
+        for term in search_terms:
+            q = q.where(Keyword.phrase.ilike(f"%{term}%"))
 
     result = await db.execute(q)
     filtered_keywords = [
@@ -621,12 +623,12 @@ async def get_hub_spoke(
     tier_q = (
         select(Keyword.phrase, Keyword.tier, Keyword.article_title,
                Keyword.h_tags, Keyword.merged_from, Keyword.cluster_group_id,
-               Keyword.sub_silo_id)
+               Keyword.sub_silo_id, Keyword.keyword_type)
         .where(Keyword.project_id == project.id, Keyword.tier.isnot(None))
     )
     tier_result = await db.execute(tier_q)
     tier_metadata = {}
-    for phrase, tier, article_title, h_tags, merged_from, cluster_group_id, sub_silo_id in tier_result.all():
+    for phrase, tier, article_title, h_tags, merged_from, cluster_group_id, sub_silo_id, kw_type in tier_result.all():
         tier_metadata[phrase] = {
             "tier": tier,
             "article_title": article_title,
@@ -634,6 +636,7 @@ async def get_hub_spoke(
             "merged_from": merged_from,
             "cluster_group_id": cluster_group_id,
             "sub_silo_id": sub_silo_id,
+            "keyword_type": kw_type,
         }
     
     return {

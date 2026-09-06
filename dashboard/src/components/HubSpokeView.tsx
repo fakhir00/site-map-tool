@@ -6,6 +6,8 @@ import { Button } from './ui/Button'
 
 interface HubSpokeViewProps {
   projectId: string
+  search?: string
+  type?: string
 }
 
 interface NewSchemaLayer {
@@ -30,6 +32,7 @@ interface TierMetadataEntry {
   merged_from: string[] | null
   cluster_group_id: string | null
   sub_silo_id: number | null
+  keyword_type?: string
 }
 
 type OldSchema = Record<string, string[] | Record<string, string[]>>
@@ -246,7 +249,7 @@ function OldTreeHub({ hub, spokes }: { hub: string; spokes: string[] }) {
   )
 }
 
-export function HubSpokeView({ projectId }: HubSpokeViewProps) {
+export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeViewProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -311,6 +314,79 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   }
 
   const isNewSchema = 'hubs' in clusters && Array.isArray((clusters as NewSchema).hubs)
+
+  const filterHub = (hub: NewSchemaHub): NewSchemaHub | null => {
+    let hasMatches = false;
+    const filteredLayers: Record<string, string[]> = {};
+    if (hub.layers) {
+      Object.entries(hub.layers).forEach(([layerName, spokes]) => {
+        const filteredSpokes = (spokes as string[]).filter(spoke => {
+            const match = spoke.match(/(.*?)\s*[([]?Target Keyword:\s*([^)\]]+)[)\]]?(?:\s*\[(.*?)\])?/i)
+            const targetKeyword = match ? match[2].trim().toLowerCase() : spoke.trim().toLowerCase()
+            
+            let pass = true
+            if (search) {
+              const searchTerms = search.toLowerCase().split(/\s+/)
+              if (!searchTerms.every(term => targetKeyword.includes(term))) {
+                pass = false
+              }
+            }
+            if (pass && type) {
+               const kwInfo = tierMetadata[targetKeyword]
+               if (kwInfo && kwInfo.keyword_type !== type) {
+                  pass = false
+               } else if (!kwInfo) {
+                  pass = false
+               }
+            }
+            return pass
+        })
+        if (filteredSpokes.length > 0) {
+           filteredLayers[layerName] = filteredSpokes
+           hasMatches = true
+        }
+      })
+    }
+    
+    const filteredSubSilos: NewSchemaHub[] = [];
+    if (hub.sub_silos) {
+       hub.sub_silos.forEach(silo => {
+          const fs = filterHub(silo)
+          if (fs) {
+             filteredSubSilos.push(fs)
+             hasMatches = true
+          }
+       })
+    }
+    
+    // Also check if the hub title itself matches
+    const hubMatch = hub.hub_title.match(/(.*?)\s*[([]?Target Keyword:\s*([^)\]]+)[)\]]?/i)
+    const hubTargetKeyword = hub.target_keyword || (hubMatch ? hubMatch[2].trim() : null)
+    let hubPasses = false
+    if (hubTargetKeyword && search) {
+       const searchTerms = search.toLowerCase().split(/\s+/)
+       if (searchTerms.every(term => hubTargetKeyword.toLowerCase().includes(term))) {
+          hubPasses = true
+       }
+    } else if (!search && !type) {
+       hubPasses = true
+    }
+    
+    if (hasMatches || hubPasses) {
+       return {
+          ...hub,
+          layers: filteredLayers,
+          sub_silos: filteredSubSilos.length > 0 ? filteredSubSilos : undefined
+       }
+    }
+    return null
+  }
+
+  let displayClusters = clusters;
+  if (isNewSchema && (search || type)) {
+      const newHubs = (clusters as NewSchema).hubs.map(filterHub).filter(Boolean) as NewSchemaHub[];
+      displayClusters = { ...clusters, hubs: newHubs } as NewSchema;
+  }
 
   return (
     <div className="p-4 md:p-8 bg-slate-50 dark:bg-slate-900/50 min-h-[500px] font-mono rounded-lg border border-slate-200 dark:border-slate-800/60 shadow-inner">
@@ -390,17 +466,17 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
       <div className="flex flex-col overflow-x-auto pb-8">
         {isNewSchema ? (
           <div className="flex flex-col gap-4">
-            {(clusters as NewSchema).hubs.map((hub, i) => (
+            {(displayClusters as NewSchema).hubs.map((hub, i) => (
               <TreeHub key={i} hub={hub} onWrite={handleWrite} tierMetadata={tierMetadata} />
             ))}
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {Object.entries(clusters).map(([category, hubMap]) => {
+            {Object.entries(displayClusters as Record<string, any>).map(([category, hubMap]) => {
               if (Array.isArray(hubMap)) {
                 return <OldTreeHub key={category} hub={category} spokes={hubMap} />
               } else {
-                return Object.entries(hubMap).map(([hub, spokes]) => (
+                return Object.entries(hubMap as Record<string, string[]>).map(([hub, spokes]) => (
                   <OldTreeHub key={`${category}-${hub}`} hub={hub} spokes={spokes as string[]} />
                 ))
               }
