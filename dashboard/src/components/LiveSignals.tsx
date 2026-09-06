@@ -1,52 +1,29 @@
-import { useEffect, useState } from 'react'
+import type { ScanProgress } from '../lib/api'
 import { Terminal, Cpu } from 'lucide-react'
 import { Card } from './ui/Card'
 
 interface LiveSignalsProps {
   isActive?: boolean
+  progress?: ScanProgress
+  error?: string | null
 }
 
-const FAKE_LOGS = [
-  "Extracting topical relevance vectors...",
-  "Running TF-IDF baseline against competitors...",
-  "Entity disambiguation complete.",
-  "Mapping search intent clusters...",
-  "Detecting semantic gaps in layer 2...",
-  "Calibrating keyword difficulty algorithms...",
-  "Bypassing generic informational patterns...",
-  "Isolating high-conversion 'Money' spokes...",
-  "Scoring topical authority for root domain...",
-  "Aggregating LSI variations...",
-  "Constructing neural knowledge graph..."
-]
-
-export function LiveSignals({ isActive = false }: LiveSignalsProps) {
-  const [logs, setLogs] = useState<string[]>([])
-
-  useEffect(() => {
-    if (!isActive) {
-      setLogs(["System idle. Waiting for next gap scan..."])
-      return
-    }
-
-    setLogs(["Initializing semantic engine..."])
-    const interval = setInterval(() => {
-      setLogs((prev) => {
-        const nextLog = FAKE_LOGS[Math.floor(Math.random() * FAKE_LOGS.length)]
-        const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${nextLog}`]
-        return newLogs.slice(-6) // Keep only the last 6 logs
-      })
-    }, 2500)
-
-    return () => clearInterval(interval)
-  }, [isActive])
+export function LiveSignals({ isActive = false, progress, error }: LiveSignalsProps) {
+  const logs = [
+    `Scan status: ${progress?.status || 'pending'}`,
+    `URLs discovered: ${progress?.urls_found ?? 0}`,
+    `Pages scraped: ${progress?.urls_processed ?? 0}`,
+    `Pages failed: ${progress?.urls_failed ?? 0}`,
+    ...(progress?.current_url ? [progress.current_url] : []),
+    ...(error ? [error] : []),
+  ]
 
   return (
     <Card className="overflow-hidden p-0 h-[300px] flex flex-col bg-slate-950 dark:bg-black border-slate-800">
       <div className="border-b border-slate-800 bg-slate-900 px-5 py-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-semibold text-slate-100 text-sm">
           <Cpu className="h-4 w-4 text-emerald-400" />
-          Neural Processing Log
+          Scan Progress
         </h3>
         <span className="flex items-center gap-2 text-xs font-mono text-slate-400">
           <Terminal className="h-3 w-3" />

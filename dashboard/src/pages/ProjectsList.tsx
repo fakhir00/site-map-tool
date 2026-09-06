@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState, useEffect } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
@@ -57,27 +57,11 @@ function statusBadge(status: Project['status']) {
 
 export function ProjectsList() {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const [showNewModal, setShowNewModal] = useState(false)
+  const [showNewModal, setShowNewModal] = useState(Boolean(searchParams.get('new_keyword')))
   const [search, setSearch] = useState('')
-  const [form, setForm] = useState<ProjectForm>(initialProject)
-
-  useEffect(() => {
-    const newKeyword = searchParams.get('new_keyword')
-    const siteUrl = searchParams.get('site_url')
-    
-    if (newKeyword) {
-      setForm((prev) => ({ 
-        ...prev, 
-        primary_keyword: newKeyword,
-        ...(siteUrl ? { site_url: siteUrl } : {})
-      }))
-      setShowNewModal(true)
-      // clear param so it doesn't stay open if they refresh
-      setSearchParams(new URLSearchParams())
-    }
-  }, [searchParams, setSearchParams])
+  const [form, setForm] = useState<ProjectForm>(() => ({ ...initialProject, primary_keyword: searchParams.get('new_keyword') || '', site_url: searchParams.get('site_url') || '' }))
 
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],

@@ -87,6 +87,7 @@ export function GeneratedArticlePanel({ projectId, articleId }: { projectId: str
 
   return (
     <div className="space-y-4">
+      {writeFinalMutation.error && <p role="alert" className="text-sm text-rose-600">{writeFinalMutation.error.message}</p>}
       {/* Header Card */}
       <Card className="space-y-5 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

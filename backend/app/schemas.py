@@ -55,6 +55,7 @@ class ProjectCreate(BaseModel):
     url_filter_patterns: Optional[List[str]] = None
     target_keywords: Optional[List[str]] = None
     search_locale: str = "us"
+    audit_summary: Optional[str] = None
 
     @field_validator("domain")
     @classmethod

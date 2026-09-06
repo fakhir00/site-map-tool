@@ -114,8 +114,7 @@ function currentUser(state: DemoState, options: RequestInit) {
 }
 
 function stripPassword(user: DemoUserRecord): User {
-  const { password: _password, ...safeUser } = user
-  return safeUser
+  return { id: user.id, email: user.email, full_name: user.full_name, plan: user.plan, created_at: user.created_at }
 }
 
 function isoNow() {
@@ -534,7 +533,10 @@ function keywordBank(state: DemoState, userId: string) {
   return state.keywordBank
     .filter((entry) => entry.user_id === userId)
     .sort((left, right) => right.saved_at.localeCompare(left.saved_at))
-    .map(({ user_id: _userId, keyword_id: _keywordId, ...entry }) => entry)
+    .map(({ user_id, ...entry }) => {
+      void user_id
+      return entry
+    })
 }
 
 export async function demoFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

@@ -77,11 +77,16 @@ async def generate_article(
     return _article_out(draft, keyword.phrase)
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 class ManualGenerateRequest(BaseModel):
-    main_keyword: str
+    main_keyword: str = Field(min_length=1)
     keyword_cluster: str = ""
-    project_id: str | None = None
+    project_id: uuid.UUID | None = None
+
+    @field_validator("main_keyword", mode="before")
+    @classmethod
+    def strip_keyword(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 @router.post("/manual-generate", response_model=ArticleDraftOut)
 async def manual_generate_article(
@@ -91,11 +96,7 @@ async def manual_generate_article(
 ):
     project = None
     if req.project_id:
-        result = await db.execute(
-            select(Project)
-            .where(Project.id == req.project_id, Project.user_id == current_user.id)
-        )
-        project = result.scalar_one_or_none()
+        project = await _get_user_project(req.project_id, current_user.id, db)
         
     if not project:
         # Find the most recently active project for this user
@@ -191,6 +192,14 @@ async def write_final_article_endpoint(
         raise HTTPException(status_code=404, detail="Keyword not found")
 
     # Set status to generating
+    if draft.status == "generating":
+        raise HTTPException(status_code=409, detail="Article generation is already running")
+    research = dict(draft.research_summary or {})
+    master_prompt = research.get("master_prompt") or draft.content_markdown
+    if not master_prompt:
+        raise HTTPException(status_code=400, detail="Generate an article prompt first")
+    research["master_prompt"] = master_prompt
+    draft.research_summary = research
     draft.status = "generating"
     await db.commit()
 
@@ -198,11 +207,15 @@ async def write_final_article_endpoint(
         package = await run_in_threadpool(
             generate_final_article_package,
             primary_keyword=keyword.phrase,
-            master_prompt=draft.content_markdown,
-            brief=draft.research_summary.get("brief", {}),
+            master_prompt=master_prompt,
+            brief=research.get("brief", {}),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        draft.status = "error"
+        await db.commit()
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail="Article generation failed. Please retry.") from exc
 
     draft.status = package["status"]
     draft.title = package["title"]

@@ -1,0 +1,198 @@
+"""Offline regression tests using isolated databases and mocked providers."""
+import asyncio
+from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+import uuid
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from app.auth.jwt import create_access_token
+from app.database import get_db
+from app.main import app, _ensure_runtime_schema
+from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, Project, ScanJob, Url, User
+from workers.pipeline import _clear_previous_results, _scan_is_active
+
+PACKAGE = dict(status='passed', title='Test prompt', content_markdown='# CONTENT WRITING ASSIGNMENT\nTest prompt',
+    audit={'score': 95, 'passed': True}, attempts=1, brief={}, competitor_pages=[], own_pages=[])
+
+class WorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        directory = self.stack.enter_context(tempfile.TemporaryDirectory())
+        path = Path(directory) / 'test.db'
+        self.sync_engine = create_engine(f'sqlite:///{path}', connect_args={'check_same_thread': False, 'timeout': 15})
+        self.stack.callback(self.sync_engine.dispose)
+        self.async_engine = create_async_engine(f'sqlite+aiosqlite:///{path}')
+        for engine in [self.sync_engine, self.async_engine.sync_engine]:
+            @event.listens_for(engine, 'connect')
+            def foreign_keys(connection, _):
+                connection.execute('PRAGMA foreign_keys=ON')
+        self.sessions = sessionmaker(self.sync_engine, expire_on_commit=False)
+        async_sessions = async_sessionmaker(self.async_engine, expire_on_commit=False)
+        async def test_db():
+            async with async_sessions() as db:
+                try:
+                    yield db
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+                    raise
+        app.dependency_overrides[get_db] = test_db
+        self.stack.callback(app.dependency_overrides.clear)
+        self.stack.enter_context(patch('app.main.engine', self.async_engine))
+        self.stack.enter_context(patch('workers.pipeline.SyncSession', self.sessions))
+        self.stack.enter_context(patch('app.scan.router.settings.USE_CELERY', False))
+        self.client = self.stack.enter_context(TestClient(app))
+        with self.sessions() as db:
+            user = User(email='test@example.com')
+            db.add(user)
+            db.commit()
+            self.user_id = user.id
+        self.client.headers['Authorization'] = f'Bearer {create_access_token(self.user_id)}'
+
+    def project(self):
+        response = self.client.post('/api/projects', json=dict(name='Test', domain='https://own.example',
+            target_keywords=['circuit diagram'], audit_summary='Electronics tool'))
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()['id']
+
+    def seed_job(self, pid, status='running', age=0):
+        with self.sessions() as db:
+            project = db.get(Project, uuid.UUID(pid))
+            project.status = status
+            job = ScanJob(project_id=project.id, status=status,
+                started_at=datetime.now(timezone.utc) - timedelta(seconds=age))
+            db.add(job)
+            db.commit()
+            return job.id
+
+    def test_registration_login_and_project_context(self):
+        body = dict(email='new@example.com', password='long-password')
+        self.assertEqual(self.client.post('/api/auth/register', json=body).status_code, 201)
+        self.assertEqual(self.client.post('/api/auth/login', json=body).status_code, 200)
+        pid = self.project()
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['audit_summary'], 'Electronics tool')
+
+    def test_legacy_schema_migration_is_idempotent(self):
+        with self.sync_engine.begin() as conn:
+            conn.execute(text('ALTER TABLE projects DROP COLUMN audit_summary'))
+        async def migrate():
+            async with self.async_engine.begin() as conn:
+                await _ensure_runtime_schema(conn)
+                await _ensure_runtime_schema(conn)
+        asyncio.run(migrate())
+        self.project()
+        self.assertEqual(self.client.get('/api/projects').status_code, 200)
+
+    def test_dispatch_failure_is_recorded_and_retryable(self):
+        pid = self.project()
+        with patch('app.scan.router._dispatch_scan', side_effect=RuntimeError('broker offline')):
+            response = self.client.post(f'/api/projects/{pid}/scan/start')
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'error')
+        self.assertEqual(self.client.get(f'/api/projects/{pid}/scan/jobs').json()[0]['status'], 'error')
+        with patch('app.scan.router._dispatch_scan', return_value='test-task'):
+            self.assertEqual(self.client.post(f'/api/projects/{pid}/scan/start').status_code, 200)
+            self.assertEqual(self.client.post(f'/api/projects/{pid}/scan/start').status_code, 409)
+
+    def test_stale_scan_and_pause_fence_old_worker(self):
+        pid = self.project()
+        old_job = self.seed_job(pid, age=3600)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}/scan/status').json()['status'], 'error')
+        with self.sessions() as db:
+            self.assertFalse(_scan_is_active(db, uuid.UUID(pid), old_job))
+        job = self.seed_job(pid)
+        self.assertEqual(self.client.post(f'/api/projects/{pid}/scan/pause').status_code, 200)
+        with patch('app.scan.router._dispatch_scan', return_value='new-task'):
+            self.assertEqual(self.client.post(f'/api/projects/{pid}/scan/resume').status_code, 200)
+        with self.sessions() as db:
+            self.assertFalse(_scan_is_active(db, uuid.UUID(pid), job))
+
+    def test_manual_article_uuid_and_ownership(self):
+        pid = self.project()
+        with patch('app.content.router.generate_article_package', return_value=PACKAGE):
+            response = self.client.post('/api/projects/manual-generate', json=dict(main_keyword='circuit design', project_id=pid))
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['project_id'], pid)
+            for project_id, expected in [(str(uuid.uuid4()), 404), ('invalid', 422)]:
+                response = self.client.post('/api/projects/manual-generate', json=dict(main_keyword='circuit design', project_id=project_id))
+                self.assertEqual(response.status_code, expected)
+            self.assertEqual(self.client.post('/api/projects/manual-generate', json=dict(main_keyword='   ', project_id=pid)).status_code, 422)
+
+    def test_article_failure_and_rewrite_reuses_original_prompt(self):
+        pid = self.project()
+        with patch('app.content.router.generate_article_package', return_value=PACKAGE):
+            draft = self.client.post('/api/projects/manual-generate', json=dict(main_keyword='circuit design', project_id=pid)).json()
+        endpoint = f"/api/projects/{pid}/articles/{draft['id']}/write-final"
+        with patch('app.content.router.generate_final_article_package', side_effect=RuntimeError('provider offline')):
+            self.assertEqual(self.client.post(endpoint).status_code, 502)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}/articles').json()['items'][0]['status'], 'error')
+        with patch('app.content.router.generate_final_article_package', return_value={**PACKAGE, 'content_markdown': '# Finished article'}) as writer:
+            self.assertEqual(self.client.post(endpoint).status_code, 200)
+            self.assertEqual(self.client.post(endpoint).status_code, 200)
+            self.assertEqual(writer.call_args.kwargs['master_prompt'], PACKAGE['content_markdown'])
+
+    def test_rescan_preserves_saved_work_and_invalidates_map(self):
+        pid = uuid.UUID(self.project())
+        with self.sessions() as db:
+            keyword = Keyword(project_id=pid, phrase='circuit design')
+            url = Url(project_id=pid, url='https://competitor.example/blog/circuit')
+            db.add_all([keyword, url])
+            db.flush()
+            draft = ArticleDraft(project_id=pid, keyword_id=keyword.id, status='passed')
+            bank = KeywordBank(user_id=self.user_id, keyword_id=keyword.id)
+            db.add_all([draft, bank, KeywordUrl(keyword_id=keyword.id, url_id=url.id), HubSpokeCluster(project_id=pid, mapping_data={})])
+            db.commit()
+            _clear_previous_results(db, pid)
+            self.assertIsNotNone(db.get(ArticleDraft, draft.id))
+            self.assertIsNotNone(db.get(KeywordBank, bank.id))
+            self.assertEqual(db.execute(select(Url)).scalars().all(), [])
+            self.assertEqual(db.execute(select(HubSpokeCluster)).scalars().all(), [])
+
+    def test_full_scan_and_resume_with_no_pending_urls(self):
+        from scraping.crawler import ScrapedPage
+        pid = self.project()
+        def extract(seeds, urls, **kwargs):
+            return [dict(phrase='circuit board layout', type='lsi', url_ids=[str(urls[0].id)])]
+        with ExitStack() as mocks:
+            mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit'}, set())))
+            mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=['https://competitor.example']))
+            mocks.enter_context(patch('workers.pipeline._discover_content_urls', side_effect=lambda domain, *args, **kwargs: [domain + '/blog/circuit-guide']))
+            scraper = mocks.enter_context(patch('scraping.crawler.scrape_page', side_effect=lambda url, **kwargs: ScrapedPage(url=url, text='Circuit design content', word_count=3)))
+            extractor = mocks.enter_context(patch('nlp.openrouter.extract_keywords_from_urls_ai', side_effect=extract))
+            mocks.enter_context(patch('nlp.openrouter.filter_keyword_gap_recommendations', side_effect=lambda seeds, candidates, **kwargs: candidates))
+            mocks.enter_context(patch('nlp.openrouter.generate_ai_keywords_sync', return_value=[]))
+            mocks.enter_context(patch('workers.pipeline._own_content_keyword_phrases', return_value=set()))
+            response = self.client.post(f'/api/projects/{pid}/scan/start')
+            self.assertEqual(response.status_code, 200, response.text)
+            project = self.client.get(f'/api/projects/{pid}').json()
+            self.assertEqual(project['status'], 'complete', self.client.get(f'/api/projects/{pid}/scan/jobs').text)
+            self.assertEqual(project['total_keywords'], 1)
+            self.assertEqual(project['urls_processed'], 2)
+            self.seed_job(pid, status='paused')
+            scraper.reset_mock()
+            extractor.reset_mock()
+            self.assertEqual(self.client.post(f'/api/projects/{pid}/scan/resume').status_code, 200)
+            extractor.assert_called_once()
+            scraper.assert_not_called()
+            self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'complete')
+
+    def test_empty_scan_reports_error(self):
+        pid = self.project()
+        with ExitStack() as mocks:
+            mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=(set(), set())))
+            mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=[]))
+            mocks.enter_context(patch('workers.pipeline._discover_content_urls', return_value=[]))
+            mocks.enter_context(patch('nlp.openrouter.generate_ai_keywords_sync', return_value=[]))
+            self.client.post(f'/api/projects/{pid}/scan/start')
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'error')
+        self.assertIn('No keyword gaps', self.client.get(f'/api/projects/{pid}/scan/jobs').json()[0]['error_message'])
+
+if __name__ == '__main__':
+    unittest.main()

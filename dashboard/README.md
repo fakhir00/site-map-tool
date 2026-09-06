@@ -43,7 +43,7 @@ If you want the deployed dashboard to run as a self-contained demo instead, set:
 VITE_ENABLE_DEMO_BACKEND=true
 ```
 
-When no `VITE_API_URL` is configured in production, the dashboard automatically falls back to demo mode and stores accounts/projects in the browser.
+Without `VITE_API_URL`, production uses the same-origin `/api` endpoint. Configure a reverse proxy for it or set the backend URL above. Demo mode is enabled only when explicitly requested; demo accounts and results stay in the browser and do not perform real scans.
 
 The backend must also allow the dashboard origin. Set the backend environment variable to your Vercel URL:
 

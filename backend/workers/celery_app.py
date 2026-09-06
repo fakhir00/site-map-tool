@@ -21,6 +21,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    broker_connection_timeout=5,
+    broker_transport_options={"socket_connect_timeout": 5, "socket_timeout": 5},
+    task_publish_retry=False,
+    task_soft_time_limit=settings.SCAN_MAX_SECONDS,
+    task_time_limit=settings.SCAN_MAX_SECONDS + 30,
     task_routes={
         "workers.pipeline.run_full_pipeline": {"queue": "scrape"},
         "workers.pipeline.analyze_url": {"queue": "nlp"},

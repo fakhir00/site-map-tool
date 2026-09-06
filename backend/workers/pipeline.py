@@ -38,11 +38,6 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
     keyword extraction and AI filtering run once on the full scraped corpus.
     """
     from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
-    from nlp.keywords import classify_keyword_tiers
-    from scraping.filters import filter_blog_urls
-    from scraping.crawler import scrape_page
-    from scraping.sitemap import extract_all_urls_from_domain
-    from nlp.openrouter import extract_keywords_from_urls_ai, generate_ai_keywords_sync, ai_generated_source, filter_keyword_gap_recommendations, verify_cluster_intent
     import concurrent.futures
     import queue
     import time
@@ -53,10 +48,17 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
     
     db = get_db()
     try:
+        from nlp.keywords import classify_keyword_tiers
+        from scraping.filters import filter_blog_urls
+        from scraping.crawler import scrape_page
+        from scraping.sitemap import extract_all_urls_from_domain
+        from nlp.openrouter import extract_keywords_from_urls_ai, generate_ai_keywords_sync, ai_generated_source, filter_keyword_gap_recommendations, verify_cluster_intent
         project = db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
         job = db.execute(select(ScanJob).where(ScanJob.id == job_uuid)).scalar_one_or_none()
         if not project or not job:
             logger.error("[%s] Project or scan job not found", project_id)
+            return
+        if project.status != "running" or job.status != "queued":
             return
 
         scan_started = time.monotonic()
@@ -112,43 +114,32 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         topic_terms, negative_terms = _semantic_terms(seed_keywords, audit_summary)
         logger.info("[%s] Semantic filters ready in %.1fs", project_id, time.monotonic() - semantic_started)
 
-        if resume_existing:
-            pending_urls = _pending_urls(db, project_uuid)
-            if not pending_urls:
-                _sync_project_counts(db, project)
-                _mark_complete(db, project, job, "complete")
-                return
-            
-            own_domain = _origin(project.own_domain or project.domain) or project.domain
-            competitor_domains = []
-            crawl_limit = 10
-            required_terms = _search_required_terms(seed_keywords)
-            ranking_terms = _search_ranking_terms(seed_keywords)
-        else:
+        if not _scan_is_active(db, project_uuid, job_uuid):
+            return
+        if not resume_existing:
             _clear_previous_results(db, project_uuid)
-            own_domain = _origin(project.own_domain or project.domain) or project.domain
-            competitor_domains = _discover_competitor_domains(project, seed_keywords, negative_terms=negative_terms)
-            required_terms = _search_required_terms(seed_keywords)
-            ranking_terms = _search_ranking_terms(seed_keywords)
-            crawl_limit = _crawl_limit_per_domain(competitor_domains)
-
             project.urls_found = 0
             project.urls_processed = 0
             project.urls_failed = 0
             project.total_keywords = 0
-            project.status = "running"
             db.commit()
+
+        # Repeat discovery on resume: a pause may have interrupted a domain before
+        # its URLs were persisted. Existing scraped pages are retained below.
+        own_domain = _origin(project.own_domain or project.domain) or project.domain
+        competitor_domains = _discover_competitor_domains(project, seed_keywords, negative_terms=negative_terms)
+        required_terms = _search_required_terms(seed_keywords)
+        ranking_terms = _search_ranking_terms(seed_keywords)
+        crawl_limit = _crawl_limit_per_domain(competitor_domains)
+        if not _scan_is_active(db, project_uuid, job_uuid):
+            return
 
         domain_queue = queue.Queue()
         url_queue = queue.Queue()
 
-        if not resume_existing:
-            domain_queue.put((own_domain, "own"))
-            for cd in competitor_domains:
-                domain_queue.put((cd, "competitor"))
-        else:
-            for u in pending_urls:
-                url_queue.put(u.id)
+        domain_queue.put((own_domain, "own"))
+        for cd in competitor_domains:
+            domain_queue.put((cd, "competitor"))
 
         def discover_worker():
             local_db = get_db()
@@ -161,7 +152,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
 
                     try:
                         proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
-                        if proj and proj.status == "paused":
+                        if not _scan_is_active(local_db, project_uuid, job_uuid):
                             continue
 
                         d_urls = _discover_content_urls(
@@ -177,6 +168,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                             source_type=source_type,
                         )
 
+                        if not _scan_is_active(local_db, project_uuid, job_uuid):
+                            continue
                         _queue_discovered_urls(
                             local_db,
                             proj,
@@ -221,12 +214,15 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
 
                     try:
                         proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
-                        if proj and proj.status == "paused":
+                        if not _scan_is_active(local_db, project_uuid, job_uuid):
                             continue
 
                         chunk_urls = local_db.execute(select(Url).where(Url.id.in_(chunk_ids))).scalars().all()
                         
                         for u in chunk_urls:
+                            if not _scan_is_active(local_db, project_uuid, job_uuid):
+                                local_db.rollback()
+                                return
                             try:
                                 scrape_result = scrape_page(
                                     u.url,
@@ -243,6 +239,9 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                             if not scraped_ok:
                                 continue
 
+                        if not _scan_is_active(local_db, project_uuid, job_uuid):
+                            local_db.rollback()
+                            return
                         local_db.commit()
                         if proj:
                             _sync_project_counts(local_db, proj)
@@ -268,9 +267,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
 
         logger.info("[%s] Discovery and scraping finished in %.1fs", project_id, time.monotonic() - scrape_started)
 
-        db.refresh(project)
-        if project.status == "paused":
-            _mark_complete(db, project, job, "paused")
+        if not _scan_is_active(db, project_uuid, job_uuid):
             return
 
         gap_started = time.monotonic()
@@ -293,12 +290,16 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             time.monotonic() - gap_started,
         )
             
+        if not _scan_is_active(db, project_uuid, job_uuid):
+            return
         ai_keywords = generate_ai_keywords_sync(
             seed_keywords,
             topic_terms=topic_terms,
             negative_terms=negative_terms,
             apply_gap_filter=False,
         )
+        if not _scan_is_active(db, project_uuid, job_uuid):
+            return
         if ai_keywords:
             existing_phrases = {row[0] for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_uuid)).all()}
             own_keyword_phrases = _own_content_keyword_phrases(db, project_uuid, topic_terms, negative_terms)
@@ -364,7 +365,11 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 _store_keywords(db, project_uuid, acc_ai)
                 logger.info("[%s] Stored %s AI-generated keywords (tiered)", project_id, len(acc_ai))
 
+        if not _scan_is_active(db, project_uuid, job_uuid):
+            return
         _sync_project_counts(db, project)
+        if not project.total_keywords:
+            raise RuntimeError("No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry.")
         _mark_complete(db, project, job, "complete")
         logger.info(
             "[%s] Scan complete with %s keywords in %.1fs",
@@ -378,7 +383,8 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         db.rollback()
         project = db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
         job = db.execute(select(ScanJob).where(ScanJob.id == job_uuid)).scalar_one_or_none()
-        _mark_complete(db, project, job, "error", str(exc)[:500])
+        if job and job.status in {"queued", "running"}:
+            _mark_complete(db, project, job, "error", str(exc)[:500])
     finally:
         db.close()
 
@@ -1242,6 +1248,20 @@ def _mark_running(db: Session, project: Any, job: Any) -> None:
     db.commit()
 
 
+def _scan_is_active(db: Session, project_id: uuid.UUID, job_id: uuid.UUID) -> bool:
+    """Read fresh state so paused/replaced workers cannot restart an old job."""
+    from app.models import Project, ScanJob
+    with db.no_autoflush:
+        row = db.execute(select(Project.status, ScanJob.status, ScanJob.started_at)
+            .join(ScanJob, ScanJob.project_id == Project.id)
+            .where(Project.id == project_id, ScanJob.id == job_id)).first()
+    if not row or row[0] != "running" or row[1] != "running":
+        return False
+    if row[2] and (datetime.utcnow() - row[2].replace(tzinfo=None)).total_seconds() > settings.SCAN_MAX_SECONDS:
+        raise TimeoutError("Scan exceeded its time limit. Please retry.")
+    return True
+
+
 def _mark_complete(db: Session, project: Any, job: Any, status: str, error_msg: str | None = None) -> None:
     now = datetime.utcnow()
     if project:
@@ -1261,14 +1281,19 @@ def _mark_complete(db: Session, project: Any, job: Any, status: str, error_msg: 
 
 
 def _clear_previous_results(db: Session, project_id: uuid.UUID) -> None:
-    from app.models import Keyword, KeywordBank, KeywordUrl, Url
+    from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, Url
 
     keyword_ids = select(Keyword.id).where(Keyword.project_id == project_id)
     url_ids = select(Url.id).where(Url.project_id == project_id)
-    db.execute(delete(KeywordBank).where(KeywordBank.keyword_id.in_(keyword_ids)))
     db.execute(delete(KeywordUrl).where(KeywordUrl.keyword_id.in_(keyword_ids)))
     db.execute(delete(KeywordUrl).where(KeywordUrl.url_id.in_(url_ids)))
-    db.execute(delete(Keyword).where(Keyword.project_id == project_id))
+    # Saved keywords and authored drafts must survive a rescan.
+    db.execute(delete(Keyword).where(
+        Keyword.project_id == project_id,
+        ~Keyword.id.in_(select(KeywordBank.keyword_id)),
+        ~Keyword.id.in_(select(ArticleDraft.keyword_id)),
+    ))
+    db.execute(delete(HubSpokeCluster).where(HubSpokeCluster.project_id == project_id))
     db.execute(delete(Url).where(Url.project_id == project_id))
     db.commit()
 
@@ -1288,10 +1313,6 @@ def _queue_url(
     ).scalar_one_or_none()
     if existing:
         existing.scan_job_id = job_id
-        existing.source_type = source_type
-        existing.source_domain = source_domain
-        existing.status = "pending"
-        existing.error_reason = None
         return
 
     db.add(

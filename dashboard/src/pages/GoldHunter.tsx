@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Search, Loader2, Clock, Plus } from 'lucide-react'
-import { api, type Project } from '../lib/api'
+import { api, type Project, type ProjectCreate } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -35,7 +35,7 @@ const renderAuditSummary = (summary: string) => {
         </div>
       )
     }
-  } catch (e) {
+  } catch {
     // Fall back to raw text if parsing fails
   }
 
@@ -55,7 +55,7 @@ export function GoldHunter() {
   })
 
   const scanMutation = useMutation({
-    mutationFn: (targetUrl: string) => api.post<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }),
+    mutationFn: (targetUrl: string) => api.postAI<GoldHunterScan>('/goldhunter/scan', { url: targetUrl }),
     onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goldhunter_history'] })
@@ -67,7 +67,7 @@ export function GoldHunter() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (body: any) => api.post<Project>('/projects', body),
+    mutationFn: (body: ProjectCreate) => api.post<Project>('/projects', body),
     onSuccess: async (project: Project) => {
       try {
         await api.post(`/projects/${project.id}/scan/start`)

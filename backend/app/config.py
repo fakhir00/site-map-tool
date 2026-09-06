@@ -1,10 +1,13 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite+aiosqlite:///./sitemapseo.db"
+    DATABASE_URL: str = f"sqlite+aiosqlite:///{BACKEND_DIR / 'sitemapseo.db'}"
     SYNC_DATABASE_URL: str = ""
     REDIS_URL: str = "redis://localhost:6379/0"
     USE_CELERY: bool = False
@@ -39,9 +42,11 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = 1
     ENABLE_KEYBERT: bool = False
     ENABLE_SPACY: bool = True
+    AI_REQUEST_TIMEOUT: float = 60.0
+    SCAN_MAX_SECONDS: int = 1800
 
     class Config:
-        env_file = ".env"
+        env_file = (BACKEND_DIR.parent / ".env", BACKEND_DIR / ".env")
 
     @model_validator(mode="after")
     def normalize_database_urls(self):
@@ -74,8 +79,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    from dotenv import load_dotenv
-    load_dotenv(override=True)
     return Settings()
 
 get_settings.cache_clear()

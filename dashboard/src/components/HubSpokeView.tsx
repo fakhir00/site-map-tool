@@ -32,7 +32,7 @@ interface TierMetadataEntry {
   sub_silo_id: number | null
 }
 
-type OldSchema = Record<string, any>
+type OldSchema = Record<string, string[] | Record<string, string[]>>
 type ClusterData = NewSchema | OldSchema
 
 function TreeDot({ tier }: { tier: string | null }) {
@@ -42,7 +42,7 @@ function TreeDot({ tier }: { tier: string | null }) {
   return <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-200 shrink-0" />
 }
 
-function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: any }) {
+function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: TierMetadataEntry | null | undefined }) {
   if (tier === 'merge' && tierInfo?.merged_from) {
     return (
       <span 
@@ -70,8 +70,8 @@ function slugify(text: string) {
     .toString()
     .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/[^\w-]+/g, '')
+    .replace(/--+/g, '-')
     .replace(/^-+/, '')
     .replace(/-+$/, '')
 }
@@ -90,9 +90,9 @@ function TreeHub({
   const layerEntries = Object.entries(hub.layers || {})
   
   // Clean hub title to extract target keyword if AI provided it in the string fallback
-  const hubMatch = hub.hub_title.match(/(.*?)\s*[\(\[]?Target Keyword:\s*([^)\]]+)[\)\]]?/i)
-  let displayHubTitle = hubMatch ? hubMatch[1].trim() : hub.hub_title.trim()
-  let hubTargetKeyword = hub.target_keyword || (hubMatch ? hubMatch[2].trim() : null)
+  const hubMatch = hub.hub_title.match(/(.*?)\s*[([]?Target Keyword:\s*([^)\]]+)[)\]]?/i)
+  const displayHubTitle = hubMatch ? hubMatch[1].trim() : hub.hub_title.trim()
+  const hubTargetKeyword = hub.target_keyword || (hubMatch ? hubMatch[2].trim() : null)
 
   // Clean hub title for slug (remove "MASTER HUB: " or similar prefixes if they exist)
   let cleanHubTitle = displayHubTitle.replace(/^.*?:\s*/, '').trim()
@@ -134,7 +134,7 @@ function TreeHub({
               <div className="text-slate-400 italic pl-4">No keywords in this layer.</div>
             ) : (
               spokes.map((spoke, sIdx) => {
-                const match = spoke.match(/(.*?)\s*[\(\[]?Target Keyword:\s*([^)\]]+)[\)\]]?(?:\s*\[(.*?)\])?/i)
+                const match = spoke.match(/(.*?)\s*[([]?Target Keyword:\s*([^)\]]+)[)\]]?(?:\s*\[(.*?)\])?/i)
                 const displayTitle = match ? match[1].trim() : spoke.trim()
                 const targetKeyword = match ? match[2].trim() : null
                 const extraTags = match && match[3] ? match[3].trim() : null
@@ -256,7 +256,7 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   })
 
   const clusterMutation = useMutation({
-    mutationFn: () => api.post<{ clusters: ClusterData }>(`/projects/${projectId}/keywords/hub-spoke`),
+    mutationFn: () => api.postAI<{ clusters: ClusterData }>(`/projects/${projectId}/keywords/hub-spoke`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hub-spoke', projectId] })
     },
@@ -285,11 +285,13 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
   }
 
   const clusters = data?.clusters
+  const generationError = clusterMutation.error || manualMutation.error
   const tierMetadata = data?.tier_metadata || {}
 
   if (!clusters || Object.keys(clusters).length === 0) {
     return (
       <div className="flex flex-col items-center justify-center px-4 py-16 text-center font-sans">
+        {generationError && <p role="alert" className="mb-4 text-sm text-rose-600">{generationError.message}</p>}
         <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
           <Network className="h-6 w-6 text-slate-400 dark:text-slate-500" />
         </div>
@@ -312,6 +314,8 @@ export function HubSpokeView({ projectId }: HubSpokeViewProps) {
 
   return (
     <div className="p-4 md:p-8 bg-slate-50 dark:bg-slate-900/50 min-h-[500px] font-mono rounded-lg border border-slate-200 dark:border-slate-800/60 shadow-inner">
+      {generationError && <p role="alert" className="mb-4 text-sm text-rose-600">{generationError.message}</p>}
+      {manualMutation.isPending && <p role="status" className="mb-4 text-sm">Generating article prompt…</p>}
       <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
         <div>
           <h4 className="text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight font-sans">Topical Map</h4>

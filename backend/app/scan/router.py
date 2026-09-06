@@ -1,7 +1,9 @@
 import uuid
+import logging
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from app.database import get_db
 from app.models import User, Project, ScanJob
 from app.schemas import ScanJobOut, ScanProgress
@@ -9,6 +11,7 @@ from app.auth.jwt import get_current_user
 from app.config import settings
 
 router = APIRouter(prefix="/api/projects", tags=["scan"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/{project_id}/scan/start", response_model=ScanJobOut)
@@ -19,12 +22,18 @@ async def start_scan(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(project_id, current_user.id, db)
+    await _expire_stalled_scan(project, db)
 
     if project.status == "running":
         raise HTTPException(status_code=409, detail="Scan already running for this project")
     if project.status == "paused":
         raise HTTPException(status_code=409, detail="Scan is paused. Resume it instead of starting a new scan.")
 
+    claimed = await db.execute(update(Project).where(
+        Project.id == project_id, Project.status == project.status,
+    ).values(status="running"))
+    if not claimed.rowcount:
+        raise HTTPException(status_code=409, detail="Scan state changed. Refresh and retry.")
     job = ScanJob(project_id=project_id)
     db.add(job)
     await db.flush()
@@ -33,8 +42,7 @@ async def start_scan(
     await db.commit()
     await db.refresh(job)
 
-    job.celery_task_id = _dispatch_scan(background_tasks, project_id, job.id, resume_existing=False)
-    await db.commit()
+    await _launch_scan(background_tasks, project, job, db, resume_existing=False)
 
     return ScanJobOut.model_validate(job)
 
@@ -46,6 +54,7 @@ async def scan_status(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(project_id, current_user.id, db)
+    await _expire_stalled_scan(project, db)
 
     # No Redis locally - return None
     current_url = None
@@ -53,6 +62,11 @@ async def scan_status(
     percent = 0.0
     if project.urls_found > 0:
         percent = round((project.urls_processed + project.urls_failed) / project.urls_found * 100, 1)
+    if project.status == "running" and percent >= 100:
+        current_url = "Analyzing keyword gaps and organizing recommendations"
+        percent = 95.0
+    elif project.status == "complete":
+        percent = 100.0
 
     return ScanProgress(
         status=project.status,
@@ -74,6 +88,9 @@ async def pause_scan(
     if project.status != "running":
         raise HTTPException(status_code=409, detail="Only a running scan can be paused")
     project.status = "paused"
+    await db.execute(update(ScanJob).where(
+        ScanJob.project_id == project_id, ScanJob.status.in_(["queued", "running"]),
+    ).values(status="paused", finished_at=datetime.now(timezone.utc)))
     await db.commit()
     return {"message": "Scan paused"}
 
@@ -89,6 +106,11 @@ async def resume_scan(
     if project.status != "paused":
         raise HTTPException(status_code=409, detail="Only a paused scan can be resumed")
 
+    claimed = await db.execute(update(Project).where(
+        Project.id == project_id, Project.status == "paused",
+    ).values(status="running"))
+    if not claimed.rowcount:
+        raise HTTPException(status_code=409, detail="Scan state changed. Refresh and retry.")
     job = ScanJob(project_id=project_id)
     db.add(job)
     await db.flush()
@@ -97,8 +119,7 @@ async def resume_scan(
     await db.commit()
     await db.refresh(job)
 
-    job.celery_task_id = _dispatch_scan(background_tasks, project_id, job.id, resume_existing=True)
-    await db.commit()
+    await _launch_scan(background_tasks, project, job, db, resume_existing=True)
 
     return ScanJobOut.model_validate(job)
 
@@ -129,6 +150,42 @@ async def _get_user_project(project_id: uuid.UUID, user_id: uuid.UUID, db: Async
     return project
 
 
+async def _expire_stalled_scan(project: Project, db: AsyncSession) -> None:
+    if project.status != "running":
+        return
+    result = await db.execute(select(ScanJob).where(
+        ScanJob.project_id == project.id,
+    ).order_by(ScanJob.created_at.desc()).limit(1))
+    job = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    started = (job.started_at or job.created_at) if job else None
+    if started and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    if job and job.status in {"queued", "running"} and started and now - started < timedelta(seconds=settings.SCAN_MAX_SECONDS):
+        return
+    project.status = "error"
+    if job and job.status in {"queued", "running"}:
+        job.status = "error"
+        job.finished_at = now
+        job.error_message = "Scan stopped responding or exceeded its time limit. Start a new scan to retry."
+    await db.commit()
+
+
+async def _launch_scan(background_tasks, project, job, db, *, resume_existing):
+    try:
+        job.celery_task_id = _dispatch_scan(background_tasks, project.id, job.id, resume_existing)
+        await db.commit()
+    except Exception as exc:
+        logger.exception("Failed to dispatch scan %s", job.id)
+        await db.rollback()
+        project.status = "paused" if resume_existing else "error"
+        job.status = "error"
+        job.finished_at = datetime.now(timezone.utc)
+        job.error_message = "Could not start the scan worker. Check the worker connection and retry."
+        await db.commit()
+        raise HTTPException(status_code=503, detail=job.error_message) from exc
+
+
 def _dispatch_scan(
     background_tasks: BackgroundTasks,
     project_id: uuid.UUID,
@@ -138,7 +195,9 @@ def _dispatch_scan(
     if settings.USE_CELERY:
         from workers.pipeline import run_full_pipeline_task
 
-        task = run_full_pipeline_task.delay(str(project_id), str(job_id), resume_existing)
+        task = run_full_pipeline_task.apply_async(
+            args=[str(project_id), str(job_id), resume_existing], retry=False,
+        )
         return task.id
 
     from workers.pipeline import run_full_pipeline

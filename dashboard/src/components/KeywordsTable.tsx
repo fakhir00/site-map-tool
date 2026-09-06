@@ -109,7 +109,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
   })
 
   const topPicksMutation = useMutation({
-    mutationFn: () => api.post(`/projects/${projectId}/keywords/top-picks`),
+    mutationFn: () => api.postAI(`/projects/${projectId}/keywords/top-picks`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
       queryClient.invalidateQueries({ queryKey: ['projects'] })
@@ -122,11 +122,11 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
 
   const bulkSaveMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => 
-      api.post(`/projects/${projectId}/keywords/bulk-save`, { 
+      api.post<{ message: string }>(`/projects/${projectId}/keywords/bulk-save`, {
         keyword_ids: Array.from(selectedIds), 
         notes: tag 
       }),
-    onSuccess: (data: any) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['keyword-bank'] })
       setIsSelectionMode(false)
       setSelectedIds(new Set())
@@ -136,10 +136,10 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: () => 
-      api.post(`/projects/${projectId}/keywords/bulk-delete`, { 
+      api.post<{ message: string }>(`/projects/${projectId}/keywords/bulk-delete`, {
         keyword_ids: Array.from(selectedIds)
       }),
-    onSuccess: (data: any) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
       queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
       queryClient.invalidateQueries({ queryKey: ['hub-spoke', projectId] })

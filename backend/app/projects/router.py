@@ -31,6 +31,7 @@ async def create_project(
         url_filter_patterns=patterns,
         target_keywords=body.target_keywords,
         search_locale=body.search_locale,
+        audit_summary=body.audit_summary,
     )
     db.add(project)
     await db.flush()

@@ -74,6 +74,8 @@ def _sync_client(use_writing_model: bool = False) -> OpenAI:
     return OpenAI(
         base_url=base_url,
         api_key=api_key,
+        timeout=settings.AI_REQUEST_TIMEOUT,
+        max_retries=0,
     )
 
 
@@ -82,6 +84,8 @@ def _async_client(use_writing_model: bool = False) -> AsyncOpenAI:
     return AsyncOpenAI(
         base_url=base_url,
         api_key=api_key,
+        timeout=settings.AI_REQUEST_TIMEOUT,
+        max_retries=0,
     )
 
 
@@ -223,7 +227,7 @@ async def generate_core_domain_terms(target_keywords: list[str], audit_summary: 
     if not is_ai_configured() or not target_keywords:
         return {"core_terms": [], "generic_terms": [], "negative_terms": []}
 
-    cache_key = json.dumps(target_keywords)
+    cache_key = json.dumps([target_keywords, audit_summary])
     if cache_key in _semantic_cache:
         return _semantic_cache[cache_key]
 

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, type Project } from '../lib/api'
+import { api, type Project, type ProjectCreate } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -26,7 +26,7 @@ export default function ScanInterface() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (body: any) => api.post<Project>('/projects', body),
+    mutationFn: (body: ProjectCreate) => api.post<Project>('/projects', body),
     onSuccess: async (project: Project) => {
       try {
         await api.post(`/projects/${project.id}/scan/start`)

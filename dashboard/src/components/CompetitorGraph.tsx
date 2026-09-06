@@ -22,35 +22,12 @@ interface CompetitorGraphProps {
   isActive?: boolean
 }
 
-const TECH_JARGON = [
-  'Semantic Index',
-  'Entity Vector',
-  'Knowledge Graph',
-  'Topological Map',
-  'Cluster Resonance',
-  'Density Node',
-  'Synaptic Weight',
-  'Ontology Core',
-  'Neural Subnet',
-  'Lexical Array'
-]
-
 export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphProps) {
-  // Filter out the 'own' site
-  const competitors = sources.filter((s) => s.source_type !== 'own' && s.source_domain)
-
-  // Use a generic placeholder if no data, otherwise map data to tech jargon
-  const data = competitors.length > 0 
-    ? competitors.map((c, idx) => ({
-        subject: TECH_JARGON[idx % TECH_JARGON.length],
-        A: c.urls_found || 1,
-        fullScore: Math.max(...competitors.map((comp) => comp.urls_found || 1))
-      }))
-    : Array.from({ length: 6 }).map((_, idx) => ({
-        subject: TECH_JARGON[idx],
-        A: Math.floor(Math.random() * 100) + 20,
-        fullScore: 120
-      }))
+  const competitors = sources.filter((s) => s.source_type === 'competitor' && s.source_domain)
+  const data = competitors.map((source) => ({
+    subject: source.source_domain?.replace(/^https?:\/\//, ''),
+    A: source.urls_found,
+  }))
 
   return (
     <Card className="overflow-hidden p-0">
@@ -58,10 +35,10 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
         <div>
           <h3 className="flex items-center gap-2 font-semibold text-slate-950 dark:text-slate-50">
             <Activity className="h-4 w-4 text-cyan-600 dark:text-cyan-500" />
-            AI Intelligence Mapping
+            Competitor Coverage
           </h3>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Real-time neural footprint analysis and vector distribution
+            Pages discovered on competitor websites
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -77,7 +54,7 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
         {/* Subtle grid background to look high-tech but light-themed */}
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px]"></div>
         
-        <ResponsiveContainer width="100%" height="100%">
+        {data.length === 0 ? <div className="flex h-full items-center justify-center text-sm text-slate-500">No competitor pages discovered yet.</div> : <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
             <PolarGrid stroke="#e2e8f0" />
             <PolarAngleAxis 
@@ -100,10 +77,10 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
                 backdropFilter: 'blur(4px)'
               }}
               itemStyle={{ color: '#0891b2', fontWeight: 600 }}
-              formatter={(value: any) => [`${value} resonance score`, 'Vector Strength']}
+              formatter={(value) => [`${value} pages`, 'URLs found']}
             />
             <Radar
-              name="Vector Strength"
+              name="URLs found"
               dataKey="A"
               stroke="#06b6d4"
               strokeWidth={2}
@@ -124,7 +101,7 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
               animationDuration={3000}
             />
           </RadarChart>
-        </ResponsiveContainer>
+        </ResponsiveContainer>}
       </div>
     </Card>
   )

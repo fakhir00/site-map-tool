@@ -1,4 +1,5 @@
 import re
+import time
 from typing import Any
 
 from app.config import settings
@@ -22,6 +23,7 @@ def generate_article_package(
     competitor_urls: list[str],
     own_urls: list[str],
 ) -> dict[str, Any]:
+    started = time.monotonic()
     if not is_ai_configured():
         raise ValueError("AI API key is required to generate articles. Set GROQ_API_KEY or OPENROUTER_API_KEY.")
 
@@ -52,9 +54,13 @@ def generate_article_package(
     article_markdown = ""
     audit: dict[str, Any] | None = None
     revision_notes: list[str] = []
-    attempts = max(3, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
+    attempts = max(1, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
+    completed_attempt = 0
 
     for attempt in range(1, attempts + 1):
+        if attempt > 1 and time.monotonic() - started + 2 * settings.AI_REQUEST_TIMEOUT > 240:
+            break
+        completed_attempt = attempt
         article_markdown = write_prompt(
             project_name=project_name,
             primary_keyword=primary_keyword,
@@ -98,7 +104,7 @@ def generate_article_package(
         "content_markdown": article_markdown,
         "audit": audit,
         "brief": brief,
-        "attempts": attempts,
+        "attempts": completed_attempt,
         "competitor_pages": merged_competitors,
         "own_pages": own_pages,
     }
@@ -110,15 +116,20 @@ def generate_final_article_package(
     master_prompt: str,
     brief: dict[str, Any],
 ) -> dict[str, Any]:
+    started = time.monotonic()
     if not is_ai_configured():
         raise ValueError("AI API key is required to generate articles. Set GROQ_API_KEY or OPENROUTER_API_KEY.")
 
     article_markdown = ""
     audit: dict[str, Any] | None = None
     revision_notes: list[str] = []
-    attempts = 20  # Try up to 20 times to ensure we pass the auditor
+    attempts = max(1, settings.ARTICLE_GENERATION_MAX_ATTEMPTS)
+    completed_attempt = 0
 
     for attempt in range(1, attempts + 1):
+        if attempt > 1 and time.monotonic() - started + 2 * settings.AI_REQUEST_TIMEOUT > 240:
+            break
+        completed_attempt = attempt
         article_markdown = write_final_article(
             master_prompt=master_prompt,
             revision_notes=revision_notes,
@@ -173,7 +184,7 @@ def generate_final_article_package(
         "title": _article_title(article_markdown, brief, primary_keyword),
         "content_markdown": article_markdown,
         "audit": audit,
-        "attempts": attempts,
+        "attempts": completed_attempt,
     }
 
 

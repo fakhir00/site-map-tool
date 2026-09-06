@@ -11,7 +11,7 @@ const REQUEST_TIMEOUT_MS = 20_000
 const ARTICLE_REQUEST_TIMEOUT_MS = 300_000
 const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
 export const DEMO_BACKEND_ENABLED =
-  import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true' || needsProductionApiUrl
+  import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true'
 
 type ApiRequestInit = RequestInit & {
   timeoutMs?: number
@@ -40,6 +40,16 @@ export type Project = {
   total_keywords: number
   created_at: string
   last_scanned_at: string | null
+}
+
+export type ProjectCreate = {
+  name: string
+  domain: string
+  own_domain?: string
+  scan_frequency?: string
+  target_keywords: string[]
+  search_locale?: string
+  audit_summary?: string
 }
 
 export type ProjectStats = {
@@ -389,6 +399,10 @@ export const api = {
   },
 
   postArticle<T>(endpoint: string, body?: unknown): Promise<T> {
+    return api.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
+  },
+
+  postAI<T>(endpoint: string, body?: unknown): Promise<T> {
     return api.post<T>(endpoint, body, { timeoutMs: ARTICLE_REQUEST_TIMEOUT_MS })
   },
 }

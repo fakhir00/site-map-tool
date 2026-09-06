@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
@@ -18,19 +18,14 @@ export default function WriteBlog() {
   
   const [mainKeyword, setMainKeyword] = useState(initialKeyword)
   const [keywordCluster, setKeywordCluster] = useState('')
-  const [selectedKeyword, setSelectedKeyword] = useState<KeywordBankEntry | null>(null)
+  const [chosenKeyword, setSelectedKeyword] = useState<KeywordBankEntry | null>(null)
 
   const { data: allKeywords = [], isLoading } = useQuery({
     queryKey: ['keyword-bank'],
     queryFn: () => api.get<KeywordBankEntry[]>('/keyword-bank'),
   })
 
-  useEffect(() => {
-    if (initialKeyword && allKeywords.length > 0 && !selectedKeyword) {
-      const match = allKeywords.find(kw => kw.phrase === initialKeyword)
-      if (match) setSelectedKeyword(match)
-    }
-  }, [initialKeyword, allKeywords, selectedKeyword])
+  const selectedKeyword = chosenKeyword || allKeywords.find(kw => kw.phrase === initialKeyword) || null
 
   const keywords = allKeywords.filter(kw => kw.notes === '#blog')
 
