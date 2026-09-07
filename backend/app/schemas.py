@@ -85,13 +85,21 @@ class ProjectCreate(BaseModel):
             raise ValueError("Enter a valid own domain or URL")
         return v
 
-    @field_validator("url_filter_patterns", "target_keywords")
+    @field_validator("url_filter_patterns")
     @classmethod
     def clean_string_list(cls, v: Optional[List[str]]) -> Optional[List[str]]:
         if v is None:
             return None
         cleaned = [item.strip() for item in v if item and item.strip()]
         return cleaned or None
+
+    @field_validator("target_keywords")
+    @classmethod
+    def clean_target_keywords(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return None
+        from nlp.keywords import normalize_seed_keywords
+        return normalize_seed_keywords(v) or None
 
 
 class ProjectOut(BaseModel):

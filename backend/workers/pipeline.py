@@ -271,6 +271,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             return
 
         gap_started = time.monotonic()
+        competitor_evidence: list[str] = []
         competitor_gap_count = _process_competitor_keyword_gaps(
             db,
             project_uuid,
@@ -282,6 +283,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             filter_keyword_gap_recommendations,
             classify_keyword_tiers,
             verify_cluster_intent,
+            evidence_out=competitor_evidence,
         )
         logger.info(
             "[%s] Competitor keyword gap pass stored %s keywords in %.1fs",
@@ -301,6 +303,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             audit_summary=audit_summary,
             generate_keywords=generate_ai_keywords_sync,
             ai_generated_source=ai_generated_source,
+            evidence_phrases=competitor_evidence,
         )
 
         if not _scan_is_active(db, project_uuid, job_uuid):
@@ -345,6 +348,15 @@ def _discover_content_urls(
         timeout=settings.REQUEST_TIMEOUT,
         max_urls=max_raw_urls,
     )
+    if source_type == "competitor" and len(all_urls) <= 1:
+        try:
+            from scraping.apify_client_module import crawl_competitor_content_via_apify, is_apify_configured
+            if is_apify_configured():
+                apify_urls = crawl_competitor_content_via_apify(domain, max_pages=min(limit, 20))
+                all_urls = list(dict.fromkeys([*all_urls, *apify_urls]))
+                logger.info("Apify crawl expanded %s to %s discovered URLs", domain, len(all_urls))
+        except Exception as exc:
+            logger.warning("Apify competitor crawl fallback failed for %s: %s", domain, exc)
         
     logger.info("Found %s sitemap URLs for %s", len(all_urls), domain)
     if source_type == "own":
@@ -470,6 +482,7 @@ def _process_competitor_keyword_gaps(
     filter_keyword_gap_recommendations: Any,
     classify_keyword_tiers: Any,
     verify_cluster_intent: Any,
+    evidence_out: list[str] | None = None,
 ) -> int:
     from app.models import Url
 
@@ -501,6 +514,10 @@ def _process_competitor_keyword_gaps(
         item for item in extracted
         if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
     ]
+    if evidence_out is not None:
+        evidence_out.extend(
+            str(item.get("phrase") or "") for item in extracted if item.get("phrase")
+        )
     if not extracted:
         return 0
 
@@ -520,11 +537,11 @@ def _process_competitor_keyword_gaps(
     if not filtered:
         return 0
 
-    clusterable = [kw for kw in filtered if kw.get("type") in ("primary", "long-tail")]
-    passthrough = [kw for kw in filtered if kw.get("type") not in ("primary", "long-tail")]
-
     acc: dict[str, dict[str, Any]] = {}
-    for item in passthrough:
+    # Keep every evidence-backed keyword here. Page-level consolidation belongs
+    # to the hub builder; merging at ingestion was collapsing 100 useful
+    # keyword variations into fewer than ten database rows.
+    for item in filtered:
         phrase = str(item.get("phrase") or "").strip().lower()
         if not phrase:
             continue
@@ -536,13 +553,10 @@ def _process_competitor_keyword_gaps(
                 "url_ids": set(),
                 "score": 1.0,
                 "source": "sitemap",
+                "tier": "outlier",
             }
         acc[phrase]["count"] += max(1, int(item.get("frequency") or len(url_ids) or 1))
         acc[phrase]["url_ids"].update(url_ids)
-
-    if clusterable:
-        tier_results = classify_keyword_tiers(clusterable, verify_cluster_intent)
-        _build_tiered_accumulator(acc, tier_results, filtered)
 
     own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     _remove_covered_keywords(acc, own_phrases)
@@ -554,17 +568,18 @@ def _process_competitor_keyword_gaps(
 
 
 def _fallback_gap_recommendations(candidates: list[dict[str, Any]], max_keywords: int) -> list[dict[str, Any]]:
-    from nlp.keywords import check_intent_cannibalization, clean_phrase
+    from nlp.keywords import STOPWORDS, clean_phrase
 
     ranked = sorted(candidates, key=_gap_recommendation_rank, reverse=True)
     kept: list[dict[str, Any]] = []
-    seen_phrases: list[str] = []
+    seen_signatures: set[tuple[str, ...]] = set()
 
     for item in ranked:
         phrase = clean_phrase(str(item.get("phrase") or ""))
         if not phrase:
             continue
-        if any(check_intent_cannibalization(phrase, seen) for seen in seen_phrases):
+        signature = tuple(sorted(word for word in phrase.split() if word not in STOPWORDS))
+        if not signature or signature in seen_signatures:
             continue
         kept.append({
             **item,
@@ -572,7 +587,7 @@ def _fallback_gap_recommendations(candidates: list[dict[str, Any]], max_keywords
             "phrase": phrase,
             "volume": item.get("volume") or "Medium",
         })
-        seen_phrases.append(phrase)
+        seen_signatures.add(signature)
         if len(kept) >= max_keywords:
             break
 
@@ -1105,13 +1120,12 @@ def _search_duckduckgo_html_urls(query: str) -> list[str]:
 def _clean_seed_keywords(raw_keywords: list[str] | None) -> list[str]:
     if not raw_keywords:
         return []
-    from nlp.keywords import clean_phrase, is_valid_keyword
+    from nlp.keywords import normalize_seed_keywords
 
     cleaned_keywords: list[str] = []
-    for keyword in raw_keywords:
-        cleaned = clean_phrase(keyword)
+    for cleaned in normalize_seed_keywords(raw_keywords):
         for candidate in _expand_seed_keyword(cleaned):
-            if is_valid_keyword(candidate, min_words=1) and candidate not in cleaned_keywords:
+            if candidate not in cleaned_keywords:
                 cleaned_keywords.append(candidate)
     return cleaned_keywords
 
@@ -1347,8 +1361,29 @@ def _llm_filter_competitor_domains(
     if accepted:
         logger.info("Competitor LLM judge accepted %s domains", len(accepted))
     else:
-        logger.info("Competitor LLM judge rejected ALL candidates!")
-    return accepted[:competitor_limit]
+        logger.info("Competitor LLM judge rejected all candidates; using balanced direct search results")
+        return None
+
+    signals = {item["domain"]: item for item in candidates if item.get("domain")}
+    for seed in seed_keywords:
+        if any(seed in signals.get(domain, {}).get("queries", []) for domain in accepted):
+            continue
+        direct_match = next(
+            (
+                item["domain"] for item in candidates
+                if seed in item.get("queries", [])
+                and item.get("source") in {"apify_page_1", "google_page_1"}
+            ),
+            None,
+        )
+        if direct_match and direct_match not in accepted:
+            accepted.append(direct_match)
+    return _balanced_competitor_domains(
+        accepted,
+        signals,
+        seed_keywords,
+        competitor_limit,
+    )
 
 
 def _keyword_phrases(keyword_result: Any, min_words: int) -> set[str]:
@@ -1698,6 +1733,7 @@ def _ensure_minimum_keyword_count(
     audit_summary: str | None,
     generate_keywords: Any,
     ai_generated_source: Any,
+    evidence_phrases: list[str] | None = None,
 ) -> int:
     """Expand in distinct batches until the scan has the configured minimum."""
     from app.models import Keyword, Url
@@ -1742,6 +1778,7 @@ def _ensure_minimum_keyword_count(
             apply_gap_filter=False,
             target_count=requested,
             exclude_phrases=excluded,
+            evidence_phrases=evidence_phrases,
         ) or []
 
         accumulator: dict[str, dict[str, Any]] = {}
@@ -1780,7 +1817,12 @@ def _ensure_minimum_keyword_count(
     # seed-anchored search patterns so a transient provider issue cannot leave a
     # half-built project.
     if len(existing) < target and (initial_count > 0 or len(existing) > 0):
-        fallback_items = _seed_anchored_keyword_expansions(seed_keywords, excluded, target - len(existing))
+        fallback_items = _seed_anchored_keyword_expansions(
+            seed_keywords,
+            excluded,
+            target - len(existing),
+            evidence_phrases=evidence_phrases,
+        )
         fallback_accumulator: dict[str, dict[str, Any]] = {}
         for item in fallback_items:
             phrase = item["phrase"]
@@ -1816,6 +1858,7 @@ def _seed_anchored_keyword_expansions(
     seed_keywords: list[str],
     excluded: set[str],
     needed: int,
+    evidence_phrases: list[str] | None = None,
 ) -> list[dict[str, str]]:
     """Create conservative, naturally phrased long-tails tied to every seed."""
     from nlp.keywords import clean_phrase, is_valid_keyword
@@ -1860,7 +1903,9 @@ def _seed_anchored_keyword_expansions(
 
     # Round-robin keeps every Gold Hunter seed represented instead of allowing
     # the first seed to consume the entire target.
-    candidates: list[tuple[str, str]] = []
+    candidates: list[tuple[str, str]] = [
+        (phrase, "long-tail") for phrase in (evidence_phrases or [])
+    ]
     for position in range(max((len(items) for items in candidates_by_seed), default=0)):
         for items in candidates_by_seed:
             if position < len(items):

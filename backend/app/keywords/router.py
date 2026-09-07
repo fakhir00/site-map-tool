@@ -87,16 +87,17 @@ async def generate_keywords(
         raise HTTPException(status_code=400, detail="Project has no target keywords to generate from")
         
     from nlp.openrouter import generate_core_domain_terms
-    from nlp.keywords import seed_keyword_terms
+    from nlp.keywords import normalize_seed_keywords, seed_keyword_terms
+    seed_keywords = normalize_seed_keywords(project.target_keywords)
     
-    semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
+    semantic_res = await generate_core_domain_terms(seed_keywords, project.audit_summary)
     topic_terms = set(semantic_res.get("core_terms", []))
     negative_terms = set(semantic_res.get("negative_terms", []))
     if not topic_terms:
-        topic_terms = seed_keyword_terms(project.target_keywords)
+        topic_terms = seed_keyword_terms(seed_keywords)
         
     ai_keywords = await generate_ai_keywords(
-        project.target_keywords,
+        seed_keywords,
         topic_terms=topic_terms,
         negative_terms=negative_terms,
         audit_summary=project.audit_summary,
@@ -109,7 +110,7 @@ async def generate_keywords(
     existing_phrases = {row[0] for row in result.all()}
     
     # Get own website URL-path keywords to filter out
-    topic_terms = seed_keyword_terms(project.target_keywords)
+    topic_terms = seed_keyword_terms(seed_keywords)
     q_own_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
     result = await db.execute(q_own_urls)
     own_urls = result.scalars().all()
@@ -129,13 +130,14 @@ async def generate_keywords(
         if len(existing_phrases) + len(collected) >= target_total:
             break
         batch = await generate_ai_keywords(
-            project.target_keywords,
+            seed_keywords,
             topic_terms=topic_terms,
             negative_terms=negative_terms,
             audit_summary=project.audit_summary,
             apply_gap_filter=False,
             target_count=settings.AI_KEYWORD_GENERATION_BATCH_SIZE,
             exclude_phrases=all_excluded | set(collected),
+            evidence_phrases=sorted(existing_phrases),
         )
         for item in batch:
             if item["phrase"] not in all_excluded:
@@ -144,7 +146,7 @@ async def generate_keywords(
     if len(existing_phrases) + len(collected) < target_total:
         from workers.pipeline import _seed_anchored_keyword_expansions
         fallback = _seed_anchored_keyword_expansions(
-            project.target_keywords,
+            seed_keywords,
             all_excluded | set(collected),
             target_total - len(existing_phrases) - len(collected),
         )
@@ -223,16 +225,17 @@ async def generate_top_picks(
 
     # 2. Ask AI to pick top keywords FROM existing phrases
     from nlp.openrouter import generate_core_domain_terms, generate_ai_top_picks
-    from nlp.keywords import seed_keyword_terms
+    from nlp.keywords import normalize_seed_keywords, seed_keyword_terms
+    seed_keywords = normalize_seed_keywords(project.target_keywords)
     
-    semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
+    semantic_res = await generate_core_domain_terms(seed_keywords, project.audit_summary)
     topic_terms = set(semantic_res.get("core_terms", []))
     negative_terms = set(semantic_res.get("negative_terms", []))
     if not topic_terms:
-        topic_terms = seed_keyword_terms(project.target_keywords)
+        topic_terms = seed_keyword_terms(seed_keywords)
         
     ai_keywords = await generate_ai_top_picks(
-        project.target_keywords, 
+        seed_keywords,
         existing_phrases,
         topic_terms=topic_terms,
         negative_terms=negative_terms
@@ -330,15 +333,17 @@ async def generate_hub_spoke(
     h2_map = {}
 
     from nlp.openrouter import generate_core_domain_terms
-    semantic_res = await generate_core_domain_terms(project.target_keywords, project.audit_summary)
-    topic_terms = set(semantic_res.get("core_terms", [])) | seed_keyword_terms(project.target_keywords)
+    from nlp.keywords import normalize_seed_keywords
+    seed_keywords = normalize_seed_keywords(project.target_keywords)
+    semantic_res = await generate_core_domain_terms(seed_keywords, project.audit_summary)
+    topic_terms = set(semantic_res.get("core_terms", [])) | seed_keyword_terms(seed_keywords)
     negative_terms = set(semantic_res.get("negative_terms", []))
     from nlp.keywords import is_topic_relevant_keyword
     
     clean_candidates = []
     for kw in existing_keywords:
         phrase_lower = kw["phrase"].lower()
-        if not is_topic_relevant_keyword(phrase_lower, project.target_keywords, topic_terms, negative_terms):
+        if not is_topic_relevant_keyword(phrase_lower, seed_keywords, topic_terms, negative_terms):
             continue
         
         # Retroactive garbage collection: block any keywords containing negative terms
@@ -377,7 +382,7 @@ async def generate_hub_spoke(
 
     # Phase 3: The AI Skeleton
     from nlp.openrouter import cluster_hub_and_spoke
-    main_kw = project.target_keywords[0] if project.target_keywords else project.name
+    main_kw = seed_keywords[0] if seed_keywords else project.name
     clusters = await cluster_hub_and_spoke(clean_keywords_for_llm, main_keyword=main_kw, audit_summary=project.audit_summary)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")

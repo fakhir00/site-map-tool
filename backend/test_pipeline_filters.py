@@ -8,13 +8,31 @@ from workers.pipeline import (
     _balanced_competitor_domains,
     _discover_competitor_domains,
     _discover_content_urls,
+    _clean_seed_keywords,
     _keyword_matches_topic,
+    _llm_filter_competitor_domains,
     _search_result_urls,
+    _seed_anchored_keyword_expansions,
     _with_source_url_ids,
 )
 
 
 class PipelineFilterTests(TestCase):
+    def test_comma_separated_seeds_are_scanned_individually(self):
+        self.assertEqual(
+            _clean_seed_keywords(["circuit diagrams, wiring diagrams; pcb layouts"]),
+            ["circuit diagrams", "wiring diagrams", "pcb layouts"],
+        )
+
+    def test_generic_seed_expansion_still_reaches_100_relevant_phrases(self):
+        seeds = ["diagram maker"]
+        expanded = _seed_anchored_keyword_expansions(seeds, set(), 100)
+        self.assertEqual(len(expanded), 100)
+        self.assertTrue(all(
+            _keyword_matches_topic(item["phrase"], seeds, set(), set())
+            for item in expanded
+        ))
+
     def test_competitor_discovery_runs_every_seed_and_balances_results(self):
         project = SimpleNamespace(
             own_domain="https://own.example",
@@ -53,6 +71,20 @@ class PipelineFilterTests(TestCase):
             _balanced_competitor_domains(domains, signals, ["a", "b", "c"], 6),
             ["a1", "b1", "c1", "a2", "b2", "c2"],
         )
+
+    def test_competitor_judge_cannot_drop_an_entire_seed(self):
+        candidates = [
+            {"domain": "https://alpha.example", "queries": ["alpha seed"], "source": "apify_page_1"},
+            {"domain": "https://beta.example", "queries": ["beta seed"], "source": "apify_page_1"},
+        ]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter.judge_competitor_domains", return_value=[{"domain": "https://alpha.example"}]),
+        ):
+            result = _llm_filter_competitor_domains(
+                ["alpha seed", "beta seed"], "https://own.example", candidates, 10,
+            )
+        self.assertEqual(result, ["https://alpha.example", "https://beta.example"])
 
     def test_keyword_candidates_are_balanced_across_seeds(self):
         candidates = [

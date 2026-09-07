@@ -74,6 +74,17 @@ def clean_phrase(phrase: str) -> str:
     return phrase
 
 
+def normalize_seed_keywords(raw_keywords: Iterable[str] | None) -> list[str]:
+    """Split legacy comma/newline seed input and return clean unique phrases."""
+    normalized: list[str] = []
+    for raw in raw_keywords or []:
+        for part in re.split(r"[,;\n|]+", str(raw)):
+            phrase = clean_phrase(part)
+            if phrase and is_valid_keyword(phrase, min_words=1) and phrase not in normalized:
+                normalized.append(phrase)
+    return normalized
+
+
 def is_valid_keyword(phrase: str, min_len: int = 3, min_words: int = 1) -> bool:
     """Check if a phrase is a valid keyword."""
     if not phrase or len(phrase) < min_len:
@@ -121,7 +132,7 @@ def keyword_terms(phrase: str, min_len: int = 2) -> set[str]:
 def seed_keyword_terms(raw_keywords: Iterable[str] | None) -> set[str]:
     """Extract topic terms from the user's seed keyword list."""
     terms: set[str] = set()
-    for keyword in raw_keywords or []:
+    for keyword in normalize_seed_keywords(raw_keywords):
         for term in keyword_terms(keyword, min_len=2):
             if term not in IGNORED_TOPIC_TERMS:
                 terms.add(term)
@@ -166,10 +177,20 @@ def is_topic_relevant_keyword(
     negative_terms: set[str] | None = None,
 ) -> bool:
     """Require a seed anchor or multiple semantic signals from the site context."""
-    phrase_terms = keyword_terms(phrase, min_len=2)
+    cleaned = clean_phrase(phrase)
+    phrase_terms = keyword_terms(cleaned, min_len=2)
     if not phrase_terms or (negative_terms and phrase_terms & negative_terms):
-        return False
-    anchors = seed_keyword_terms(seed_keywords)
+        # Generic seed words are intentionally removed from keyword_terms, but
+        # an exact seed-anchored phrase is still relevant by definition.
+        return any(
+            re.search(rf"\b{re.escape(clean_phrase(seed))}\b", cleaned)
+            for seed in normalize_seed_keywords(seed_keywords)
+            if clean_phrase(seed)
+        ) and not (negative_terms and set(cleaned.split()) & negative_terms)
+    normalized_seeds = normalize_seed_keywords(seed_keywords)
+    if any(re.search(rf"\b{re.escape(seed)}\b", cleaned) for seed in normalized_seeds):
+        return True
+    anchors = seed_keyword_terms(normalized_seeds)
     if phrase_terms & anchors:
         return True
     return len(phrase_terms & (topic_terms or set())) >= 2

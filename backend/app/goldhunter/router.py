@@ -60,12 +60,25 @@ async def scan_gold_hunter(
         import json
         audit_summary = json.dumps(audit_summary, indent=2)
 
+    from nlp.keywords import normalize_seed_keywords
+    normalized_seeds = []
+    for item in result.get("seeds", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for keyword in normalize_seed_keywords([item.get("keyword", "")]):
+            normalized_seeds.append({
+                "keyword": keyword,
+                "justification": str(item.get("justification") or "Selected from the Gold Hunter audit."),
+            })
+    if not normalized_seeds:
+        raise HTTPException(status_code=500, detail="Gold Hunter returned no valid seed keywords.")
+
     # 3. Save to database
     scan = GoldHunterScan(
         user_id=current_user.id,
         input_url=target_url,
         audit_summary=audit_summary,
-        seeds=result.get("seeds", [])
+        seeds=normalized_seeds
     )
     db.add(scan)
     await db.commit()

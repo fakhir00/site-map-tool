@@ -147,7 +147,10 @@ export function GoldHunter() {
                   <Button 
                     disabled={createMutation.isPending}
                     onClick={() => {
-                      const allKeywords = (scan.seeds || []).map(s => s.keyword)
+                      const allKeywords = (scan.seeds || [])
+                        .flatMap(s => s.keyword.split(/[,;\n|]+/))
+                        .map(keyword => keyword.trim())
+                        .filter((keyword, index, items) => Boolean(keyword) && items.indexOf(keyword) === index)
                       if (allKeywords.length === 0) return
                       
                       const siteUrl = scan.input_url

@@ -354,18 +354,20 @@ async def generate_ai_keywords(
     apply_gap_filter: bool = True,
     target_count: int = 25,
     exclude_phrases: set[str] | None = None,
+    evidence_phrases: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate SEO keyword recommendations using the configured AI provider."""
     if not is_ai_configured():
         logger.error("AI API key not configured")
         return []
 
-    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
+    from nlp.keywords import clean_phrase, is_publishable_keyword, is_topic_relevant_keyword, seed_keyword_terms
 
     if topic_terms is None:
         topic_terms = seed_keyword_terms(seed_keywords)
     target_count = max(5, min(int(target_count), 60))
     excluded = sorted(exclude_phrases or set())[-400:]
+    evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
 Generate exactly {target_count} high-quality, distinct keyword opportunities. Distribute them across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
@@ -379,8 +381,13 @@ Website context:
 Already collected phrases (do not repeat or paraphrase with the same search intent):
 {json.dumps(excluded)}
 
+Phrases observed on the selected competitor pages (use these as evidence and topical vocabulary):
+{json.dumps(evidence)}
+
 Quality rules:
 - Allocate the output evenly across every seed keyword; no seed may be ignored.
+- Use the website context to match its competition, target audience, core action, capabilities, boundaries, and search intent.
+- Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
 - Every keyword MUST be highly semantically relevant to the primary seed keywords.
 - Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
@@ -422,7 +429,9 @@ Each object must have:
                 kw_type = normalize_keyword_type(kw.get("type"))
                 if phrase in seen_phrases:
                     continue
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+                if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+                    continue
+                if not is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
@@ -468,18 +477,20 @@ def generate_ai_keywords_sync(
     apply_gap_filter: bool = True,
     target_count: int = 25,
     exclude_phrases: set[str] | None = None,
+    evidence_phrases: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Synchronous version of generate_ai_keywords for background worker pipelines."""
     if not is_ai_configured():
         logger.error("AI API key not configured")
         return []
 
-    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms
+    from nlp.keywords import clean_phrase, is_publishable_keyword, is_topic_relevant_keyword, seed_keyword_terms
 
     if topic_terms is None:
         topic_terms = seed_keyword_terms(seed_keywords)
     target_count = max(5, min(int(target_count), 60))
     excluded = sorted(exclude_phrases or set())[-400:]
+    evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
 Generate exactly {target_count} high-quality, distinct keyword opportunities. Distribute them across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
@@ -493,8 +504,13 @@ Website context:
 Already collected phrases (do not repeat or paraphrase with the same search intent):
 {json.dumps(excluded)}
 
+Phrases observed on the selected competitor pages (use these as evidence and topical vocabulary):
+{json.dumps(evidence)}
+
 Quality rules:
 - Allocate the output evenly across every seed keyword; no seed may be ignored.
+- Use the website context to match its competition, target audience, core action, capabilities, boundaries, and search intent.
+- Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
 - Every keyword MUST be highly semantically relevant to the primary seed keywords.
 - Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
@@ -536,7 +552,9 @@ Each object must have:
                 kw_type = normalize_keyword_type(kw.get("type"))
                 if phrase in seen_phrases:
                     continue
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+                if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+                    continue
+                if not is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
@@ -582,7 +600,7 @@ def extract_keywords_from_urls_ai(
     if not urls:
         return []
 
-    from nlp.keywords import clean_phrase, is_publishable_keyword, seed_keyword_terms, extract_keywords_from_page
+    from nlp.keywords import clean_phrase, is_publishable_keyword, is_topic_relevant_keyword, seed_keyword_terms, extract_keywords_from_page
     
     if not topic_terms:
         topic_terms = seed_keyword_terms(seed_keywords)
@@ -617,7 +635,10 @@ def extract_keywords_from_urls_ai(
                 candidates.append((phrase, "heading"))
                 
             for phrase, kw_type in candidates:
-                if is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+                if (
+                    is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms)
+                    and is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms)
+                ):
                     phrase = clean_phrase(phrase)
                     entry = results_by_phrase.setdefault(
                         phrase,
@@ -770,11 +791,10 @@ If the query does NOT directly support, align with, or fall under the exact mech
 - Other categories in the same broad niche (e.g., if the seed is "circuit diagram", reject "fishbone diagram", "network diagram", or other unrelated diagram types).
 - Completely unrelated niches.
 
-**Step 2: ANTI-CANNIBALIZATION & DEDUPLICATION (CRITICAL)**
-Look at all the keywords that passed Step 1. Many competitors use slightly varied phrases for the exact same search intent (e.g. "circuit diagram tutorial for beginners" vs "understanding circuit diagrams for beginners").
-- Group all variations that share the exact same search intent.
-- Keep ONLY ONE normalized, best-representing keyword per intent.
-- DISCARD the redundant variations. Do NOT allow multiple keywords with the same intent to pass.
+**Step 2: KEYWORD-LEVEL DEDUPLICATION**
+- Remove exact duplicates and word-order-only duplicates.
+- Keep useful related nuances, audience modifiers, questions, comparisons, problems, and use cases. These are valuable supporting keywords even when they later belong on the same page.
+- Do not collapse a whole topic family into one phrase. URL cannibalization is handled later by the Hub-and-Spoke builder, where related nuances become H2 sections.
 
 **Step 3: Evidence and usefulness gate**
 - Keep queries supported by the supplied competitor evidence and useful for a distinct search intent.
@@ -1511,7 +1531,17 @@ Select the 3 strongest seeds that pass all three gates. Provide your full audit 
 
 Return ONLY a JSON object in this exact format:
 {{
-  "audit_summary": "Your detailed audit summary from Phase 1-5.",
+  "audit_summary": {{
+    "primary_keyword": "exact primary topic",
+    "industry_niche": "specific niche",
+    "core_action": "what the site helps users accomplish",
+    "target_audience": ["specific audience segments"],
+    "search_intents": ["informational, commercial, transactional, or tool-use intents that apply"],
+    "capabilities": ["what the product/site does"],
+    "hard_boundaries": ["adjacent topics it does not serve"],
+    "competitor_profile": "the kinds of domains that are true search competitors",
+    "content_opportunities": ["evidence-based topic families to investigate"]
+  }},
   "seeds": [
     {{
       "keyword": "seed phrase 1",
