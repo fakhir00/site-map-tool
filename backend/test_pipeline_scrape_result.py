@@ -68,5 +68,22 @@ class PipelineScrapeResultTest(unittest.TestCase):
         self.assertEqual(record.error_reason, "No readable text extracted")
 
 
+    def test_compute_readability_bounded(self):
+        from scraping.crawler import compute_readability
+        self.assertEqual(compute_readability(""), 0.0)
+        self.assertEqual(compute_readability("short"), 0.0)
+        # Verify it handles large text without issue
+        huge_text = "The quick brown fox jumps over the lazy dog. " * 500
+        score = compute_readability(huge_text)
+        self.assertIsInstance(score, float)
+
+    def test_extract_publish_date_ignores_excessive_strings(self):
+        from bs4 import BeautifulSoup
+        from scraping.crawler import extract_publish_date
+        html = '<meta property="article:published_time" content="' + ('x' * 200) + '">'
+        soup = BeautifulSoup(html, "html.parser")
+        self.assertIsNone(extract_publish_date(soup))
+
+
 if __name__ == "__main__":
     unittest.main()

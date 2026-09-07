@@ -20,12 +20,24 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-sync_engine = create_engine(
-    settings.SYNC_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 15}
-    if "sqlite" in settings.SYNC_DATABASE_URL
-    else {},
-)
+sync_engine_kwargs: dict[str, Any] = {
+    "pool_pre_ping": True,
+}
+if "sqlite" in settings.SYNC_DATABASE_URL:
+    sync_engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 15}
+else:
+    sync_engine_kwargs["connect_args"] = {
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    }
+    sync_engine_kwargs["pool_size"] = 5
+    sync_engine_kwargs["max_overflow"] = 10
+    sync_engine_kwargs["pool_recycle"] = 300
+
+sync_engine = create_engine(settings.SYNC_DATABASE_URL, **sync_engine_kwargs)
 SyncSession = sessionmaker(bind=sync_engine, expire_on_commit=False)
 
 
@@ -157,6 +169,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         domain_queue = queue.Queue()
         url_queue = queue.Queue()
 
+        has_existing_urls = resume_existing and (
+            db.execute(select(func.count(Url.id)).where(Url.project_id == project_uuid)).scalar() or 0
+        ) > 0
+
         if resume_existing:
             existing_pending = db.execute(
                 select(Url.id).where(Url.project_id == project_uuid, Url.status == "pending")
@@ -165,39 +181,44 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 url_queue.put(u_id)
             logger.info("[%s] Resumed scan with %s pending URLs pre-queued", project_id, len(existing_pending))
 
-        domain_queue.put((own_domain, "own"))
-        for cd in competitor_domains:
-            domain_queue.put((cd, "competitor"))
+        if not has_existing_urls:
+            domain_queue.put((own_domain, "own"))
+            for cd in competitor_domains:
+                domain_queue.put((cd, "competitor"))
 
         def discover_worker():
-            local_db = get_db()
-            try:
-                while True:
-                    try:
-                        domain, source_type = domain_queue.get_nowait()
-                    except queue.Empty:
-                        break
+            while True:
+                try:
+                    domain, source_type = domain_queue.get_nowait()
+                except queue.Empty:
+                    break
 
-                    try:
+                try:
+                    patterns = None
+                    with get_db() as local_db:
+                        if not _scan_is_active(local_db, project_uuid, job_uuid):
+                            continue
                         proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
+                        patterns = proj.url_filter_patterns if proj else None
+
+                    d_urls = _discover_content_urls(
+                        domain,
+                        patterns,
+                        extract_all_urls_from_domain,
+                        filter_blog_urls,
+                        crawl_limit,
+                        required_terms,
+                        ranking_terms,
+                        negative_terms,
+                        include_homepage=(source_type == "own"),
+                        source_type=source_type,
+                    )
+
+                    saved_urls = []
+                    with get_db() as local_db:
                         if not _scan_is_active(local_db, project_uuid, job_uuid):
                             continue
-
-                        d_urls = _discover_content_urls(
-                            domain,
-                            proj.url_filter_patterns if proj else None,
-                            extract_all_urls_from_domain,
-                            filter_blog_urls,
-                            crawl_limit,
-                            required_terms,
-                            ranking_terms,
-                            negative_terms,
-                            include_homepage=(source_type == "own"),
-                            source_type=source_type,
-                        )
-
-                        if not _scan_is_active(local_db, project_uuid, job_uuid):
-                            continue
+                        proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
                         _queue_discovered_urls(
                             local_db,
                             proj,
@@ -209,20 +230,17 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         saved_urls = local_db.execute(
                             select(Url.id, Url.status).where(Url.project_id == project_uuid, Url.source_domain == domain)
                         ).all()
+                        local_db.expunge_all()
                         
-                        for u_id, u_status in saved_urls:
-                            if u_status == "pending":
-                                url_queue.put(u_id)
-                    except Exception as e:
-                        local_db.rollback()
-                        logger.error("Discover worker error for %s: %s", domain, e, exc_info=True)
-                    finally:
-                        domain_queue.task_done()
-            finally:
-                local_db.close()
+                    for u_id, u_status in saved_urls:
+                        if u_status == "pending":
+                            url_queue.put(u_id)
+                except Exception as e:
+                    logger.error("Discover worker error for %s: %s", domain, e, exc_info=True)
+                finally:
+                    domain_queue.task_done()
                 
         def scrape_worker():
-            local_db = get_db()
             try:
                 while True:
                     chunk_ids = []
@@ -241,50 +259,61 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                             break
 
                     try:
-                        proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
-                        if not _scan_is_active(local_db, project_uuid, job_uuid):
+                        # 1. Quick read: fetch URL strings and verify scan is active, then release DB session
+                        chunk_data = []
+                        with get_db() as local_db:
+                            if not _scan_is_active(local_db, project_uuid, job_uuid):
+                                continue
+                            chunk_data = local_db.execute(
+                                select(Url.id, Url.url).where(Url.id.in_(chunk_ids))
+                            ).all()
+
+                        if not chunk_data:
                             continue
 
-                        chunk_urls = local_db.execute(select(Url).where(Url.id.in_(chunk_ids))).scalars().all()
-                        
-                        for u in chunk_urls:
-                            if not _scan_is_active(local_db, project_uuid, job_uuid):
-                                local_db.rollback()
+                        # 2. Perform web scraping with ZERO open database transaction
+                        scraped_results = []
+                        for u_id, u_url in chunk_data:
+                            if not is_scan_worker_alive(job_uuid):
                                 return
                             try:
                                 scrape_result = scrape_page(
-                                    u.url,
+                                    u_url,
                                     delay_min=settings.SCRAPE_DELAY_MIN,
                                     delay_max=settings.SCRAPE_DELAY_MAX,
                                     timeout=settings.REQUEST_TIMEOUT,
                                     max_retries=settings.MAX_RETRIES,
                                 )
                             except Exception as exc:
-                                logger.warning("Scrape failed for %s: %s", u.url, exc)
+                                logger.warning("Scrape failed for %s: %s", u_url, exc)
                                 scrape_result = None
-                            
-                            scraped_ok = _apply_scrape_result(u, scrape_result)
-                            if not scraped_ok:
-                                continue
+                            scraped_results.append((u_id, scrape_result))
 
-                        if not _scan_is_active(local_db, project_uuid, job_uuid):
-                            local_db.rollback()
-                            return
-                        local_db.commit()
+                        # 3. Quick write: open session, apply results, commit, sync counts, expunge, and close
+                        with get_db() as local_db:
+                            if not _scan_is_active(local_db, project_uuid, job_uuid):
+                                return
+                            proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
+                            res_map = {uid: res for uid, res in scraped_results}
+                            chunk_rows = local_db.execute(select(Url).where(Url.id.in_(list(res_map.keys())))).scalars().all()
+                            for u in chunk_rows:
+                                _apply_scrape_result(u, res_map.get(u.id))
+                            local_db.commit()
+                            if proj:
+                                _sync_project_counts(local_db, proj)
+                            local_db.expunge_all()
+
                         trim_memory()
-                        if proj:
-                            _sync_project_counts(local_db, proj)
+
                     except Exception as e:
-                        local_db.rollback()
                         logger.error("Scrape worker chunk error: %s", e, exc_info=True)
-                        _mark_chunk_failed(local_db, project_uuid, chunk_ids, str(e)[:500])
+                        with get_db() as local_db:
+                            _mark_chunk_failed(local_db, project_uuid, chunk_ids, str(e)[:500])
                     finally:
                         for _ in chunk_ids:
                             url_queue.task_done()
             except Exception as e:
                 logger.error("Scrape worker error: %s", e, exc_info=True)
-            finally:
-                local_db.close()
         
         scrape_started = time.monotonic()
         n_scrape = max(1, settings.SCRAPE_CONCURRENCY)
@@ -1850,7 +1879,7 @@ def _ensure_minimum_keyword_count(
     # scan found real competitor evidence, complete the set with conservative
     # seed-anchored search patterns so a transient provider issue cannot leave a
     # half-built project.
-    if len(existing) < target and (initial_count > 0 or len(existing) > 0):
+    if len(existing) < target and (initial_count > 0 or len(existing) > 0) and seed_keywords:
         fallback_items = _seed_anchored_keyword_expansions(
             seed_keywords,
             excluded,
@@ -1881,9 +1910,11 @@ def _ensure_minimum_keyword_count(
             raise RuntimeError(
                 "No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry."
             )
-        raise RuntimeError(
-            f"Only {final_count} relevant keywords were produced; the required minimum is {target}. "
-            "The AI provider returned too few unique results."
+        logger.warning(
+            "[%s] Only %s relevant keywords were produced (target %s). Continuing with produced keywords.",
+            project_id,
+            final_count,
+            target,
         )
     return final_count
 

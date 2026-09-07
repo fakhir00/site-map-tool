@@ -67,7 +67,7 @@ def extract_publish_date(soup: BeautifulSoup) -> Optional[date]:
         prop = meta.get("property", "") or meta.get("name", "")
         if "published" in prop.lower() or "date" in prop.lower():
             content = meta.get("content", "")
-            if content:
+            if content and len(content) <= 60:
                 try:
                     from dateutil.parser import parse as parse_date
                     return parse_date(content).date()
@@ -81,7 +81,7 @@ def extract_publish_date(soup: BeautifulSoup) -> Optional[date]:
             data = json.loads(script.string or "")
             if isinstance(data, dict):
                 for key in ("datePublished", "dateCreated", "dateModified"):
-                    if key in data:
+                    if key in data and isinstance(data[key], str) and len(data[key]) <= 60:
                         from dateutil.parser import parse as parse_date
                         return parse_date(data[key]).date()
         except Exception:
@@ -90,7 +90,7 @@ def extract_publish_date(soup: BeautifulSoup) -> Optional[date]:
     # Try <time> element
     for time_el in soup.find_all("time"):
         dt = time_el.get("datetime", "")
-        if dt:
+        if dt and len(dt) <= 60:
             try:
                 from dateutil.parser import parse as parse_date
                 return parse_date(dt).date()
@@ -141,10 +141,13 @@ def count_words(text: str) -> int:
 
 
 def compute_readability(text: str) -> float:
-    """Compute Flesch Reading Ease score."""
+    """Compute Flesch Reading Ease score on a bounded sample."""
+    if not text or len(text) < 50:
+        return 0.0
     try:
         import textstat
-        return textstat.flesch_reading_ease(text)
+        sample = text[:3000]
+        return float(textstat.flesch_reading_ease(sample))
     except Exception:
         return 0.0
 
@@ -195,8 +198,12 @@ def scrape_page(
 ) -> ScrapedPage:
     """
     Fetch and parse a single URL.
-    Respects robots.txt, applies random delay, retries on failure.
+    Respects robots.txt, applies random delay, enforces a hard wall-clock deadline.
     """
+    # Hard overall wall-clock deadline for the whole page operation
+    hard_timeout = max(float(timeout), 5.0)
+    deadline = time.monotonic() + hard_timeout + 3.0
+
     # Respect robots.txt
     if not can_fetch(url):
         return ScrapedPage(url=url, error="Blocked by robots.txt", status_code=403)
@@ -207,21 +214,28 @@ def scrape_page(
 
     last_error = None
     for attempt in range(max_retries + 1):
+        if time.monotonic() > deadline:
+            return ScrapedPage(url=url, error="Scrape timed out", status_code=504)
+
         try:
             if attempt > 0:
-                time.sleep(random.uniform(2.0, 5.0))
+                time.sleep(random.uniform(1.0, 2.0))
+
+            remaining_time = max(1.0, deadline - time.monotonic())
+            connect_timeout = min(remaining_time, 5.0)
+            read_timeout = min(remaining_time, 5.0)
 
             resp = requests.get(
                 url,
                 headers=HEADERS,
-                timeout=timeout,
+                timeout=(connect_timeout, read_timeout),
                 allow_redirects=True,
                 stream=True,
             )
 
             if resp.status_code == 429:
                 resp.close()
-                time.sleep(10)
+                time.sleep(5)
                 continue
 
             if resp.status_code == 403:
@@ -232,7 +246,7 @@ def scrape_page(
                 resp = requests.get(
                     url,
                     headers=fallback_headers,
-                    timeout=timeout,
+                    timeout=(connect_timeout, read_timeout),
                     allow_redirects=True,
                     stream=True,
                 )
@@ -250,13 +264,19 @@ def scrape_page(
                 resp.close()
                 return ScrapedPage(url=url, error=f"Non-HTML content type: {ct[:40]}", status_code=resp.status_code)
 
-            # Cap download size at 1MB to prevent OOM
+            # Cap download size at 1MB and enforce chunk read deadline
             raw_bytes = bytearray()
-            for chunk in resp.iter_content(chunk_size=16384):
-                raw_bytes.extend(chunk)
-                if len(raw_bytes) >= 1_000_000:
-                    break
-            resp.close()
+            try:
+                for chunk in resp.iter_content(chunk_size=16384):
+                    if time.monotonic() > deadline:
+                        logger.warning("Download streaming timed out for %s", url)
+                        break
+                    raw_bytes.extend(chunk)
+                    if len(raw_bytes) >= 1_000_000:
+                        break
+            finally:
+                resp.close()
+
             html_bytes = bytes(raw_bytes)
             del raw_bytes
 
