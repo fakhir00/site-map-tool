@@ -1604,6 +1604,121 @@ def _hub_slug(phrase: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", clean_phrase(phrase)).strip("-")
 
 
+def _hub_page_family(phrase: str) -> str | None:
+    """Return the broader page intent for modifier variants such as `X for Y`."""
+    from nlp.keywords import clean_phrase
+
+    words = clean_phrase(phrase).split()
+    for index, word in enumerate(words):
+        if word in {"for", "with", "in", "on", "by", "using"} and index >= 2 and index < len(words) - 1:
+            return " ".join(words[:index])
+    return None
+
+
+def _prepare_hub_page_keywords(
+    keywords: list[dict[str, Any]],
+    main_keyword: str,
+) -> list[dict[str, Any]]:
+    """Collapse keywords that belong on one URL before architecture generation."""
+    from nlp.keywords import clean_phrase
+
+    normalized: list[dict[str, Any]] = []
+    by_phrase: dict[str, dict[str, Any]] = {}
+    for item in keywords:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        if not phrase:
+            continue
+        if phrase in by_phrase:
+            existing_h2s = by_phrase[phrase].setdefault("h_tags", [])
+            existing_h2s.extend(str(value) for value in (item.get("h_tags") or []) if value)
+            continue
+        copied = {**item, "phrase": phrase}
+        copied["h_tags"] = list(dict.fromkeys(
+            clean_phrase(str(value)) for value in (item.get("h_tags") or []) if clean_phrase(str(value))
+        ))
+        normalized.append(copied)
+        by_phrase[phrase] = copied
+
+    families: dict[str, list[dict[str, Any]]] = {}
+    for item in normalized:
+        family = _hub_page_family(item["phrase"])
+        if family:
+            families.setdefault(family, []).append(item)
+
+    consumed: set[str] = set()
+    prepared: list[dict[str, Any]] = []
+    main = clean_phrase(main_keyword)
+    for item in normalized:
+        phrase = item["phrase"]
+        if phrase in consumed:
+            continue
+        family = phrase if phrase in families and len(families[phrase]) >= 2 else _hub_page_family(phrase)
+        members = families.get(family or "", [])
+        if family and len(members) >= 2:
+            existing_parent = by_phrase.get(family)
+            parent = dict(existing_parent or item)
+            parent["phrase"] = family
+            parent["type"] = "primary" if parent.get("type") == "entity" else parent.get("type", "long-tail")
+            h2s = list(parent.get("h_tags") or [])
+            for member in members:
+                consumed.add(member["phrase"])
+                if member["phrase"] != family:
+                    h2s.append(member["phrase"])
+                h2s.extend(member.get("h_tags") or [])
+            parent["h_tags"] = list(dict.fromkeys(value for value in h2s if value and value != family))
+            if family == main:
+                parent["phrase"] = main
+            prepared.append(parent)
+            if existing_parent:
+                consumed.add(family)
+            continue
+        prepared.append(item)
+        consumed.add(phrase)
+    return prepared
+
+
+def _append_h2s(spoke: str, extras: list[str]) -> str:
+    extras = list(dict.fromkeys(extra for extra in extras if extra))
+    if not extras:
+        return spoke
+    if "[Include H2:" in spoke:
+        return spoke.rstrip("]") + f", {', '.join(extras)}]"
+    return spoke + f" [Include H2: {', '.join(extras)}]"
+
+
+def _apply_hub_h2_plan(payload: dict[str, Any], keywords: list[dict[str, Any]]) -> dict[str, Any]:
+    """Attach pre-approved H2 variants even when the model omits them."""
+    from nlp.keywords import clean_phrase
+
+    planned = {
+        clean_phrase(str(item.get("phrase") or "")): [
+            clean_phrase(str(value)) for value in (item.get("h_tags") or []) if clean_phrase(str(value))
+        ]
+        for item in keywords
+        if item.get("h_tags")
+    }
+    for hub in payload.get("hubs", []) if isinstance(payload, dict) else []:
+        if not isinstance(hub, dict) or "NOISE" in str(hub.get("hub_title", "")).upper():
+            continue
+        for node in [hub, *(hub.get("sub_silos") or [])]:
+            if not isinstance(node, dict):
+                continue
+            target = clean_phrase(str(node.get("target_keyword") or ""))
+            if planned.get(target):
+                node["h2_keywords"] = list(dict.fromkeys([
+                    *(node.get("h2_keywords") or []), *planned[target]
+                ]))
+            for layer, spokes in (node.get("layers") or {}).items():
+                if not isinstance(spokes, list):
+                    continue
+                for index, spoke in enumerate(spokes):
+                    match = re.search(r"\(Target Keyword:\s*(.*?)\)", str(spoke), re.IGNORECASE)
+                    spoke_target = clean_phrase(match.group(1)) if match else ""
+                    if planned.get(spoke_target):
+                        spokes[index] = _append_h2s(str(spoke), planned[spoke_target])
+    return payload
+
+
 def build_hub_spoke_fallback(
     keywords: list[dict[str, Any]],
     main_keyword: str,
@@ -1611,27 +1726,34 @@ def build_hub_spoke_fallback(
     """Build a valid map deterministically when the model violates constraints."""
     from nlp.keywords import clean_phrase
 
+    keywords = _prepare_hub_page_keywords(keywords, main_keyword)
     main = clean_phrase(main_keyword) or "core topic"
     entities: list[str] = []
     unique: list[str] = []
     merged_h2s: dict[str, list[str]] = {}
+    main_h2s: list[str] = []
     seen_slugs = {_hub_slug(main)}
 
     for item in keywords:
         phrase = clean_phrase(str(item.get("phrase") or ""))
         if not phrase or phrase == main:
+            if phrase == main:
+                main_h2s.extend(item.get("h_tags") or [])
             continue
         if item.get("type") == "entity":
             if phrase not in entities:
                 entities.append(phrase)
             continue
+        merged_h2s.setdefault(phrase, []).extend(item.get("h_tags") or [])
         slug = _hub_slug(phrase)
-        if slug == _hub_slug(main) or _hub_intent_similarity(phrase, main) >= 0.82:
+        if slug == _hub_slug(main) or _hub_intent_similarity(phrase, main) >= 0.60:
+            main_h2s.append(phrase)
+            main_h2s.extend(item.get("h_tags") or [])
             continue
         duplicate_of = next(
             (
                 kept for kept in unique
-                if slug == _hub_slug(kept) or _hub_intent_similarity(phrase, kept) >= 0.82
+                if slug == _hub_slug(kept) or _hub_intent_similarity(phrase, kept) >= 0.60
             ),
             None,
         )
@@ -1644,15 +1766,14 @@ def build_hub_spoke_fallback(
 
     # A silo target has its own URL, so reserve one keyword per silo in addition
     # to the required eight article targets.
-    silo_count = min(5, len(unique) // 9)
-    if len(keywords) >= 26 and len(unique) >= 27:
-        silo_count = max(3, silo_count)
-    if silo_count == 0:
-        silo_count = 1 if len(unique) >= 9 else 0
+    # A sub-silo is another indexable pillar page. Create one only when enough
+    # genuinely distinct page intents remain to support it.
+    silo_count = min(5, len(unique) // 12)
 
     master = {
         "hub_title": f"📍 MASTER HUB: {main.title()}",
         "target_keyword": main,
+        "h2_keywords": list(dict.fromkeys(main_h2s)),
         "layers": {},
         "sub_silos": [],
     }
@@ -1660,9 +1781,18 @@ def build_hub_spoke_fallback(
         # Small maps remain useful without manufacturing an underfilled silo.
         master["layers"] = {
             "🧱 Foundations": [
-                f"{phrase.title()} (Target Keyword: {phrase})" for phrase in unique
+                _append_h2s(
+                    f"{phrase.title()} (Target Keyword: {phrase})",
+                    merged_h2s.get(phrase, []),
+                ) for phrase in unique
             ]
         }
+        if entities and master["layers"]["🧱 Foundations"]:
+            master["layers"]["🧱 Foundations"][0] = _append_h2s(
+                master["layers"]["🧱 Foundations"][0], entities
+            )
+        elif entities:
+            master["h2_keywords"] = list(dict.fromkeys([*master["h2_keywords"], *entities]))
         return {"_planning_thought": "Built a compact map from the supplied keywords.", "hubs": [master]}
 
     # Choose maximally different centers, then assign every remaining phrase to
@@ -1704,9 +1834,7 @@ def build_hub_spoke_fallback(
             # Seed the four mandatory layers once, then classify by intent.
             layer = layer_names[position] if position < 4 else preferred_layer(phrase, position)
             extras = list(dict.fromkeys(merged_h2s.get(phrase, [])))
-            spoke = f"{phrase.title()} (Target Keyword: {phrase})"
-            if extras:
-                spoke += f" [Include H2: {', '.join(extras)}]"
+            spoke = _append_h2s(f"{phrase.title()} (Target Keyword: {phrase})", extras)
             layers[layer].append(spoke)
         master["sub_silos"].append({
             "hub_title": f"🪐 SUB-SILO {index}: {center.title()}",
@@ -1719,8 +1847,8 @@ def build_hub_spoke_fallback(
         best_node = None
         best_position = None
         best_score = -1.0
-        for silo in master["sub_silos"]:
-            for layer, spokes in silo["layers"].items():
+        for node in [master, *master["sub_silos"]]:
+            for layer, spokes in node["layers"].items():
                 for position, spoke in enumerate(spokes):
                     target_match = re.search(r"\(Target Keyword:\s*(.*?)\)", spoke, re.IGNORECASE)
                     score = _hub_intent_similarity(entity, target_match.group(1) if target_match else spoke)
@@ -1731,6 +1859,8 @@ def build_hub_spoke_fallback(
                 best_node[best_position] = best_node[best_position].rstrip("]") + f", {entity}]"
             else:
                 best_node[best_position] += f" [Include H2: {entity}]"
+        else:
+            master["h2_keywords"] = list(dict.fromkeys([*master["h2_keywords"], entity]))
 
     return {
         "_planning_thought": f"Built {silo_count} balanced sub-silos and merged duplicate intents into H2 sections.",
@@ -1768,12 +1898,6 @@ def _validate_hub_and_spoke(
         return "Master hub sub_silos must be an array."
     if len(sub_silos) > 5:
         return f"A maximum of 5 sub-silos is allowed; received {len(sub_silos)}."
-    available_pages = len([
-        keyword for keyword in (allowed_keywords or set()) if not keyword.startswith("entity:")
-    ]) or total_kws
-    if available_pages >= 27 and len(sub_silos) < 3:
-        return f"At least 3 sub-silos are required when {available_pages} page keywords are available."
-
     seen_targets: set[str] = set()
     seen_slugs: set[str] = set()
     seen_intents: list[str] = []
@@ -1783,6 +1907,15 @@ def _validate_hub_and_spoke(
     allowed = {
         clean_phrase(keyword.removeprefix("entity:")) for keyword in (allowed_keywords or set())
     }
+
+    def is_allowed_target(target: str) -> bool:
+        if not allowed or target in allowed:
+            return True
+        # A shared parent is permitted when it deterministically consolidates
+        # two or more supplied modifier variants onto one stronger URL.
+        prefix = target + " "
+        return sum(1 for keyword in allowed if keyword.startswith(prefix)) >= 2
+
     master_target = clean_phrase(str(master.get("target_keyword") or ""))
     seen_slugs.add(_hub_slug(master_target))
     seen_intents.append(master_target)
@@ -1813,14 +1946,14 @@ def _validate_hub_and_spoke(
                 if slug in seen_slugs:
                     return f"Duplicate URL slug: {slug}."
                 semantic_duplicate = next(
-                    (prior for prior in seen_intents if _hub_intent_similarity(target, prior) >= 0.82),
+                    (prior for prior in seen_intents if _hub_intent_similarity(target, prior) >= 0.60),
                     None,
                 )
                 if semantic_duplicate:
                     return f"Semantic intent duplication: {target} overlaps {semantic_duplicate}."
                 if target in entity_keywords:
                     return f"Entity keyword cannot be a standalone spoke: {target}."
-                if allowed and target not in allowed:
+                if not is_allowed_target(target):
                     return f"Spoke target keyword was not supplied by the scan: {target}."
                 seen_targets.add(target)
                 seen_slugs.add(slug)
@@ -1841,13 +1974,13 @@ def _validate_hub_and_spoke(
             return f"Sub-silo {index} has a duplicate or empty slug."
         if silo_target in entity_keywords:
             return f"Entity keyword cannot be a sub-silo target: {silo_target}."
-        if allowed and silo_target not in allowed:
+        if not is_allowed_target(silo_target):
             return f"Sub-silo target keyword was not supplied by the scan: {silo_target}."
-        if any(_hub_intent_similarity(silo_target, prior) >= 0.82 for prior in seen_intents):
+        if any(_hub_intent_similarity(silo_target, prior) >= 0.60 for prior in seen_intents):
             return f"Sub-silo {index} duplicates an existing semantic intent."
         seen_slugs.add(silo_slug)
         seen_intents.append(silo_target)
-        error = validate_layers(silo, f"Sub-silo {index}", minimum=8)
+        error = validate_layers(silo, f"Sub-silo {index}")
         if error:
             return error
     return None
@@ -1862,7 +1995,7 @@ async def cluster_hub_and_spoke(
     if not keywords:
         return None
 
-    trimmed = keywords[:500]
+    trimmed = _prepare_hub_page_keywords(keywords[:500], main_keyword)
     if not is_ai_configured():
         return build_hub_spoke_fallback(trimmed, main_keyword)
     
@@ -1896,28 +2029,36 @@ STEP 2: HUB SLUG INTEGRITY & UNIQUENESS
 
 STEP 3: TOPICAL NEIGHBORHOOD FIREWALL
 Identify distinct sub-themes for the Master Hub to create Sub-Silos.
-- Limit to 3 to 5 Sub-Silos maximum. Rank by topical density, keep the top 5 only.
-- Each sub-silo must have at least 8 supporting articles. Merge sub-silos with fewer into the closest neighbor.
+- Use 0 to 5 Sub-Silos. Create a Sub-Silo only when its broad target deserves an indexable pillar URL.
+- There is NO minimum article quota. Never manufacture thin pages to fill a silo or layer.
+- A keyword deserves a separate page only when its search intent needs a substantially different answer.
 
-STEP 4: COMMERCIAL CONSOLIDATION
+STEP 4: PAGE-INTENT CONSOLIDATION
+- Treat every item in Target Keywords List as one approved page target.
+- Items can contain `h_tags`. Those are related queries that MUST be covered as H2 sections on that page, never separate URLs.
+- Audience, use-case, standard, format, feature, and minor modifier variants belong as H2s when one broader page can answer them.
+- Example: "circuit diagram symbols for ports", "...for nodes", and "...for ANSI" belong under one "circuit diagram symbols" page.
+- Do not turn every keyword into a spoke. A spoke represents an indexable article/page, not a keyword row.
+
+STEP 5: COMMERCIAL CONSOLIDATION
 - If you are generating Commercial/Money pages, you are only allowed to create ONE primary commercial URL per distinct product category.
 - DO NOT generate separate URLs for micro-audiences (e.g., "best apps for professionals", "best apps for students").
 - Instead, create ONE master commercial page and append the micro-audiences as H2 anchor links using `[Include H2: ...]`. Delete the extra spokes.
 
-STEP 5: BEGINNER PAGE LIMIT
+STEP 6: BEGINNER PAGE LIMIT
 - If you are generating Action or Foundation pages for beginners, limit to a maximum of TWO (2) beginner pages per silo:
   - Page 1 (The Theory): "[Topic] Basics"
   - Page 2 (The Action): "How to use [Topic] / Tutorial"
 - Consolidate any extras into H2 subheadings on these two pages using `[Include H2: ...]`.
 
-STEP 6: INTENT TAGS & ENTITIES
+STEP 7: INTENT TAGS & ENTITIES
 - If a keyword is a tool/calculator/software, output it with a [Tool] tag in the title.
 - ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
 - ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append the as `[Include H2: entity]` to the most relevant article.
 
 [OUTPUT SCHEMA - STRICT JSON ONLY]
 {{
-  "_planning_thought": "Before generating URLs, explain your logic. E.g., 'I will create 3 sub-silos. Sub-Silo 1 has 12 articles. Sub-Silo 2 has 9 articles. I am verifying no sub-silos have fewer than 8 articles.'",
+  "_planning_thought": "Explain which search intents deserve separate URLs and which variants were consolidated into H2 sections.",
   "_deduplication_check": {{
     "layer_1_swapped_words": "Checked: Did any URLs swap words? If yes, I deleted the weaker one.",
     "layer_2_synonyms": "Checked: Did any URLs use synonyms like 'understanding' vs 'meanings', 'test' vs 'quiz', 'guide' vs 'tutorial'? If yes, I merged them.",
@@ -1927,6 +2068,7 @@ STEP 6: INTENT TAGS & ENTITIES
     {{
       "hub_title": "📍 MASTER HUB: [Broadest Search Intent / Topic]",
       "target_keyword": "[exact keyword]",
+      "h2_keywords": ["related query covered on this page"],
       "layers": {{
         "🧱 FOUNDATION SPOKES (Authority)": ["[Compelling Article Title 1] (Target Keyword: [exact keyword 1])"],
         "⚙️ CORE STRATEGY": ["[Compelling Article Title 2] (Target Keyword: [exact keyword 2])"]
@@ -1935,6 +2077,7 @@ STEP 6: INTENT TAGS & ENTITIES
         {{
           "hub_title": "🪐 SUB-SILO 1: LEARNING HUB — [Sub-Topic Name]",
           "target_keyword": "[exact keyword]",
+          "h2_keywords": ["related query covered on this pillar page"],
           "layers": {{
             "🧱 Foundations": ["[Compelling Article Title 3] (Target Keyword: [exact keyword 3])"],
             "⚙️ Action": ["[Compelling Article Title 4] (Target Keyword: [exact keyword 4]) [Include H2: entity_from_list]"],
@@ -1957,8 +2100,9 @@ STEP 6: INTENT TAGS & ENTITIES
 
 [EXPLICIT FAILURE CONDITIONS]
 If you violate any of the following, your response will be programmatically REJECTED and you will be penalized:
-1. Creating a Sub-Silo with fewer than 8 total articles. (MERGE THEM!)
-2. Missing required layers within a Sub-Silo.
+1. Creating separate URLs for keywords already supplied in an item's `h_tags`.
+2. Creating thin pages solely to fill a layer or silo.
+3. Giving two URLs the same or substantially overlapping search intent.
 
 Target Keywords List:
 {json.dumps(trimmed)}
@@ -1979,6 +2123,7 @@ Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [
                 max_tokens=8000,
             )
             if isinstance(payload, dict):
+                payload = _apply_hub_h2_plan(payload, trimmed)
                 tagged_allowed = {
                     ("entity:" if kw.get("type") == "entity" else "") + str(kw.get("phrase") or "")
                     for kw in trimmed

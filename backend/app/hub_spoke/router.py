@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,14 +30,47 @@ def _basic_clean(values: list[str]) -> list[str]:
     return result
 
 
+def _context_anchor_terms(context: str) -> set[str]:
+    """Extract concrete topic signals for the no-AI cleaning fallback."""
+    from nlp.keywords import STOPWORDS
+
+    generic = {
+        "website", "product", "service", "audience", "customer", "customers",
+        "content", "company", "business", "online", "platform", "people",
+        "provide", "provides", "target", "topic", "topics", "user", "users",
+    }
+    return {
+        token[:-1] if token.endswith("s") and len(token) > 4 else token
+        for token in re.findall(r"[a-z0-9]+", context.lower())
+        if len(token) >= 4 and token not in STOPWORDS and token not in generic
+    }
+
+
+def _fallback_context_filter(keywords: list[str], context: str) -> list[str]:
+    anchors = _context_anchor_terms(context)
+    if not anchors:
+        return keywords
+    result: list[str] = []
+    for phrase in keywords:
+        terms = {
+            token[:-1] if token.endswith("s") and len(token) > 4 else token
+            for token in re.findall(r"[a-z0-9]+", phrase.lower())
+        }
+        if terms & anchors:
+            result.append(phrase)
+    return result
+
+
 async def _clean_with_context(keywords: list[str], context: str) -> list[str]:
     cleaned = _basic_clean(keywords)
-    if not cleaned or not is_ai_configured():
+    if not cleaned:
         return cleaned
+    if not is_ai_configured():
+        return _fallback_context_filter(cleaned, context) if context.strip() else cleaned
 
     accepted: list[str] = []
-    for start in range(0, len(cleaned), 200):
-        chunk = cleaned[start:start + 200]
+    for start in range(0, len(cleaned), 100):
+        chunk = cleaned[start:start + 100]
         prompt = f"""
 You are a strict SEO keyword-list cleaner.
 
@@ -46,10 +80,12 @@ Website/product context:
 Candidate keywords:
 {json.dumps(chunk)}
 
-Return only useful keywords that fit the context's subject, audience, product capabilities,
-boundaries, and search intent. Remove navigation text, broken phrases, unrelated topics,
-brand drift, obvious extraction junk, and exact duplicates. Keep useful questions, use cases,
-comparisons, entities, and supporting phrases even when they may later become H2 sections.
+Apply a strict relevance threshold. Keep a keyword only when a page on this exact website could
+satisfy it accurately and help the stated audience. Reject tangential keywords, generic phrases
+that merely share one weak word, unsupported product features, other industries, other audiences,
+brand drift, navigation text, broken phrases, and extraction junk. When uncertain, reject it.
+Useful questions, comparisons, entities, and supporting phrases may remain only when they are
+directly relevant; the architecture step can later consolidate them into H2 sections.
 You may only return exact strings from Candidate keywords. Order the strongest primary topic first.
 Return JSON: {{"keywords": ["exact candidate", "exact candidate"]}}
 """
@@ -64,7 +100,7 @@ Return JSON: {{"keywords": ["exact candidate", "exact candidate"]}}
             payload = None
         selected = payload.get("keywords") if isinstance(payload, dict) else None
         if not isinstance(selected, list):
-            accepted.extend(chunk)
+            accepted.extend(_fallback_context_filter(chunk, context) if context.strip() else chunk)
             continue
         allowed = set(chunk)
         for item in selected:

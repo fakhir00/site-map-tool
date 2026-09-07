@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 
 type LayerMap = Record<string, string[]>
-type Silo = { hub_title: string; target_keyword: string; layers: LayerMap }
+type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[]; layers: LayerMap }
 type Hub = Silo & { sub_silos?: Silo[] }
 type Mapping = { hubs: Hub[]; _planning_thought?: string }
 
@@ -80,6 +80,15 @@ export function HubSpokeWorkspace() {
     </div>
   ))
 
+  const renderH2s = (keywords?: string[]) => keywords?.length ? (
+    <div className="mt-3 rounded-lg bg-cyan-50 p-3 dark:bg-cyan-950/30">
+      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">Cover on this page as H2 sections</p>
+      <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+        {keywords.map((keyword) => <li key={keyword}>• {keyword}</li>)}
+      </ul>
+    </div>
+  ) : null
+
   return (
     <div className="space-y-6">
       <section>
@@ -142,10 +151,10 @@ export function HubSpokeWorkspace() {
           </div>
           {mapping.hubs.map((hub) => (
             <Card key={hub.target_keyword} className="space-y-4 p-6">
-              <div><p className="text-xs font-bold uppercase text-cyan-700">Master hub</p><h4 className="text-lg font-bold">{hub.hub_title}</h4><p className="text-sm text-slate-500">Target: {hub.target_keyword}</p></div>
+              <div><p className="text-xs font-bold uppercase text-cyan-700">Master hub</p><h4 className="text-lg font-bold">{hub.hub_title}</h4><p className="text-sm text-slate-500">Target: {hub.target_keyword}</p>{renderH2s(hub.h2_keywords)}</div>
               {Object.keys(hub.layers || {}).length > 0 && <div className="grid gap-3 lg:grid-cols-2">{renderLayers(hub.layers)}</div>}
               <div className="grid gap-4 xl:grid-cols-2">
-                {(hub.sub_silos || []).map((silo) => <div key={silo.target_keyword} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><h5 className="font-bold">{silo.hub_title}</h5><p className="mb-3 text-xs text-slate-500">Target: {silo.target_keyword}</p><div className="space-y-3">{renderLayers(silo.layers)}</div></div>)}
+                {(hub.sub_silos || []).map((silo) => <div key={silo.target_keyword} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><h5 className="font-bold">{silo.hub_title}</h5><p className="text-xs text-slate-500">Target: {silo.target_keyword}</p>{renderH2s(silo.h2_keywords)}<div className="mt-3 space-y-3">{renderLayers(silo.layers)}</div></div>)}
               </div>
             </Card>
           ))}

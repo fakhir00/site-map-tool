@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.hub_spoke.router import _basic_clean
+from app.hub_spoke.router import _basic_clean, _clean_with_context
 from nlp.openrouter import _validate_hub_and_spoke
 
 
@@ -26,6 +26,16 @@ class HubWorkspaceTests(unittest.TestCase):
             "circuit diagram",
             {item["phrase"] for item in keywords},
         ))
+
+    def test_context_cleaner_strictly_removes_other_topics_without_ai(self):
+        import asyncio
+
+        with patch("app.hub_spoke.router.is_ai_configured", return_value=False):
+            cleaned = asyncio.run(_clean_with_context(
+                ["circuit diagram symbols", "electronic circuit tutorial", "car insurance quotes", "celebrity news"],
+                "Circuit diagram software and electronics education for engineering students.",
+            ))
+        self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
 
 
 if __name__ == "__main__":

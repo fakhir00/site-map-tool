@@ -3,7 +3,7 @@ import json
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 
-from nlp.openrouter import _validate_hub_and_spoke, build_hub_spoke_fallback, cluster_hub_and_spoke
+from nlp.openrouter import _prepare_hub_page_keywords, _validate_hub_and_spoke, build_hub_spoke_fallback, cluster_hub_and_spoke
 from workers.pipeline import _seed_anchored_keyword_expansions
 
 
@@ -32,10 +32,10 @@ class HubConstraintTests(TestCase):
         allowed = {"circuit diagram", "circuit basics", *(f"kw {index}" for index in range(1, 9))}
         self.assertIsNone(_validate_hub_and_spoke(self.valid_payload(), 10, "circuit diagram", allowed))
 
-    def test_underfilled_silo_and_entity_spoke_fail(self):
+    def test_small_silo_is_allowed_but_entity_spoke_fails(self):
         payload = self.valid_payload()
         payload["hubs"][0]["sub_silos"][0]["layers"]["Quick Wins"] = []
-        self.assertIn("at least 8", _validate_hub_and_spoke(payload, 10, "circuit diagram", {"circuit basics", *(f"kw {i}" for i in range(1, 9))}))
+        self.assertIsNone(_validate_hub_and_spoke(payload, 10, "circuit diagram", {"circuit diagram", "circuit basics", *(f"kw {i}" for i in range(1, 9))}))
         payload = self.valid_payload()
         self.assertIn("Entity keyword", _validate_hub_and_spoke(
             payload, 10, "circuit diagram", {"circuit diagram", "circuit basics", "entity:kw 1", *(f"kw {i}" for i in range(2, 9))}
@@ -77,11 +77,23 @@ class HubConstraintTests(TestCase):
         self.assertIsNone(_validate_hub_and_spoke(
             payload, len(keywords), "circuit diagram maker", allowed
         ))
-        silos = payload["hubs"][0]["sub_silos"]
-        self.assertGreaterEqual(len(silos), 3)
-        self.assertTrue(all(sum(len(items) for items in silo["layers"].values()) >= 8 for silo in silos))
         rendered = json.dumps(payload).lower()
         self.assertIn("include h2: electrical standard", rendered)
+
+    def test_modifier_variants_become_h2s_on_one_broader_page(self):
+        variants = [
+            {"phrase": f"circuit diagram symbols for {suffix}", "type": "long-tail"}
+            for suffix in ("ports", "nodes", "schematics", "ansi", "iec 61131")
+        ]
+        prepared = _prepare_hub_page_keywords(variants, "circuit diagram maker")
+        self.assertEqual(len(prepared), 1)
+        self.assertEqual(prepared[0]["phrase"], "circuit diagram symbols")
+        self.assertEqual(len(prepared[0]["h_tags"]), len(variants))
+
+        payload = build_hub_spoke_fallback(variants, "circuit diagram maker")
+        rendered = json.dumps(payload).lower()
+        self.assertEqual(rendered.count("target keyword: circuit diagram symbols)"), 1)
+        self.assertIn("include h2: circuit diagram symbols for ports", rendered)
 
     def test_cluster_uses_fallback_when_ai_is_unavailable(self):
         keywords = _seed_anchored_keyword_expansions(["circuit diagram maker"], set(), 100)
