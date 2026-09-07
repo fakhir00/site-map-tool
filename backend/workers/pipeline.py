@@ -9,6 +9,7 @@ import logging
 import base64
 import re
 import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -36,7 +37,10 @@ else:
     }
     sync_engine_kwargs["pool_size"] = 3
     sync_engine_kwargs["max_overflow"] = 3
-    sync_engine_kwargs["pool_recycle"] = 300
+    # Hosted Postgres proxies can retire SSL sockets after a short idle period.
+    # Prefer the newest pooled connection and recycle before common proxy limits.
+    sync_engine_kwargs["pool_recycle"] = 120
+    sync_engine_kwargs["pool_use_lifo"] = True
 
 sync_engine = create_engine(settings.SYNC_DATABASE_URL, **sync_engine_kwargs)
 SyncSession = sessionmaker(bind=sync_engine, expire_on_commit=False)
@@ -80,22 +84,20 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
     from app.models import Keyword, KeywordUrl, Project, ScanJob, Url
     import concurrent.futures
     import queue
-    import time
     from datetime import datetime
 
     project_uuid = uuid.UUID(project_id)
     job_uuid = uuid.UUID(scan_job_id)
     ACTIVE_SCANS.add(job_uuid)
     
-    db = get_db()
+    db: Session | None = None
     try:
         from nlp.keywords import classify_keyword_tiers
         from scraping.filters import filter_blog_urls
         from scraping.crawler import scrape_page
         from scraping.sitemap import extract_all_urls_from_domain
         from nlp.openrouter import extract_keywords_from_urls_ai, generate_ai_keywords_sync, ai_generated_source, filter_keyword_gap_recommendations, verify_cluster_intent
-        project = db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
-        job = db.execute(select(ScanJob).where(ScanJob.id == job_uuid)).scalar_one_or_none()
+        db, project, job = _load_pipeline_state(project_uuid, job_uuid)
         if not project or not job:
             logger.error("[%s] Project or scan job not found", project_id)
             return
@@ -157,6 +159,10 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
+        db.close()
+        db, project, job = _load_pipeline_state(project_uuid, job_uuid)
+        if not project or not job or project.status != "running" or job.status != "running":
+            return
         if not resume_existing:
             _clear_previous_results(db, project_uuid)
             project.urls_found = 0
@@ -167,12 +173,19 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
         # Repeat discovery on resume: a pause may have interrupted a domain before
         # its URLs were persisted. Existing scraped pages are retained below.
+        db.close()
+        db = None
         own_domain = _origin(project.own_domain or project.domain) or project.domain
         competitor_domains = _discover_competitor_domains(project, seed_keywords, negative_terms=negative_terms)
         required_terms = _search_required_terms(seed_keywords)
         ranking_terms = _search_ranking_terms(seed_keywords)
         crawl_limit = _crawl_limit_per_domain(competitor_domains)
         if not _scan_is_active(db, project_uuid, job_uuid):
+            return
+        if db is not None:
+            db.close()
+        db, project, job = _load_pipeline_state(project_uuid, job_uuid)
+        if not project or not job or project.status != "running" or job.status != "running":
             return
 
         domain_queue = queue.Queue()
@@ -194,6 +207,11 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             domain_queue.put((own_domain, "own"))
             for cd in competitor_domains:
                 domain_queue.put((cd, "competitor"))
+
+        # Discovery and scraping use their own brief sessions. Release this one
+        # before network work so no pooled SSL connection sits idle for minutes.
+        db.close()
+        db = None
 
         def discover_worker():
             while True:
@@ -338,6 +356,15 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
 
+        # The scan can spend several minutes doing network I/O. Never reuse the
+        # session opened before that work: its SSL socket may have been retired
+        # by the database proxy while it sat idle.
+        if db is not None:
+            db.close()
+        db, project, job = _load_pipeline_state(project_uuid, job_uuid)
+        if not project or not job or project.status != "running" or job.status != "running":
+            return
+
         gap_started = time.monotonic()
         competitor_evidence: list[str] = []
         competitor_gap_count = _process_competitor_keyword_gaps(
@@ -362,6 +389,10 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
+        db.close()
+        db, project, job = _load_pipeline_state(project_uuid, job_uuid)
+        if not project or not job or project.status != "running" or job.status != "running":
+            return
         _ensure_minimum_keyword_count(
             db=db,
             project_id=project_uuid,
@@ -376,6 +407,10 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
+        db.close()
+        db, project, job = _load_pipeline_state(project_uuid, job_uuid)
+        if not project or not job or project.status != "running" or job.status != "running":
+            return
         _sync_project_counts(db, project)
         if not project.total_keywords:
             raise RuntimeError("No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry.")
@@ -389,14 +424,16 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
     except Exception as exc:
         logger.error("[%s] Pipeline error: %s", project_id, exc, exc_info=True)
-        db.rollback()
-        project = db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
-        job = db.execute(select(ScanJob).where(ScanJob.id == job_uuid)).scalar_one_or_none()
-        if job and job.status in {"queued", "running"}:
-            _mark_complete(db, project, job, "error", str(exc)[:500])
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        _record_pipeline_failure(project_uuid, job_uuid, str(exc)[:500])
     finally:
         ACTIVE_SCANS.discard(job_uuid)
-        db.close()
+        if db is not None:
+            db.close()
 
 def _discover_content_urls(
     domain: str,
@@ -1309,25 +1346,78 @@ def _mark_running(db: Session, project: Any, job: Any) -> None:
     db.commit()
 
 
-def _scan_is_active(db: Session, project_id: uuid.UUID, job_id: uuid.UUID) -> bool:
-    """Read fresh state so paused/replaced workers cannot restart an old job."""
+def _retry_database_connection(attempt: int, operation: str, exc: Exception) -> None:
+    """Discard broken pooled sockets and briefly wait for hosted Postgres to recover."""
+    try:
+        sync_engine.dispose()
+    except Exception:
+        pass
+    delay = min(0.25 * (2 ** attempt), 2.0)
+    logger.warning("Database connection failed during %s; retrying in %.2fs: %s", operation, delay, exc)
+    time.sleep(delay)
+
+
+def _load_pipeline_state(
+    project_id: uuid.UUID,
+    job_id: uuid.UUID,
+    attempts: int = 6,
+) -> tuple[Session, Any, Any]:
+    """Open a usable session and load the scan's current records."""
     from app.models import Project, ScanJob
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import DBAPIError
+
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        db = get_db()
+        try:
+            project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+            job = db.execute(select(ScanJob).where(ScanJob.id == job_id)).scalar_one_or_none()
+            return db, project, job
+        except DBAPIError as exc:
+            last_error = exc
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            db.close()
+            if attempt + 1 < attempts:
+                _retry_database_connection(attempt, "loading scan state", exc)
+    assert last_error is not None
+    raise last_error
+
+
+def _scan_is_active(_db: Session | None, project_id: uuid.UUID, job_id: uuid.UUID) -> bool:
+    """Read state on a fresh connection so an idle SSL socket cannot kill a scan."""
+    from app.models import Project, ScanJob
+    from sqlalchemy.exc import DBAPIError
 
     row = None
-    for attempt in range(2):
+    last_error: Exception | None = None
+    for attempt in range(5):
+        status_db = get_db()
         try:
-            with db.no_autoflush:
-                row = db.execute(select(Project.status, ScanJob.status, ScanJob.started_at)
+            with status_db.no_autoflush:
+                row = status_db.execute(select(Project.status, ScanJob.status, ScanJob.started_at)
                     .join(ScanJob, ScanJob.project_id == Project.id)
                     .where(Project.id == project_id, ScanJob.id == job_id)).first()
             break
-        except OperationalError:
-            db.rollback()
-            db.close()
-            if attempt:
-                raise
-            logger.warning("Database connection dropped during scan status check; reconnecting once")
+        except DBAPIError as exc:
+            last_error = exc
+            try:
+                status_db.rollback()
+            except Exception:
+                pass
+            if attempt < 4:
+                _retry_database_connection(attempt, "scan status check", exc)
+        finally:
+            status_db.close()
+    if row is None and last_error is not None:
+        # A temporary database outage must not turn a healthy scraping worker
+        # into an errored scan. The next checkpoint will verify state again.
+        if job_id in ACTIVE_SCANS:
+            logger.error("Scan status could not be read after retries; keeping active worker alive: %s", last_error)
+            return True
+        return False
     if not row or row[0] != "running" or row[1] != "running":
         return False
     if row[2] and (datetime.utcnow() - row[2].replace(tzinfo=None)).total_seconds() > settings.SCAN_MAX_SECONDS:
@@ -1347,10 +1437,35 @@ def _mark_complete(db: Session, project: Any, job: Any, status: str, error_msg: 
             job.finished_at = now
         if error_msg:
             job.error_message = error_msg
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
+    db.commit()
+
+
+def _record_pipeline_failure(project_id: uuid.UUID, job_id: uuid.UUID, error_msg: str) -> None:
+    """Persist a terminal error using reconnects, without masking the original failure."""
+    from sqlalchemy.exc import DBAPIError
+
+    for attempt in range(6):
+        db: Session | None = None
+        try:
+            db, project, job = _load_pipeline_state(project_id, job_id, attempts=1)
+            if job and job.status in {"queued", "running"}:
+                _mark_complete(db, project, job, "error", error_msg)
+            return
+        except DBAPIError as exc:
+            if db is not None:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+            if attempt < 5:
+                _retry_database_connection(attempt, "recording scan failure", exc)
+        except Exception:
+            logger.exception("Could not record terminal state for scan %s", job_id)
+            return
+        finally:
+            if db is not None:
+                db.close()
+    logger.error("Could not record terminal state for scan %s after database retries", job_id)
 
 
 def _clear_previous_results(db: Session, project_id: uuid.UUID) -> None:
