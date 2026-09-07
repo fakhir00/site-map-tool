@@ -17,6 +17,7 @@ interface NewSchemaLayer {
 interface NewSchemaHub {
   hub_title: string
   target_keyword?: string
+  h2_keywords?: string[]
   layers: NewSchemaLayer
   sub_silos?: NewSchemaHub[]
 }
@@ -38,6 +39,12 @@ interface TierMetadataEntry {
 type OldSchema = Record<string, string[] | Record<string, string[]>>
 type ClusterData = NewSchema | OldSchema
 
+function shouldBuildTool(keyword: string) {
+  const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
+  const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
+  return toolIntent.test(keyword) && !informationalIntent.test(keyword)
+}
+
 function TreeDot({ tier }: { tier: string | null }) {
   if (tier === 'merge') return <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
   if (tier === 'subheading_group') return <div className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
@@ -57,7 +64,7 @@ function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: Tie
     )
   }
   if (tier === 'subheading_group') {
-    return <span className="text-[12px] text-slate-500">[multi-intent article - {tierInfo?.h_tags?.length || 0} H-tags ▾]</span>
+    return <span className="text-[12px] text-slate-500">[{tierInfo?.h_tags?.length || 0} related keywords included ▾]</span>
   }
   if (tier === 'related') {
     return <span className="text-[12px] text-slate-500">↔ linked</span>
@@ -86,7 +93,7 @@ function TreeHub({
   isSubSilo = false,
 }: {
   hub: NewSchemaHub
-  onWrite: (keyword: string, instruction: string) => void
+  onWrite: (keyword: string, instruction: string, included?: string[]) => void
   tierMetadata: Record<string, TierMetadataEntry>
   isSubSilo?: boolean
 }) {
@@ -112,21 +119,27 @@ function TreeHub({
     <div className={`mb-12 font-mono text-sm max-w-[1000px] w-full ${isSubSilo ? 'ml-8 border-l-2 border-slate-200 dark:border-slate-700 pl-6 mt-8' : ''}`}>
       <div className="flex items-start justify-between mb-2">
         <div className="flex flex-col gap-1">
-          <h3 className="text-slate-900 dark:text-slate-100 uppercase tracking-wide whitespace-pre-wrap">
+          <button type="button" onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "hub page", hub.h2_keywords)} className="text-left text-slate-900 hover:text-cyan-700 dark:text-slate-100 dark:hover:text-cyan-300 uppercase tracking-wide whitespace-pre-wrap">
             {displayHubTitle}
-          </h3>
+          </button>
           <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono">
             {hubSlug}/
           </span>
         </div>
         <button 
-          onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "INSTRUCTION: This is a Hub/Pillar page. It MUST be an extensive, comprehensive guide of 3000+ words. Cover the topic thoroughly.")} 
+          onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "hub page", hub.h2_keywords)}
           className="text-xs text-cyan-600 hover:text-cyan-500 hover:underline font-mono ml-4 shrink-0 mt-0.5"
         >
           [ write hub ]
         </button>
       </div>
       <div className="border-b-[3px] border-double border-slate-300 dark:border-slate-600 mb-8 w-full"></div>
+
+      {hub.h2_keywords && hub.h2_keywords.length > 0 && (
+        <div className="mb-6 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-slate-700 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-slate-300">
+          <span className="font-bold text-cyan-800 dark:text-cyan-300">Includes:</span> {hub.h2_keywords.join(' • ')}
+        </div>
+      )}
 
       <div className="flex flex-col gap-8">
         {layerEntries.map(([layerName, spokes], idx) => (
@@ -141,6 +154,7 @@ function TreeHub({
                 const displayTitle = match ? match[1].trim() : spoke.trim()
                 const targetKeyword = match ? match[2].trim() : null
                 const extraTags = match && match[3] ? match[3].trim() : null
+                const included = extraTags?.replace(/^include(?: h2)?:\s*/i, '').split(',').map((item) => item.trim()).filter(Boolean) || []
 
                 const tierInfo = targetKeyword ? tierMetadata[targetKeyword.toLowerCase()] : null
                 const tier = tierInfo?.tier || null
@@ -161,12 +175,15 @@ function TreeHub({
                         </div>
                         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline gap-x-3 gap-y-0.5 flex-1 min-w-0">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
+                            <button type="button" onClick={() => {
+                              const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
+                              onWrite(targetKeyword || finalTitle, isTool ? 'tool/app' : 'article', included)
+                            }} className="text-left text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
                               {isSubheading ? `"${finalTitle}"` : finalTitle}
-                            </span>
-                            {extraTags && extraTags.toLowerCase().includes('h2') && (
+                            </button>
+                            {extraTags && extraTags.toLowerCase().startsWith('include') && (
                               <span className="text-xs text-amber-600 dark:text-amber-500 font-medium ml-2">
-                                ↳ {extraTags}
+                                ↳ Includes: {extraTags.replace(/^include(?: h2)?:\s*/i, '')}
                               </span>
                             )}
                           </div>
@@ -183,7 +200,7 @@ function TreeHub({
                             const instruction = isTool 
                               ? "INSTRUCTION: This is a Spoke tool/app page supporting a main hub. It MUST be an interactive tool, calculator, or interactive component."
                               : "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words."
-                            onWrite(targetKeyword || finalTitle, instruction)
+                            onWrite(targetKeyword || finalTitle, instruction, included)
                           }} 
                           className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-cyan-600 hover:text-cyan-500 hover:underline transition-opacity shrink-0"
                         >
@@ -203,7 +220,7 @@ function TreeHub({
                       <div className="flex flex-col ml-1.5 pl-9 border-l border-slate-300 dark:border-slate-700 py-1 mb-2 gap-1 text-[12px] text-slate-500 dark:text-slate-400">
                         {tierInfo.h_tags.map((htag, hIdx) => (
                           <div key={hIdx} className="flex items-center gap-2">
-                            <span className="select-none text-slate-400 dark:text-slate-600">↳ H2:</span>
+                            <span className="select-none text-slate-400 dark:text-slate-600">↳ Include:</span>
                             <span>{htag}</span>
                           </div>
                         ))}
@@ -265,17 +282,12 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
     },
   })
 
-  const manualMutation = useMutation({
-    mutationFn: ({ main_keyword, keyword_cluster }: { main_keyword: string, keyword_cluster: string }) => 
-      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: projectId }),
-    onSuccess: (data: { project_id: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['project-articles', data.project_id] })
-      navigate(`/write-blog/${data.project_id}`)
-    }
-  })
-
-  const handleWrite = (keyword: string, instruction: string) => {
-    manualMutation.mutate({ main_keyword: keyword, keyword_cluster: instruction })
+  const handleWrite = (keyword: string, instruction: string, included: string[] = []) => {
+    const params = new URLSearchParams({ keyword })
+    if (included.length) params.set('cluster', included.join('\n'))
+    const isTool = shouldBuildTool(keyword)
+      || instruction.includes('tool/app')
+    navigate(`${isTool ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
   }
 
   if (isLoading) {
@@ -288,7 +300,7 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
   }
 
   const clusters = data?.clusters
-  const generationError = clusterMutation.error || manualMutation.error
+  const generationError = clusterMutation.error
   const tierMetadata = data?.tier_metadata || {}
 
   if (!clusters || Object.keys(clusters).length === 0) {
@@ -391,7 +403,6 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
   return (
     <div className="p-4 md:p-8 bg-slate-50 dark:bg-slate-900/50 min-h-[500px] font-mono rounded-lg border border-slate-200 dark:border-slate-800/60 shadow-inner">
       {generationError && <p role="alert" className="mb-4 text-sm text-rose-600">{generationError.message}</p>}
-      {manualMutation.isPending && <p role="status" className="mb-4 text-sm">Generating article prompt…</p>}
       <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
         <div>
           <h4 className="text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight font-sans">Topical Map</h4>

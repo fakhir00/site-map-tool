@@ -1484,7 +1484,7 @@ Evaluation rules:
 
 
 async def generate_gold_hunter_seeds(url: str, url_content: str) -> dict[str, Any] | None:
-    """Generate 3 high-value seed keywords using the Gold Nugget Agent prompt."""
+    """Generate 3-5 high-value seed keywords using the Gold Nugget Agent prompt."""
     if not is_ai_configured():
         logger.error("AI API key not configured")
         return None
@@ -1492,7 +1492,7 @@ async def generate_gold_hunter_seeds(url: str, url_content: str) -> dict[str, An
     prompt = f"""
 [SYSTEM COMMANDS]
 
-You are the Gold Nugget Agent. Your purpose is to mine 3 high-value seed keywords from any given URL.
+You are the Gold Nugget Agent. Your purpose is to mine 3 to 5 high-value seed keywords from any given URL.
 
 INPUT URL: {url}
 URL CONTENT:
@@ -1514,7 +1514,7 @@ PHASE 3: GAP DISCOVERY
 Identify missing elements. Classify into:
 - Tool Gaps (missing features, sub-tools, variations)
 - Content Gaps (missing educational guides, comparisons, use-case tutorials)
-Generate a pool of 5-6 candidate seeds that directly relate to the Core Action.
+Generate a pool of 8-10 candidate seeds that directly relate to the Core Action.
 
 PHASE 4: THE TRIPLE GATE FILTER (MANDATORY)
 Reject any seed that fails any single gate.
@@ -1527,7 +1527,7 @@ PHASE 5: USE-CASE BROADENING (THE PIVOT)
 If the Primary Keyword is a short head-term (e.g., "yes or no wheel", "dot plot maker") that fails the Sitemap Gate due to shallow tool competitors, do NOT output the head-term. Do NOT drift into adjacent fields. Instead, force-inject a high-volume, content-rich use-case modifier (e.g., "for classroom", "best [category] websites", "how to make [tool] for [purpose]") to pivot the search toward educational, review, or tutorial sites while keeping the mechanic intact.
 
 PHASE 6: FINAL OUTPUT
-Select the 3 strongest seeds that pass all three gates. Provide your full audit summary and the final 3 seeds, each with a one-sentence justification covering why it passed the Volume Gate, Sitemap Gate, and Relevance Gate.
+Select 3 to 5 distinct seeds that pass all three gates. Never return fewer than 3 or more than 5. Provide your full audit summary and each final seed with a one-sentence justification covering why it passed the Volume Gate, Sitemap Gate, and Relevance Gate.
 
 Return ONLY a JSON object in this exact format:
 {{
@@ -1681,9 +1681,11 @@ def _append_h2s(spoke: str, extras: list[str]) -> str:
     extras = list(dict.fromkeys(extra for extra in extras if extra))
     if not extras:
         return spoke
-    if "[Include H2:" in spoke:
+    if "[Include:" in spoke:
         return spoke.rstrip("]") + f", {', '.join(extras)}]"
-    return spoke + f" [Include H2: {', '.join(extras)}]"
+    if "[Include H2:" in spoke:
+        return spoke.replace("[Include H2:", "[Include:").rstrip("]") + f", {', '.join(extras)}]"
+    return spoke + f" [Include: {', '.join(extras)}]"
 
 
 def _apply_hub_h2_plan(payload: dict[str, Any], keywords: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1855,10 +1857,10 @@ def build_hub_spoke_fallback(
                     if score > best_score:
                         best_node, best_position, best_score = spokes, position, score
         if best_node is not None and best_position is not None:
-            if "[Include H2:" in best_node[best_position]:
+            if "[Include:" in best_node[best_position]:
                 best_node[best_position] = best_node[best_position].rstrip("]") + f", {entity}]"
             else:
-                best_node[best_position] += f" [Include H2: {entity}]"
+                best_node[best_position] = _append_h2s(best_node[best_position], [entity])
         else:
             master["h2_keywords"] = list(dict.fromkeys([*master["h2_keywords"], entity]))
 
@@ -2043,18 +2045,18 @@ STEP 4: PAGE-INTENT CONSOLIDATION
 STEP 5: COMMERCIAL CONSOLIDATION
 - If you are generating Commercial/Money pages, you are only allowed to create ONE primary commercial URL per distinct product category.
 - DO NOT generate separate URLs for micro-audiences (e.g., "best apps for professionals", "best apps for students").
-- Instead, create ONE master commercial page and append the micro-audiences as H2 anchor links using `[Include H2: ...]`. Delete the extra spokes.
+- Instead, create ONE master commercial page and append the micro-audiences using `[Include: ...]`. Delete the extra spokes.
 
 STEP 6: BEGINNER PAGE LIMIT
 - If you are generating Action or Foundation pages for beginners, limit to a maximum of TWO (2) beginner pages per silo:
   - Page 1 (The Theory): "[Topic] Basics"
   - Page 2 (The Action): "How to use [Topic] / Tutorial"
-- Consolidate any extras into H2 subheadings on these two pages using `[Include H2: ...]`.
+- Consolidate any extras into H2 subheadings on these two pages using `[Include: ...]`.
 
 STEP 7: INTENT TAGS & ENTITIES
 - If a keyword is a tool/calculator/software, output it with a [Tool] tag in the title.
-- ANTI-CANNIBALIZATION: If multiple variations share the exact same search intent (>0.65 similarity), keep the highest volume one as the target keyword and append the rest as `[Include H2: keyword]`.
-- ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append the as `[Include H2: entity]` to the most relevant article.
+- ANTI-CANNIBALIZATION: If multiple variations share the same search intent, keep the broadest useful target and append the rest as `[Include: keyword]`.
+- ENTITIES: If "type" == "entity", YOU ARE STRICTLY FORBIDDEN from creating a standalone article. Append it as `[Include: entity]` to the most relevant article.
 
 [OUTPUT SCHEMA - STRICT JSON ONLY]
 {{
@@ -2080,7 +2082,7 @@ STEP 7: INTENT TAGS & ENTITIES
           "h2_keywords": ["related query covered on this pillar page"],
           "layers": {{
             "🧱 Foundations": ["[Compelling Article Title 3] (Target Keyword: [exact keyword 3])"],
-            "⚙️ Action": ["[Compelling Article Title 4] (Target Keyword: [exact keyword 4]) [Include H2: entity_from_list]"],
+            "⚙️ Action": ["[Compelling Article Title 4] (Target Keyword: [exact keyword 4]) [Include: related_keyword]"],
             "💰 Money": ["[Compelling Article Title 5] (Target Keyword: [exact keyword 5])"],
             "⚡️ ZERO COMPETITION QUICK-WINS": ["[Compelling Article Title 6] (Target Keyword: [exact keyword 6])"]
           }}
@@ -2110,7 +2112,7 @@ Target Keywords List:
 Main Keywords (Create Master Hubs and Spokes using ONLY these):
 {json.dumps([kw for kw in trimmed if kw.get("type") != "entity"])}
 
-Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include H2: entity] to the most relevant Spokes created above):
+Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [Include: entity] to the most relevant Spokes created above):
 {json.dumps([kw["phrase"] for kw in trimmed if kw.get("type") == "entity"])}
 """
     max_retries = 3

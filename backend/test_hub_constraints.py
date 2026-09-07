@@ -78,7 +78,7 @@ class HubConstraintTests(TestCase):
             payload, len(keywords), "circuit diagram maker", allowed
         ))
         rendered = json.dumps(payload).lower()
-        self.assertIn("include h2: electrical standard", rendered)
+        self.assertIn("include: electrical standard", rendered)
 
     def test_modifier_variants_become_h2s_on_one_broader_page(self):
         variants = [
@@ -93,7 +93,7 @@ class HubConstraintTests(TestCase):
         payload = build_hub_spoke_fallback(variants, "circuit diagram maker")
         rendered = json.dumps(payload).lower()
         self.assertEqual(rendered.count("target keyword: circuit diagram symbols)"), 1)
-        self.assertIn("include h2: circuit diagram symbols for ports", rendered)
+        self.assertIn("include: circuit diagram symbols for ports", rendered)
 
     def test_cluster_uses_fallback_when_ai_is_unavailable(self):
         keywords = _seed_anchored_keyword_expansions(["circuit diagram maker"], set(), 100)

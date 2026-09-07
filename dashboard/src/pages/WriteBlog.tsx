@@ -13,11 +13,12 @@ export default function WriteBlog() {
   const [searchParams] = useSearchParams()
   
   const initialKeyword = searchParams.get('keyword') || ''
+  const initialCluster = searchParams.get('cluster') || ''
 
   const [articleError, setArticleError] = useState<string>('')
   
   const [mainKeyword, setMainKeyword] = useState(initialKeyword)
-  const [keywordCluster, setKeywordCluster] = useState('')
+  const [keywordCluster, setKeywordCluster] = useState(initialCluster)
   const [chosenKeyword, setSelectedKeyword] = useState<KeywordBankEntry | null>(null)
 
   const { data: allKeywords = [], isLoading } = useQuery({

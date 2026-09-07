@@ -55,7 +55,8 @@ async def scan_gold_hunter(
     if not result:
         raise HTTPException(status_code=500, detail="AI generation failed.")
         
-    audit_summary = result.get("audit_summary", "")
+    audit_data = result.get("audit_summary", "")
+    audit_summary = audit_data
     if isinstance(audit_summary, dict):
         import json
         audit_summary = json.dumps(audit_summary, indent=2)
@@ -66,12 +67,41 @@ async def scan_gold_hunter(
         if not isinstance(item, dict):
             continue
         for keyword in normalize_seed_keywords([item.get("keyword", "")]):
+            if any(seed["keyword"] == keyword for seed in normalized_seeds):
+                continue
             normalized_seeds.append({
                 "keyword": keyword,
                 "justification": str(item.get("justification") or "Selected from the Gold Hunter audit."),
             })
-    if not normalized_seeds:
-        raise HTTPException(status_code=500, detail="Gold Hunter returned no valid seed keywords.")
+
+    # The gap scan needs multiple discovery angles. If a provider truncates its
+    # JSON, complete the set from the audited primary topic and opportunities.
+    if len(normalized_seeds) < 3 and isinstance(audit_data, dict):
+        primary = normalize_seed_keywords([str(audit_data.get("primary_keyword") or "")])
+        primary_keyword = primary[0] if primary else ""
+        audit_candidates = [
+            primary_keyword,
+            *(audit_data.get("content_opportunities") or []),
+            *([f"{primary_keyword} guide", f"best {primary_keyword}"] if primary_keyword else []),
+        ]
+        for candidate in audit_candidates:
+            values = normalize_seed_keywords([str(candidate)])
+            if not values:
+                continue
+            keyword = values[0]
+            if primary_keyword and primary_keyword not in keyword and len(keyword.split()) <= 4:
+                keyword = f"{primary_keyword} {keyword}"
+            if any(seed["keyword"] == keyword for seed in normalized_seeds):
+                continue
+            normalized_seeds.append({
+                "keyword": keyword,
+                "justification": "Derived from the audited primary topic and content opportunities to provide a distinct, relevant gap-discovery angle.",
+            })
+            if len(normalized_seeds) >= 3:
+                break
+    normalized_seeds = normalized_seeds[:5]
+    if len(normalized_seeds) < 3:
+        raise HTTPException(status_code=502, detail="Gold Hunter could not produce the required 3 relevant seed keywords. Please retry the audit.")
 
     # 3. Save to database
     scan = GoldHunterScan(

@@ -143,6 +143,13 @@ export function GoldHunter() {
                   {renderAuditSummary(scan.audit_summary)}
                 </div>
 
+                <div className="mb-6">
+                  <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Seed keywords</h4><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{scan.seeds?.length || 0} seeds</span></div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {(scan.seeds || []).map((seed, index) => <div key={seed.keyword} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="font-semibold text-slate-900 dark:text-slate-100">{index + 1}. {seed.keyword}</p><p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{seed.justification}</p></div>)}
+                  </div>
+                </div>
+
                 <div className="mt-4 flex justify-end">
                   <Button 
                     disabled={createMutation.isPending}
@@ -172,7 +179,7 @@ export function GoldHunter() {
                     ) : (
                       <Plus className="h-4 w-4 mr-2" />
                     )}
-                    Gap Hunter
+                    Run Gap Hunter with {scan.seeds?.length || 0} seeds
                   </Button>
                 </div>
               </Card>

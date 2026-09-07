@@ -79,6 +79,42 @@ class WorkflowTests(unittest.TestCase):
         pid = self.project()
         self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['audit_summary'], 'Electronics tool')
 
+    def test_gold_hunter_always_returns_three_to_five_distinct_seeds(self):
+        result = {
+            'audit_summary': {
+                'primary_keyword': 'circuit diagram maker',
+                'content_opportunities': ['circuit symbols guide', 'electrical schematic tutorial'],
+            },
+            'seeds': [
+                {'keyword': 'circuit diagram software', 'justification': 'Relevant tool intent'},
+                {'keyword': 'circuit diagram software', 'justification': 'Duplicate'},
+            ],
+        }
+        with (
+            patch('app.goldhunter.router.fetch_url_content', new=AsyncMock(return_value='Circuit tool page')),
+            patch('app.goldhunter.router.generate_gold_hunter_seeds', new=AsyncMock(return_value=result)),
+        ):
+            response = self.client.post('/api/goldhunter/scan', json={'url': 'https://own.example'})
+        self.assertEqual(response.status_code, 200, response.text)
+        seeds = response.json()['seeds']
+        self.assertGreaterEqual(len(seeds), 3)
+        self.assertLessEqual(len(seeds), 5)
+        self.assertEqual(len({seed['keyword'] for seed in seeds}), len(seeds))
+
+        many_result = {
+            **result,
+            'seeds': [
+                {'keyword': f'circuit diagram topic {index}', 'justification': 'Relevant'}
+                for index in range(7)
+            ],
+        }
+        with (
+            patch('app.goldhunter.router.fetch_url_content', new=AsyncMock(return_value='Circuit tool page')),
+            patch('app.goldhunter.router.generate_gold_hunter_seeds', new=AsyncMock(return_value=many_result)),
+        ):
+            response = self.client.post('/api/goldhunter/scan', json={'url': 'https://own.example'})
+        self.assertEqual(len(response.json()['seeds']), 5)
+
     def test_legacy_schema_migration_is_idempotent(self):
         with self.sync_engine.begin() as conn:
             conn.execute(text('ALTER TABLE projects DROP COLUMN audit_summary'))
