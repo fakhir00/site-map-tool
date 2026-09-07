@@ -80,12 +80,12 @@ Website/product context:
 Candidate keywords:
 {json.dumps(chunk)}
 
-Apply a strict relevance threshold. Keep a keyword only when a page on this exact website could
-satisfy it accurately and help the stated audience. Reject tangential keywords, generic phrases
-that merely share one weak word, unsupported product features, other industries, other audiences,
-brand drift, navigation text, broken phrases, and extraction junk. When uncertain, reject it.
-Useful questions, comparisons, entities, and supporting phrases may remain only when they are
-directly relevant; the architecture step can later consolidate them into H2 sections.
+Use a firm but balanced relevance threshold. Keep keywords that directly match the website and
+also strongly related educational, comparison, feature, entity, audience, and use-case terms that
+could support its topical authority. Reject clearly unrelated industries, impossible product
+claims, brand drift, navigation text, broken phrases, and extraction junk. Do not reject a useful
+keyword merely because it is adjacent to the core commercial phrase; keep it when the context
+gives the site a credible reason to answer that search intent.
 You may only return exact strings from Candidate keywords. Order the strongest primary topic first.
 Return JSON: {{"keywords": ["exact candidate", "exact candidate"]}}
 """

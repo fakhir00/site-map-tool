@@ -3,7 +3,7 @@ import json
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 
-from nlp.openrouter import _prepare_hub_page_keywords, _validate_hub_and_spoke, build_hub_spoke_fallback, cluster_hub_and_spoke
+from nlp.openrouter import _validate_hub_and_spoke, build_hub_spoke_fallback, cluster_hub_and_spoke
 from workers.pipeline import _seed_anchored_keyword_expansions
 
 
@@ -13,52 +13,51 @@ def spoke(keyword):
 
 class HubConstraintTests(TestCase):
     def valid_payload(self):
-        layers = {
-            "Foundations": [spoke("kw 1"), spoke("kw 2")],
-            "Action": [spoke("kw 3"), spoke("kw 4")],
-            "Money": [spoke("kw 5"), spoke("kw 6")],
-            "Quick Wins": [spoke("kw 7"), spoke("kw 8")],
-        }
         return {
             "hubs": [{
                 "hub_title": "MASTER HUB",
                 "target_keyword": "circuit diagram",
-                "layers": {},
-                "sub_silos": [{"hub_title": "Silo", "target_keyword": "circuit basics", "layers": layers}],
+                "layers": {"Strategic articles": [spoke(f"kw {index}") for index in range(1, 11)]},
+                "sub_silos": [],
             }]
         }
 
     def test_valid_map_passes(self):
-        allowed = {"circuit diagram", "circuit basics", *(f"kw {index}" for index in range(1, 9))}
+        allowed = {"circuit diagram", *(f"kw {index}" for index in range(1, 11))}
         self.assertIsNone(_validate_hub_and_spoke(self.valid_payload(), 10, "circuit diagram", allowed))
 
-    def test_small_silo_is_allowed_but_entity_spoke_fails(self):
+    def test_plan_requires_ten_to_twenty_flat_spokes(self):
         payload = self.valid_payload()
-        payload["hubs"][0]["sub_silos"][0]["layers"]["Quick Wins"] = []
-        self.assertIsNone(_validate_hub_and_spoke(payload, 10, "circuit diagram", {"circuit diagram", "circuit basics", *(f"kw {i}" for i in range(1, 9))}))
+        payload["hubs"][0]["layers"]["Strategic articles"].pop()
+        self.assertIn("10 to 20", _validate_hub_and_spoke(payload, 10, "circuit diagram", {f"kw {i}" for i in range(1, 11)}))
         payload = self.valid_payload()
         self.assertIn("Entity keyword", _validate_hub_and_spoke(
-            payload, 10, "circuit diagram", {"circuit diagram", "circuit basics", "entity:kw 1", *(f"kw {i}" for i in range(2, 9))}
+            payload, 10, "circuit diagram", {"circuit diagram", "entity:kw 1", *(f"kw {i}" for i in range(2, 11))}
         ))
 
     def test_wrong_master_and_duplicate_targets_fail(self):
         payload = self.valid_payload()
         self.assertIn("primary seed", _validate_hub_and_spoke(payload, 10, "network diagram"))
         payload = self.valid_payload()
-        payload["hubs"][0]["sub_silos"][0]["layers"]["Action"][0] = spoke("kw 1")
+        payload["hubs"][0]["layers"]["Strategic articles"][1] = spoke("kw 1")
         self.assertIn("Duplicate", _validate_hub_and_spoke(payload, 10, "circuit diagram"))
 
     def test_cluster_retries_invalid_model_output(self):
-        valid = self.valid_payload()
-        invalid = {"hubs": [valid["hubs"][0], {"hub_title": "Another hub", "layers": {}}]}
-        keywords = [{"phrase": f"kw {index}", "type": "primary"} for index in range(1, 9)]
-        keywords.append({"phrase": "circuit basics", "type": "primary"})
+        def plan(count):
+            return {
+                "master_hub": {"article_title": "Circuit Diagram", "target_keyword": "circuit diagram", "targeted_keywords": ["circuit diagram"]},
+                "spokes": [{"spoke_category": "Guides", "article_title": f"Article {i}", "target_keyword": f"kw {i}"} for i in range(1, count + 1)],
+                "filtered_irrelevant_keywords": [], "total_relevant_keywords_covered": count + 1, "interlinking_strategy": "Loop",
+            }
+        invalid, valid = plan(9), plan(10)
+        keywords = [{"phrase": f"kw {index}", "type": "primary"} for index in range(1, 11)]
         with (
             patch("nlp.openrouter.is_ai_configured", return_value=True),
             patch("nlp.openrouter._achat_json", new=AsyncMock(side_effect=[invalid, valid])) as chat,
         ):
             result = asyncio.run(cluster_hub_and_spoke(keywords, main_keyword="circuit diagram"))
-        self.assertEqual(result, valid)
+        self.assertEqual(len(result["spokes"]), 10)
+        self.assertEqual(sum(len(items) for items in result["hubs"][0]["layers"].values()), 10)
         self.assertEqual(chat.await_count, 2)
 
     def test_fallback_builds_balanced_unique_constraint_safe_map(self):
@@ -79,21 +78,6 @@ class HubConstraintTests(TestCase):
         ))
         rendered = json.dumps(payload).lower()
         self.assertIn("include: electrical standard", rendered)
-
-    def test_modifier_variants_become_h2s_on_one_broader_page(self):
-        variants = [
-            {"phrase": f"circuit diagram symbols for {suffix}", "type": "long-tail"}
-            for suffix in ("ports", "nodes", "schematics", "ansi", "iec 61131")
-        ]
-        prepared = _prepare_hub_page_keywords(variants, "circuit diagram maker")
-        self.assertEqual(len(prepared), 1)
-        self.assertEqual(prepared[0]["phrase"], "circuit diagram symbols")
-        self.assertEqual(len(prepared[0]["h_tags"]), len(variants))
-
-        payload = build_hub_spoke_fallback(variants, "circuit diagram maker")
-        rendered = json.dumps(payload).lower()
-        self.assertEqual(rendered.count("target keyword: circuit diagram symbols)"), 1)
-        self.assertIn("include: circuit diagram symbols for ports", rendered)
 
     def test_cluster_uses_fallback_when_ai_is_unavailable(self):
         keywords = _seed_anchored_keyword_expansions(["circuit diagram maker"], set(), 100)

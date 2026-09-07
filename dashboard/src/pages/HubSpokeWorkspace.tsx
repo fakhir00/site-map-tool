@@ -8,7 +8,8 @@ import { Card } from '../components/ui/Card'
 type LayerMap = Record<string, string[]>
 type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[]; layers: LayerMap }
 type Hub = Silo & { sub_silos?: Silo[] }
-type Mapping = { hubs: Hub[]; _planning_thought?: string }
+type SpokeDetail = { article_title: string; target_keyword: string; word_count_suggestion?: number; content_brief?: string; h2_sections?: { h2_heading: string }[] }
+type Mapping = { hubs: Hub[]; _planning_thought?: string; master_hub?: { content_brief?: string; word_count_suggestion?: number }; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[] }
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
 const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
@@ -92,6 +93,7 @@ export function HubSpokeWorkspace() {
 
   const renderPage = (spoke: string) => {
     const page = parseSpoke(spoke)
+    const detail = mapping?.spokes?.find((item) => item.target_keyword.toLowerCase() === page.target.toLowerCase())
     const isTool = shouldBuildTool(`${page.title} ${page.target}`)
     const Icon = isTool ? Wrench : FileText
     return (
@@ -101,6 +103,8 @@ export function HubSpokeWorkspace() {
           <span className="min-w-0 flex-1">
             <span className="block font-semibold text-slate-900 dark:text-slate-100">{page.title}</span>
             <span className="mt-0.5 block text-xs text-slate-500">Target: {page.target}</span>
+            {detail?.content_brief && <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{detail.content_brief}</span>}
+            {(detail?.word_count_suggestion || detail?.h2_sections?.length) && <span className="mt-2 block text-xs text-slate-400">{detail.word_count_suggestion?.toLocaleString()} words{detail.h2_sections?.length ? ` • ${detail.h2_sections.length} planned sections` : ''}</span>}
             {page.included.length > 0 && <span className="mt-3 block rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><strong>Includes:</strong> {page.included.join(' • ')}</span>}
           </span>
           <span className="flex items-center gap-1 text-xs font-semibold text-cyan-700 opacity-70 group-hover:opacity-100 dark:text-cyan-300">{isTool ? 'Build tool' : 'Write page'}<ArrowRight className="h-3.5 w-3.5" /></span>
@@ -193,6 +197,7 @@ export function HubSpokeWorkspace() {
                 <span className="mt-2 flex items-center gap-1 text-xs font-semibold">Open page <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
               </button>
               <div className="space-y-7 p-6">
+                {mapping.master_hub?.content_brief && <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100"><strong>Content focus:</strong> {mapping.master_hub.content_brief}{mapping.master_hub.word_count_suggestion ? ` • ${mapping.master_hub.word_count_suggestion.toLocaleString()} suggested words` : ''}</div>}
                 {renderH2s(hub.h2_keywords)}
                 {Object.keys(hub.layers || {}).length > 0 && <div className="space-y-6">{renderLayers(hub.layers)}</div>}
                 {(hub.sub_silos || []).length > 0 && <div className="space-y-5 border-t border-slate-200 pt-6 dark:border-slate-800">
@@ -202,6 +207,7 @@ export function HubSpokeWorkspace() {
               </div>
             </Card>
           ))}
+          {mapping.interlinking_strategy && <Card className="border-emerald-200 bg-emerald-50/70 p-5 dark:border-emerald-900 dark:bg-emerald-950/20"><p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Interlinking strategy</p><p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{mapping.interlinking_strategy}</p></Card>}
         </section>
       )}
     </div>

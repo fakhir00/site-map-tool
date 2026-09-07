@@ -427,53 +427,16 @@ async def generate_hub_spoke(
 
         for kw in remaining:
             phrase = kw["phrase"]
-            best_hub_idx = 0
-            best_sub_silo_idx = None
-            best_layer = "🧱 Foundations"
-            best_sim = -1.0
-            
-            for node in placed_nodes:
-                sim = phrase_similarity(phrase, node["target_kw"])
-                if sim > best_sim:
-                    best_sim = sim
-                    best_hub_idx = node["hub_idx"]
-                    best_sub_silo_idx = node["sub_silo_idx"]
-                    best_layer = node["layer_name"]
-
-            if kw.get("type") == "entity":
-                if best_sim > 0 and placed_nodes:
-                    best_target = max(
-                        placed_nodes,
-                        key=lambda node: phrase_similarity(phrase, node["target_kw"]),
-                    )["target_kw"]
-                    h2_map.setdefault(best_target.lower(), []).append(phrase)
+            if not placed_nodes:
                 continue
-                    
-            if best_sim <= 0:
-                best_hub_idx = 0
-                best_sub_silo_idx = None
-                best_layer = "🧱 Foundations"
-                
-            # Place in the correct node
-            hub = clusters["hubs"][best_hub_idx]
-            if best_sub_silo_idx is not None:
-                target_node = hub.get("sub_silos", [])[best_sub_silo_idx]
-            else:
-                target_node = hub
-                
-            if "layers" not in target_node:
-                target_node["layers"] = {}
-            if best_layer not in target_node["layers"]:
-                target_node["layers"][best_layer] = []
-                
-            target_node["layers"][best_layer].append(f"{phrase.title()} (Target Keyword: {phrase})")
-            
-            placed_nodes.append({
-                "hub_idx": best_hub_idx,
-                "sub_silo_idx": best_sub_silo_idx,
-                "layer_name": best_layer,
-                "target_kw": phrase
-            })
+            best_target = max(
+                placed_nodes,
+                key=lambda node: phrase_similarity(phrase, node["target_kw"]),
+            )["target_kw"]
+            # The editorial plan is capped at 20 spokes. Keywords outside the
+            # model batch enrich the closest existing article instead of
+            # silently creating hundreds of extra URLs.
+            h2_map.setdefault(best_target.lower(), []).append(phrase)
 
     # Phase 5: Semantic Deduplication (The Bouncer)
     def semantic_tokenize(phrase: str) -> list[str]:
@@ -566,10 +529,10 @@ async def generate_hub_spoke(
             if extras:
                 # Deduplicate H2s uniquely to avoid repetitive appends
                 unique_extras = list(dict.fromkeys(extras))
-                if "[Include H2:" in spoke_str:
+                if "[Include:" in spoke_str:
                     spoke_str = re.sub(r'\]\s*$', f", {', '.join(unique_extras)}]", spoke_str)
                 else:
-                    spoke_str += f" [Include H2: {', '.join(unique_extras)}]"
+                    spoke_str += f" [Include: {', '.join(unique_extras)}]"
             return spoke_str
 
         surviving_spokes_map = [] # stores dicts: {"node": layer_dict, "layer_name": name, "spoke": str, "target_kw": str}

@@ -1721,7 +1721,7 @@ def _apply_hub_h2_plan(payload: dict[str, Any], keywords: list[dict[str, Any]]) 
     return payload
 
 
-def build_hub_spoke_fallback(
+def _legacy_build_hub_spoke_fallback(
     keywords: list[dict[str, Any]],
     main_keyword: str,
 ) -> dict[str, Any]:
@@ -1875,6 +1875,133 @@ def build_hub_spoke_fallback(
     }
 
 
+def _hub_spoke_category(phrase: str) -> str:
+    words = set(_hub_intent_tokens(phrase))
+    lowered = phrase.lower()
+    if words & {"best", "price", "pricing", "cost", "review", "versus", "alternative"} or " vs " in lowered:
+        return "Software comparisons & commercial intent"
+    if words & {"how", "guide", "tutorial", "setup", "create", "make", "use"}:
+        return "How-to guides & tutorials"
+    if words & {"symbol", "meaning", "standard", "reference", "chart"}:
+        return "Reference guides"
+    if words & {"example", "template", "project", "application"}:
+        return "Examples & use cases"
+    return "Educational topics"
+
+
+def _deepseek_plan_to_hub_schema(payload: dict[str, Any], main_keyword: str) -> dict[str, Any]:
+    """Add the visual-card schema while retaining DeepSeek's detailed editorial plan."""
+    from nlp.keywords import clean_phrase
+
+    if "hubs" in payload or not isinstance(payload.get("master_hub"), dict):
+        return payload
+    master_plan = payload["master_hub"]
+    main = clean_phrase(str(master_plan.get("target_keyword") or main_keyword)) or clean_phrase(main_keyword)
+    master_keywords = [
+        clean_phrase(str(value)) for value in (master_plan.get("targeted_keywords") or [])
+        if clean_phrase(str(value)) and clean_phrase(str(value)) != main
+    ]
+    layers: dict[str, list[str]] = {}
+    for article in payload.get("spokes", []) or []:
+        if not isinstance(article, dict):
+            continue
+        target = clean_phrase(str(article.get("target_keyword") or ""))
+        if not target:
+            continue
+        included: list[str] = []
+        for section in article.get("h2_sections", []) or []:
+            if isinstance(section, dict):
+                included.extend(section.get("targeted_keywords_placed_here") or [])
+        for faq in article.get("faq_schema_questions", []) or []:
+            if isinstance(faq, dict):
+                included.extend(faq.get("targeted_keywords_placed_here") or [])
+        included.extend(article.get("entity_terms") or [])
+        included = list(dict.fromkeys(
+            clean_phrase(str(value)) for value in included
+            if clean_phrase(str(value)) and clean_phrase(str(value)) != target
+        ))
+        title = str(article.get("article_title") or target.title()).strip()
+        spoke = _append_h2s(f"{title} (Target Keyword: {target})", included)
+        category = str(article.get("spoke_category") or _hub_spoke_category(target))
+        layers.setdefault(category, []).append(spoke)
+    return {
+        **payload,
+        "hubs": [{
+            "hub_title": f"📍 MASTER HUB: {str(master_plan.get('article_title') or main.title())}",
+            "target_keyword": main,
+            "h2_keywords": list(dict.fromkeys(master_keywords)),
+            "content_brief": str(master_plan.get("content_brief") or ""),
+            "layers": layers,
+            "sub_silos": [],
+        }],
+    }
+
+
+def build_hub_spoke_fallback(
+    keywords: list[dict[str, Any]],
+    main_keyword: str,
+) -> dict[str, Any]:
+    """Build one Master Hub and 10-20 flat spokes if the provider is unavailable."""
+    from nlp.keywords import clean_phrase
+
+    main = clean_phrase(main_keyword) or "core topic"
+    entities = list(dict.fromkeys(
+        clean_phrase(str(item.get("phrase") or "")) for item in keywords
+        if item.get("type") == "entity" and clean_phrase(str(item.get("phrase") or ""))
+    ))
+    phrases = list(dict.fromkeys(
+        clean_phrase(str(item.get("phrase") or "")) for item in keywords
+        if item.get("type") != "entity" and clean_phrase(str(item.get("phrase") or "")) != main
+    ))
+    if len(phrases) < 10:
+        phrases.extend(
+            phrase for phrase in (
+                f"{main} guide", f"how to use {main}", f"best {main}", f"{main} examples",
+                f"{main} features", f"{main} tutorial", f"{main} comparison", f"{main} for beginners",
+                f"{main} use cases", f"{main} troubleshooting",
+            ) if phrase not in phrases
+        )
+    spoke_count = min(20, max(10, (len(phrases) + 3) // 4))
+    centers = phrases[:spoke_count]
+    assignments: dict[str, list[str]] = {center: [] for center in centers}
+    for phrase in phrases[spoke_count:]:
+        center = max(centers, key=lambda candidate: _hub_intent_similarity(phrase, candidate))
+        assignments[center].append(phrase)
+    for entity in entities:
+        center = max(centers, key=lambda candidate: _hub_intent_similarity(entity, candidate))
+        assignments[center].append(entity)
+
+    spokes = []
+    for center in centers:
+        included = assignments[center]
+        spokes.append({
+            "spoke_category": _hub_spoke_category(center),
+            "article_title": center.title(),
+            "target_keyword": center,
+            "word_count_suggestion": 2000,
+            "content_brief": f"Satisfy the search intent for {center} and connect readers to the {main} hub.",
+            "h2_sections": [{
+                "h2_heading": "Related questions and subtopics",
+                "targeted_keywords_placed_here": included,
+            }] if included else [],
+            "faq_schema_questions": [],
+            "entity_terms": [],
+        })
+    plan = {
+        "filtered_irrelevant_keywords": [],
+        "total_relevant_keywords_covered": len(phrases) + 1,
+        "master_hub": {
+            "article_title": main.title(),
+            "target_keyword": main,
+            "content_brief": f"The definitive home-page guide and primary conversion page for {main}.",
+            "targeted_keywords": [main],
+        },
+        "spokes": spokes,
+        "interlinking_strategy": "Every spoke links to the Master Hub. Related spokes link to one another where the next article answers the reader's natural follow-up question.",
+    }
+    return _deepseek_plan_to_hub_schema(plan, main)
+
+
 def _validate_hub_and_spoke(
     payload: dict,
     total_kws: int,
@@ -1898,8 +2025,12 @@ def _validate_hub_and_spoke(
     sub_silos = master.get("sub_silos", [])
     if not isinstance(sub_silos, list):
         return "Master hub sub_silos must be an array."
-    if len(sub_silos) > 5:
-        return f"A maximum of 5 sub-silos is allowed; received {len(sub_silos)}."
+    if sub_silos:
+        return "Use a flat plan with one Master Hub and no nested sub-silos."
+    layers = master.get("layers", {})
+    spoke_count = sum(len(items) for items in layers.values() if isinstance(items, list)) if isinstance(layers, dict) else 0
+    if not 10 <= spoke_count <= 20:
+        return f"The plan must contain 10 to 20 spokes; received {spoke_count}."
     seen_targets: set[str] = set()
     seen_slugs: set[str] = set()
     seen_intents: list[str] = []
@@ -1912,6 +2043,8 @@ def _validate_hub_and_spoke(
 
     def is_allowed_target(target: str) -> bool:
         if not allowed or target in allowed:
+            return True
+        if len(allowed) < 10 and main_keyword and _hub_intent_similarity(target, main_keyword) > 0:
             return True
         # A shared parent is permitted when it deterministically consolidates
         # two or more supplied modifier variants onto one stronger URL.
@@ -1947,12 +2080,6 @@ def _validate_hub_and_spoke(
                 slug = _hub_slug(target)
                 if slug in seen_slugs:
                     return f"Duplicate URL slug: {slug}."
-                semantic_duplicate = next(
-                    (prior for prior in seen_intents if _hub_intent_similarity(target, prior) >= 0.60),
-                    None,
-                )
-                if semantic_duplicate:
-                    return f"Semantic intent duplication: {target} overlaps {semantic_duplicate}."
                 if target in entity_keywords:
                     return f"Entity keyword cannot be a standalone spoke: {target}."
                 if not is_allowed_target(target):
@@ -1978,8 +2105,6 @@ def _validate_hub_and_spoke(
             return f"Entity keyword cannot be a sub-silo target: {silo_target}."
         if not is_allowed_target(silo_target):
             return f"Sub-silo target keyword was not supplied by the scan: {silo_target}."
-        if any(_hub_intent_similarity(silo_target, prior) >= 0.60 for prior in seen_intents):
-            return f"Sub-silo {index} duplicates an existing semantic intent."
         seen_slugs.add(silo_slug)
         seen_intents.append(silo_target)
         error = validate_layers(silo, f"Sub-silo {index}")
@@ -1988,7 +2113,7 @@ def _validate_hub_and_spoke(
     return None
 
 
-async def cluster_hub_and_spoke(
+async def _legacy_cluster_hub_and_spoke(
     keywords: list[dict[str, Any]], 
     main_keyword: str = "your core topic",
     audit_summary: str | None = None
@@ -2160,5 +2285,110 @@ Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [
     )
     if fallback_error:
         logger.error("Deterministic hub-and-spoke fallback failed validation: %s", fallback_error)
+        return None
+    return fallback
+
+
+async def cluster_hub_and_spoke(
+    keywords: list[dict[str, Any]],
+    main_keyword: str = "your core topic",
+    audit_summary: str | None = None,
+) -> dict[str, Any] | None:
+    """Create one Master Hub and 10-20 flat spokes using the DeepSeek plan contract."""
+    if not keywords:
+        return None
+
+    trimmed = keywords[:500]
+    if not is_ai_configured():
+        return build_hub_spoke_fallback(trimmed, main_keyword)
+
+    prompt = f"""
+You are an elite SEO Architect and Content Strategist specializing in Hub-Spoke and Pillar-Cluster models.
+
+Website context:
+{audit_summary or "Infer the business context conservatively from the primary keyword and keyword list."}
+
+Primary keyword: {main_keyword}
+Raw keyword list:
+{json.dumps(trimmed)}
+
+Execute these steps in sequence:
+1. FILTER: Remove obvious junk and keywords that violate the website context or its hard boundaries. Keep useful adjacent educational, commercial, comparison, feature, entity, and use-case terms.
+2. CLUSTER: Group every relevant keyword by search intent.
+3. STRUCTURE: Build exactly 1 Master Hub and 10 to 20 strategically connected Spoke articles. The total plan must contain 11 to 21 articles. Use a flat plan with no nested hubs or sub-silos.
+4. PREVENT CANNIBALIZATION: Each article must satisfy a distinct primary search intent. Put overlapping and long-tail variants inside the strongest article as H2, H3, Entity, or FAQ placements.
+5. STANDARDS: Never create individual articles for ANSI, IEC, DIN, JIS, UL, CE, FCC, IEEE, BS, or similar standards. Consolidate them under one relevant standards section or article.
+6. MAP: Explicitly place every relevant keyword in one article as its Title/H1 target, H2, H3, Entity, or FAQ. Cover all relevant keywords.
+7. INTERLINK: Create a useful authority loop between theory, tutorials, references, comparisons, and the Master Hub.
+
+Return only this JSON object:
+{{
+  "filtered_irrelevant_keywords": ["removed keyword"],
+  "total_relevant_keywords_covered": 0,
+  "master_hub": {{
+    "article_title": "Compelling home-page hub title",
+    "target_keyword": "{main_keyword}",
+    "word_count_suggestion": 3500,
+    "content_brief": "What this definitive hub must cover",
+    "targeted_keywords": ["keywords assigned to the hub"]
+  }},
+  "spokes": [
+    {{
+      "spoke_category": "Comparisons, Tutorials, References, Theory, or Use Cases",
+      "article_title": "Compelling article title",
+      "target_keyword": "one distinct primary keyword",
+      "word_count_suggestion": 2000,
+      "content_brief": "Specific content focus and value to the website audience",
+      "h2_sections": [
+        {{"h2_heading": "Useful heading", "targeted_keywords_placed_here": ["assigned keyword"]}}
+      ],
+      "faq_schema_questions": [
+        {{"question": "Relevant question?", "targeted_keywords_placed_here": ["assigned keyword"]}}
+      ],
+      "entity_terms": ["supporting entity"]
+    }}
+  ],
+  "interlinking_strategy": "A concrete authority-loop linking strategy"
+}}
+
+Final checks: return 10-20 spokes, exactly one Master Hub, no duplicate target keywords, no nested silos, and no relevant keyword left unmapped.
+"""
+    tagged_allowed = {
+        ("entity:" if kw.get("type") == "entity" else "") + str(kw.get("phrase") or "")
+        for kw in trimmed
+    }
+    for attempt in range(3):
+        try:
+            raw_payload = await _achat_json(
+                system_prompt="You are an elite SEO Architect. Follow the JSON contract exactly.",
+                user_prompt=prompt,
+                temperature=0.2,
+                max_tokens=12000,
+            )
+            if not isinstance(raw_payload, dict):
+                raise ValueError("Provider returned a non-object plan")
+            payload = _deepseek_plan_to_hub_schema(raw_payload, main_keyword)
+            error = _validate_hub_and_spoke(
+                payload,
+                len(trimmed),
+                main_keyword=main_keyword,
+                allowed_keywords=tagged_allowed,
+            )
+            if not error:
+                return payload
+            logger.warning("Hub-spoke plan failed validation on attempt %s: %s", attempt + 1, error)
+            prompt += f"\n\nYour previous plan was rejected: {error} Fix it and return the full JSON again."
+        except Exception as exc:
+            logger.warning("Hub-spoke generation failed on attempt %s: %s", attempt + 1, exc)
+
+    fallback = build_hub_spoke_fallback(trimmed, main_keyword)
+    fallback_error = _validate_hub_and_spoke(
+        fallback,
+        len(trimmed),
+        main_keyword=main_keyword,
+        allowed_keywords=tagged_allowed,
+    )
+    if fallback_error:
+        logger.error("Hub-spoke fallback failed validation: %s", fallback_error)
         return None
     return fallback
