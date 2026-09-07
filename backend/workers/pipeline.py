@@ -8,6 +8,7 @@ import gc
 import logging
 import base64
 import re
+import threading
 import uuid
 from datetime import datetime
 from typing import Any
@@ -33,8 +34,8 @@ else:
         "keepalives_interval": 10,
         "keepalives_count": 5,
     }
-    sync_engine_kwargs["pool_size"] = 5
-    sync_engine_kwargs["max_overflow"] = 10
+    sync_engine_kwargs["pool_size"] = 3
+    sync_engine_kwargs["max_overflow"] = 3
     sync_engine_kwargs["pool_recycle"] = 300
 
 sync_engine = create_engine(settings.SYNC_DATABASE_URL, **sync_engine_kwargs)
@@ -46,6 +47,7 @@ def get_db() -> Session:
 
 
 ACTIVE_SCANS: set[uuid.UUID] = set()
+SCAN_EXECUTION_LOCK = threading.Lock()
 
 
 def is_scan_worker_alive(job_id: uuid.UUID) -> bool:
@@ -64,6 +66,13 @@ def trim_memory() -> None:
 
 
 def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool = False) -> None:
+    """Serialize in-process scans so the web service cannot multiply memory use."""
+    logger.info("[%s] Waiting for the scan execution slot", project_id)
+    with SCAN_EXECUTION_LOCK:
+        _run_full_pipeline(project_id, scan_job_id, resume_existing)
+
+
+def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool = False) -> None:
     """
     Run a scan concurrently. URL discovery and scraping run in threads, then
     keyword extraction and AI filtering run once on the full scraped corpus.
@@ -1303,10 +1312,22 @@ def _mark_running(db: Session, project: Any, job: Any) -> None:
 def _scan_is_active(db: Session, project_id: uuid.UUID, job_id: uuid.UUID) -> bool:
     """Read fresh state so paused/replaced workers cannot restart an old job."""
     from app.models import Project, ScanJob
-    with db.no_autoflush:
-        row = db.execute(select(Project.status, ScanJob.status, ScanJob.started_at)
-            .join(ScanJob, ScanJob.project_id == Project.id)
-            .where(Project.id == project_id, ScanJob.id == job_id)).first()
+    from sqlalchemy.exc import OperationalError
+
+    row = None
+    for attempt in range(2):
+        try:
+            with db.no_autoflush:
+                row = db.execute(select(Project.status, ScanJob.status, ScanJob.started_at)
+                    .join(ScanJob, ScanJob.project_id == Project.id)
+                    .where(Project.id == project_id, ScanJob.id == job_id)).first()
+            break
+        except OperationalError:
+            db.rollback()
+            db.close()
+            if attempt:
+                raise
+            logger.warning("Database connection dropped during scan status check; reconnecting once")
     if not row or row[0] != "running" or row[1] != "running":
         return False
     if row[2] and (datetime.utcnow() - row[2].replace(tzinfo=None)).total_seconds() > settings.SCAN_MAX_SECONDS:

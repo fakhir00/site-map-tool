@@ -68,6 +68,12 @@ async def _ensure_runtime_schema(conn):
         ]:
             if col not in kw_columns:
                 await conn.execute(text(f"ALTER TABLE keywords ADD COLUMN {col} {col_type}"))
+        result = await conn.execute(text("PRAGMA table_info(keyword_bank)"))
+        bank_columns = {row[1] for row in result.fetchall()}
+        if "is_done" not in bank_columns:
+            await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN is_done BOOLEAN NOT NULL DEFAULT 0"))
+        if "done_at" not in bank_columns:
+            await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN done_at DATETIME"))
         return
 
     result = await conn.execute(
@@ -137,6 +143,13 @@ async def _ensure_runtime_schema(conn):
         if col not in kw_columns:
             await conn.execute(text(f"ALTER TABLE keywords ADD COLUMN {col} {col_type}"))
 
+    result = await conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'keyword_bank'"))
+    bank_columns = {row[0] for row in result.fetchall()}
+    if "is_done" not in bank_columns:
+        await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN is_done BOOLEAN NOT NULL DEFAULT FALSE"))
+    if "done_at" not in bank_columns:
+        await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN done_at TIMESTAMP WITH TIME ZONE"))
+
 
 app = FastAPI(
     title="SiteMapSEO API",
@@ -172,6 +185,7 @@ from app.keywords.router import router as keywords_router
 from app.content.router import router as content_router
 from app.website_prompts.router import router as website_prompts_router
 from app.goldhunter.router import router as goldhunter_router
+from app.hub_spoke.router import router as hub_spoke_workspace_router
 
 app.include_router(auth_router)
 app.include_router(projects_router)
@@ -181,6 +195,7 @@ app.include_router(keyword_bank_router)
 app.include_router(content_router)
 app.include_router(website_prompts_router)
 app.include_router(goldhunter_router, prefix="/api")
+app.include_router(hub_spoke_workspace_router)
 
 
 @app.get("/api/health")

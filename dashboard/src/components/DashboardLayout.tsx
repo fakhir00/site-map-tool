@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, Bookmark, ExternalLink, FolderKanban, LogOut, Map, Menu, Plus, Settings, X, Search } from 'lucide-react'
+import { BarChart3, Bookmark, ExternalLink, FolderKanban, LogOut, Map, Menu, Network, Plus, Settings, X, Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { DEMO_BACKEND_ENABLED, api, auth, type Project, type User } from '../lib/api'
 import { marketingUrl } from '../lib/marketing'
@@ -46,6 +46,7 @@ export function DashboardLayout() {
     { name: 'Astro Launchpad', href: '/website-prompts', icon: Plus },
     { name: 'Gold Hunter', href: '/gold-hunter', icon: Search },
     { name: 'Gap Hunter', href: '/scan', icon: Map },
+    { name: 'Hub Spoke', href: '/hub-spoke', icon: Network },
     { name: 'Build Tool', href: '/gap-page-prompts', icon: Plus },
     { name: 'Write Blog', href: '/write-blog', icon: Plus },
     { name: 'Saved Keywords', href: '/saved-keywords', icon: Bookmark },

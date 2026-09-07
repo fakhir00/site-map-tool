@@ -225,5 +225,24 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(mapping['hubs']), 1)
         self.assertGreaterEqual(len(mapping['hubs'][0]['sub_silos']), 3)
 
+    def test_standalone_hub_workspace_cleans_and_builds_uploaded_list(self):
+        keywords = [f'circuit diagram topic {index}' for index in range(100)]
+        with (
+            patch('app.hub_spoke.router.is_ai_configured', return_value=False),
+            patch('nlp.openrouter.is_ai_configured', return_value=False),
+        ):
+            cleaned = self.client.post('/api/hub-spoke/clean', json={
+                'keywords': [*keywords, 'circuit diagram topic 1', '###'],
+                'context': 'Circuit design education for electronics students.',
+            })
+            self.assertEqual(cleaned.status_code, 200, cleaned.text)
+            self.assertEqual(cleaned.json()['count'], 100)
+            built = self.client.post('/api/hub-spoke/build', json={
+                'keywords': cleaned.json()['keywords'],
+                'context': 'Circuit design education for electronics students.',
+            })
+        self.assertEqual(built.status_code, 200, built.text)
+        self.assertEqual(len(built.json()['clusters']['hubs']), 1)
+
 if __name__ == '__main__':
     unittest.main()

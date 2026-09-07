@@ -12,6 +12,7 @@ import WriteBlog from './pages/WriteBlog'
 import WriteBlogArticle from './pages/WriteBlogArticle'
 import SavedKeywords from './pages/SavedKeywords'
 import { GoldHunter } from './pages/GoldHunter'
+import { HubSpokeWorkspace } from './pages/HubSpokeWorkspace'
 import { auth } from './lib/api'
 
 function PrivateRoute() {
@@ -55,6 +56,7 @@ function App() {
               <Route path="gap-page-prompts" element={<GapPageGenerator />} />
               <Route path="saved-keywords" element={<SavedKeywords />} />
               <Route path="gold-hunter" element={<GoldHunter />} />
+              <Route path="hub-spoke" element={<HubSpokeWorkspace />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Route>

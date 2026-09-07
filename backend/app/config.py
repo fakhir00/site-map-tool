@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     MAX_URLS_PER_SCAN: int = 5000
     MAX_COMPETITOR_DOMAINS: int = 15
     GOOGLE_SERP_RESULT_LIMIT: int = 10
-    MAX_CONTENT_URLS_PER_DOMAIN: int = 40
+    MAX_CONTENT_URLS_PER_DOMAIN: int = 25
     MAX_COMPETITOR_JUDGE_CANDIDATES: int = 45
     AI_KEYWORD_GAP_CANDIDATE_LIMIT: int = 250
     AI_KEYWORD_GAP_RESULT_LIMIT: int = 150
@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     ENABLE_SPACY: bool = False
     AI_REQUEST_TIMEOUT: float = 60.0
     SCAN_MAX_SECONDS: int = 1800
-    SCRAPE_CONCURRENCY: int = 2
-    MAX_SCRAPED_TEXT_LENGTH: int = 15000
+    SCRAPE_CONCURRENCY: int = 1
+    MAX_SCRAPED_TEXT_LENGTH: int = 8000
 
     class Config:
         env_file = (BACKEND_DIR.parent / ".env", BACKEND_DIR / ".env")
