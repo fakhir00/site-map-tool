@@ -273,6 +273,9 @@ def extract_keybert_keywords(text: str, max_keywords: int = 15) -> List[Tuple[st
             if is_valid_keyword(cleaned):
                 results.append((cleaned, float(score)))
         return results
+    except ImportError:
+        logger.info("KeyBERT not installed, skipping semantic keyword extraction")
+        return []
     except Exception as e:
         logger.warning(f"KeyBERT extraction failed: {e}")
         return []
@@ -282,6 +285,8 @@ def extract_spacy_entities(text: str) -> List[Tuple[str, str]]:
     """Extract named entities using spaCy."""
     try:
         nlp = _get_spacy_model()
+        if nlp is None:
+            return []
         doc = nlp(text[:50000])  # Limit input size
         entities = []
         seen = set()
@@ -301,6 +306,8 @@ def extract_noun_chunks(text: str) -> List[str]:
     """Extract noun phrases using spaCy."""
     try:
         nlp = _get_spacy_model()
+        if nlp is None:
+            return []
         doc = nlp(text[:30000])
         chunks = []
         seen = set()
@@ -321,9 +328,12 @@ def extract_noun_chunks(text: str) -> List[str]:
 def _get_spacy_model():
     global _SPACY_MODEL
     if _SPACY_MODEL is None:
-        import spacy
-
-        _SPACY_MODEL = spacy.load("en_core_web_sm")
+        try:
+            import spacy
+            _SPACY_MODEL = spacy.load("en_core_web_sm")
+        except (ImportError, OSError):
+            logger.info("spaCy not installed or model not found, skipping NER")
+            return None
     return _SPACY_MODEL
 
 

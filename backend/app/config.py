@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     ENABLE_SPACY: bool = False
     AI_REQUEST_TIMEOUT: float = 60.0
     SCAN_MAX_SECONDS: int = 1800
+    SCRAPE_CONCURRENCY: int = 2
+    MAX_SCRAPED_TEXT_LENGTH: int = 15000
 
     class Config:
         env_file = (BACKEND_DIR.parent / ".env", BACKEND_DIR / ".env")

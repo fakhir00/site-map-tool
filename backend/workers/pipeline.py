@@ -4,6 +4,7 @@ discover competitor domains from the main keyword, crawl own and competitor
 sitemaps, extract keywords, and persist only competitor keyword gaps.
 """
 
+import gc
 import logging
 import base64
 import re
@@ -243,6 +244,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                             local_db.rollback()
                             return
                         local_db.commit()
+                        gc.collect()
                         if proj:
                             _sync_project_counts(local_db, proj)
                     except Exception as e:
@@ -258,9 +260,10 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                 local_db.close()
         
         scrape_started = time.monotonic()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-            discover_futures = [executor.submit(discover_worker) for _ in range(4)]
-            scrape_futures = [executor.submit(scrape_worker) for _ in range(4)]
+        n_scrape = max(1, settings.SCRAPE_CONCURRENCY)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_scrape + 1) as executor:
+            discover_futures = [executor.submit(discover_worker) for _ in range(1)]
+            scrape_futures = [executor.submit(scrape_worker) for _ in range(n_scrape)]
             
             concurrent.futures.wait(discover_futures)
             concurrent.futures.wait(scrape_futures)
@@ -676,6 +679,9 @@ def _scrape_error_reason(scrape_result: Any, text: str) -> str | None:
 
 def _apply_scrape_result(url_record: Any, scrape_result: Any) -> bool:
     text = _scrape_result_text(scrape_result)
+    # Truncate to save memory — 15k chars is plenty for keyword extraction
+    if text and len(text) > settings.MAX_SCRAPED_TEXT_LENGTH:
+        text = text[:settings.MAX_SCRAPED_TEXT_LENGTH]
     url_record.scraped_text = text
     url_record.h1 = (
         getattr(scrape_result, "h1", None)
