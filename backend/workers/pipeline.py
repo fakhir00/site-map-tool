@@ -33,6 +33,24 @@ def get_db() -> Session:
     return SyncSession()
 
 
+ACTIVE_SCANS: set[uuid.UUID] = set()
+
+
+def is_scan_worker_alive(job_id: uuid.UUID) -> bool:
+    return job_id in ACTIVE_SCANS
+
+
+def trim_memory() -> None:
+    """Trigger Python gc and tell glibc to release free arena memory back to the OS."""
+    gc.collect()
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except Exception:
+        pass
+
+
 def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool = False) -> None:
     """
     Run a scan concurrently. URL discovery and scraping run in threads, then
@@ -46,6 +64,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
 
     project_uuid = uuid.UUID(project_id)
     job_uuid = uuid.UUID(scan_job_id)
+    ACTIVE_SCANS.add(job_uuid)
     
     db = get_db()
     try:
@@ -138,6 +157,14 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         domain_queue = queue.Queue()
         url_queue = queue.Queue()
 
+        if resume_existing:
+            existing_pending = db.execute(
+                select(Url.id).where(Url.project_id == project_uuid, Url.status == "pending")
+            ).scalars().all()
+            for u_id in existing_pending:
+                url_queue.put(u_id)
+            logger.info("[%s] Resumed scan with %s pending URLs pre-queued", project_id, len(existing_pending))
+
         domain_queue.put((own_domain, "own"))
         for cd in competitor_domains:
             domain_queue.put((cd, "competitor"))
@@ -203,7 +230,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                         first_id = url_queue.get(timeout=3.0)
                         chunk_ids.append(first_id)
                     except queue.Empty:
-                        if domain_queue.unfinished_tasks == 0:
+                        if domain_queue.unfinished_tasks == 0 and url_queue.empty():
                             break
                         continue
                         
@@ -244,7 +271,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
                             local_db.rollback()
                             return
                         local_db.commit()
-                        gc.collect()
+                        trim_memory()
                         if proj:
                             _sync_project_counts(local_db, proj)
                     except Exception as e:
@@ -330,6 +357,7 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
         if job and job.status in {"queued", "running"}:
             _mark_complete(db, project, job, "error", str(exc)[:500])
     finally:
+        ACTIVE_SCANS.discard(job_uuid)
         db.close()
 
 def _discover_content_urls(

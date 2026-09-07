@@ -26,8 +26,6 @@ async def start_scan(
 
     if project.status == "running":
         raise HTTPException(status_code=409, detail="Scan already running for this project")
-    if project.status == "paused":
-        raise HTTPException(status_code=409, detail="Scan is paused. Resume it instead of starting a new scan.")
 
     claimed = await db.execute(update(Project).where(
         Project.id == project_id, Project.status == project.status,
@@ -161,14 +159,30 @@ async def _expire_stalled_scan(project: Project, db: AsyncSession) -> None:
     started = (job.started_at or job.created_at) if job else None
     if started and started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
-    if job and job.status in {"queued", "running"} and started and now - started < timedelta(seconds=settings.SCAN_MAX_SECONDS):
+
+    if not (job and job.status in {"queued", "running"} and started and now - started < timedelta(seconds=settings.SCAN_MAX_SECONDS)):
+        project.status = "error"
+        if job and job.status in {"queued", "running"}:
+            job.status = "error"
+            job.finished_at = now
+            job.error_message = "Scan stopped responding or exceeded its time limit. Start a new scan to retry."
+        await db.commit()
         return
-    project.status = "error"
-    if job and job.status in {"queued", "running"}:
-        job.status = "error"
-        job.finished_at = now
-        job.error_message = "Scan stopped responding or exceeded its time limit. Start a new scan to retry."
-    await db.commit()
+
+    # Detect in-process worker that died due to container restart or crash (within timeout)
+    if not settings.USE_CELERY and job and job.status in {"queued", "running"}:
+        try:
+            from workers.pipeline import is_scan_worker_alive
+            if started and (now - started).total_seconds() > 5 and not is_scan_worker_alive(job.id):
+                logger.warning("Detected dead scan job %s for project %s (container restarted)", job.id, project.id)
+                project.status = "paused"
+                job.status = "paused"
+                job.finished_at = now
+                job.error_message = "Scan was interrupted by a server restart. Click Resume to continue."
+                await db.commit()
+                return
+        except Exception as err:
+            logger.debug("Active worker check failed: %s", err)
 
 
 async def _launch_scan(background_tasks, project, job, db, *, resume_existing):
@@ -200,7 +214,8 @@ def _dispatch_scan(
         )
         return task.id
 
-    from workers.pipeline import run_full_pipeline
+    from workers.pipeline import run_full_pipeline, ACTIVE_SCANS
 
+    ACTIVE_SCANS.add(job_id)
     background_tasks.add_task(run_full_pipeline, str(project_id), str(job_id), resume_existing)
     return "local-background-task"

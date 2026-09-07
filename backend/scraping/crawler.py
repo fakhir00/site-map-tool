@@ -100,17 +100,17 @@ def extract_publish_date(soup: BeautifulSoup) -> Optional[date]:
     return None
 
 
-def extract_main_text(soup: BeautifulSoup) -> str:
-    """Extract main article text using heuristics."""
-    # Try trafilatura first
-    try:
-        import trafilatura
-        html_str = str(soup)
-        text = trafilatura.extract(html_str, include_comments=False, include_tables=False)
-        if text and len(text) > 200:
-            return text
-    except Exception:
-        pass
+def extract_main_text(soup: BeautifulSoup, raw_html: bytes | str | None = None) -> str:
+    """Extract main article text using heuristics, prioritizing trafilatura on raw HTML."""
+    # Try trafilatura first on raw HTML (fast C/lxml parsing without DOM serialization)
+    if raw_html:
+        try:
+            import trafilatura
+            text = trafilatura.extract(raw_html, include_comments=False, include_tables=False)
+            if text and len(text) > 200:
+                return text
+        except Exception:
+            pass
 
     # Fallback: find main content container
     for selector in ["article", "main", "[role='main']", ".post-content",
@@ -216,13 +216,16 @@ def scrape_page(
                 headers=HEADERS,
                 timeout=timeout,
                 allow_redirects=True,
+                stream=True,
             )
 
             if resp.status_code == 429:
+                resp.close()
                 time.sleep(10)
                 continue
 
             if resp.status_code == 403:
+                resp.close()
                 # Try generic User-Agent
                 fallback_headers = HEADERS.copy()
                 fallback_headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
@@ -231,15 +234,34 @@ def scrape_page(
                     headers=fallback_headers,
                     timeout=timeout,
                     allow_redirects=True,
+                    stream=True,
                 )
                 if resp.status_code == 403:
+                    resp.close()
                     return ScrapedPage(url=url, error="HTTP 403 Forbidden", status_code=403)
 
             if resp.status_code >= 400:
+                resp.close()
                 return ScrapedPage(url=url, error=f"HTTP {resp.status_code}", status_code=resp.status_code)
 
+            # Check content type: skip non-HTML
+            ct = resp.headers.get("content-type", "").lower()
+            if ct and not any(t in ct for t in ("text/html", "application/xhtml", "text/plain")):
+                resp.close()
+                return ScrapedPage(url=url, error=f"Non-HTML content type: {ct[:40]}", status_code=resp.status_code)
+
+            # Cap download size at 1MB to prevent OOM
+            raw_bytes = bytearray()
+            for chunk in resp.iter_content(chunk_size=16384):
+                raw_bytes.extend(chunk)
+                if len(raw_bytes) >= 1_000_000:
+                    break
+            resp.close()
+            html_bytes = bytes(raw_bytes)
+            del raw_bytes
+
             # Parse HTML
-            soup = BeautifulSoup(resp.content, "lxml")
+            soup = BeautifulSoup(html_bytes, "lxml")
 
             # Remove noise
             for tag in soup.find_all(["script", "style", "noscript", "iframe", "svg"]):
@@ -258,7 +280,7 @@ def scrape_page(
             h3s = [el.get_text(strip=True) for el in soup.find_all("h3")][:10]
 
             # Extract main text
-            text = extract_main_text(soup)
+            text = extract_main_text(soup, raw_html=html_bytes)
 
             # Metadata
             word_count = count_words(text)
@@ -273,6 +295,9 @@ def scrape_page(
                 href = a_tag["href"]
                 if href.startswith("/") or base_domain in href:
                     internal_links += 1
+
+            del soup
+            del html_bytes
 
             return ScrapedPage(
                 url=url,

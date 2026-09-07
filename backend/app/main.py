@@ -22,7 +22,14 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_runtime_schema(conn)
-    logger.info("Database tables ready")
+        if not settings.USE_CELERY:
+            await conn.execute(
+                text("UPDATE projects SET status = 'paused' WHERE status = 'running'")
+            )
+            await conn.execute(
+                text("UPDATE scan_jobs SET status = 'paused', error_message = 'Interrupted by server restart. Click Resume to continue.' WHERE status IN ('queued', 'running')")
+            )
+    logger.info("Database tables ready and interrupted scans marked for resume")
     yield
     await engine.dispose()
 
