@@ -292,82 +292,16 @@ def run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool =
             
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
-        ai_keywords = generate_ai_keywords_sync(
-            seed_keywords,
+        _ensure_minimum_keyword_count(
+            db=db,
+            project_id=project_uuid,
+            seed_keywords=seed_keywords,
             topic_terms=topic_terms,
             negative_terms=negative_terms,
-            apply_gap_filter=False,
+            audit_summary=audit_summary,
+            generate_keywords=generate_ai_keywords_sync,
+            ai_generated_source=ai_generated_source,
         )
-        ai_keywords = [
-            item for item in ai_keywords
-            if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
-        ]
-        if not _scan_is_active(db, project_uuid, job_uuid):
-            return
-        if ai_keywords:
-            existing_phrases = {row[0] for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_uuid)).all()}
-            own_keyword_phrases = _own_content_keyword_phrases(db, project_uuid, topic_terms, negative_terms)
-            all_excluded = existing_phrases | own_keyword_phrases
-            
-            strict_filtered_ai = filter_keyword_gap_recommendations(
-                seed_keywords,
-                ai_keywords,
-                audit_summary=audit_summary,
-                max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
-            ) or []
-            
-            ai_keywords = [kw for kw in strict_filtered_ai if kw["phrase"] not in all_excluded]
-            
-            if ai_keywords:
-                ai_url_str, ai_source_domain = ai_generated_source()
-                ai_url = db.execute(select(Url).where(Url.project_id == project_uuid, Url.url == ai_url_str)).scalar_one_or_none()
-                if not ai_url:
-                    ai_url = Url(
-                        project_id=project_uuid,
-                        url=ai_url_str,
-                        source_type="ai",
-                        source_domain=ai_source_domain,
-                        status="scraped",
-                    )
-                    db.add(ai_url)
-                    db.flush()
-                
-                # Split by type for tiering
-                clusterable_ai = [kw for kw in ai_keywords if kw.get("type") in ("primary", "long-tail")]
-                passthrough_ai = [kw for kw in ai_keywords if kw.get("type") not in ("primary", "long-tail")]
-                
-                acc_ai: dict[str, dict[str, Any]] = {}
-                
-                # Passthrough keywords (entity/lsi/heading)
-                for kw_data in passthrough_ai:
-                    phrase = kw_data["phrase"]
-                    if phrase not in acc_ai:
-                        acc_ai[phrase] = {
-                            "type": kw_data.get("type", "lsi"),
-                            "count": 1,
-                            "url_ids": {ai_url.id},
-                            "score": 1.0,
-                            "source": "sitemap_ai",
-                        }
-                
-                # Apply 4-tier classification to clusterable AI keywords
-                if clusterable_ai:
-                    tier_results = classify_keyword_tiers(clusterable_ai, verify_cluster_intent)
-                    # Give all entries the ai_url id
-                    ai_extracted_with_ids = [
-                        {**kw, "url_ids": [str(ai_url.id)]} for kw in ai_keywords
-                    ]
-                    _build_tiered_accumulator(acc_ai, tier_results, ai_extracted_with_ids)
-                    # Ensure all entries have the ai_url.id
-                    for entry in acc_ai.values():
-                        entry["url_ids"].add(ai_url.id)
-                        entry["source"] = "sitemap_ai"
-                else:
-                    # Only passthrough, already handled above
-                    pass
-                
-                _store_keywords(db, project_uuid, acc_ai)
-                logger.info("[%s] Stored %s AI-generated keywords (tiered)", project_id, len(acc_ai))
 
         if not _scan_is_active(db, project_uuid, job_uuid):
             return
@@ -1755,6 +1689,196 @@ def _keyword_matches_topic(
     return is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms)
 
 
+def _ensure_minimum_keyword_count(
+    db: Session,
+    project_id: uuid.UUID,
+    seed_keywords: list[str],
+    topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
+    audit_summary: str | None,
+    generate_keywords: Any,
+    ai_generated_source: Any,
+) -> int:
+    """Expand in distinct batches until the scan has the configured minimum."""
+    from app.models import Keyword, Url
+    from nlp.keywords import clean_phrase
+
+    target = max(100, int(settings.MIN_KEYWORDS_PER_SCAN))
+    existing = {
+        clean_phrase(row[0])
+        for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_id)).all()
+    }
+    initial_count = len(existing)
+    own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
+    excluded = existing | own_phrases
+    if len(existing) >= target:
+        return len(existing)
+
+    ai_url_str, ai_source_domain = ai_generated_source()
+    ai_url = db.execute(
+        select(Url).where(Url.project_id == project_id, Url.url == ai_url_str)
+    ).scalar_one_or_none()
+    if not ai_url:
+        ai_url = Url(
+            project_id=project_id,
+            url=ai_url_str,
+            source_type="ai",
+            source_domain=ai_source_domain,
+            status="scraped",
+        )
+        db.add(ai_url)
+        db.flush()
+
+    for batch_number in range(max(1, int(settings.AI_KEYWORD_GENERATION_MAX_BATCHES))):
+        missing = target - len(existing)
+        if missing <= 0:
+            break
+        requested = min(max(5, int(settings.AI_KEYWORD_GENERATION_BATCH_SIZE)), max(missing + 10, 20))
+        generated = generate_keywords(
+            seed_keywords,
+            topic_terms=topic_terms,
+            negative_terms=negative_terms,
+            audit_summary=audit_summary,
+            apply_gap_filter=False,
+            target_count=requested,
+            exclude_phrases=excluded,
+        ) or []
+
+        accumulator: dict[str, dict[str, Any]] = {}
+        for item in generated:
+            phrase = clean_phrase(str(item.get("phrase") or ""))
+            if not phrase or phrase in excluded:
+                continue
+            if not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
+                continue
+            accumulator[phrase] = {
+                "type": item.get("type", "long-tail"),
+                "count": 1,
+                "url_ids": {ai_url.id},
+                "score": 1.0,
+                "source": "sitemap_ai",
+                "tier": "outlier",
+            }
+
+        if accumulator:
+            _store_keywords(db, project_id, accumulator)
+            existing.update(accumulator)
+            excluded.update(accumulator)
+            logger.info(
+                "[%s] Keyword expansion batch %s stored %s; total is now %s/%s",
+                project_id,
+                batch_number + 1,
+                len(accumulator),
+                len(existing),
+                target,
+            )
+        else:
+            logger.warning("[%s] Keyword expansion batch %s returned no new relevant phrases", project_id, batch_number + 1)
+
+    # A provider can occasionally truncate or return an empty batch. When the
+    # scan found real competitor evidence, complete the set with conservative
+    # seed-anchored search patterns so a transient provider issue cannot leave a
+    # half-built project.
+    if len(existing) < target and (initial_count > 0 or len(existing) > 0):
+        fallback_items = _seed_anchored_keyword_expansions(seed_keywords, excluded, target - len(existing))
+        fallback_accumulator: dict[str, dict[str, Any]] = {}
+        for item in fallback_items:
+            phrase = item["phrase"]
+            if not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
+                continue
+            fallback_accumulator[phrase] = {
+                "type": item["type"],
+                "count": 1,
+                "url_ids": {ai_url.id},
+                "score": 1.0,
+                "source": "sitemap_ai",
+                "tier": "outlier",
+            }
+        _store_keywords(db, project_id, fallback_accumulator)
+        existing.update(fallback_accumulator)
+
+    final_count = db.execute(
+        select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
+    ).scalar_one()
+    if final_count < target:
+        if final_count == 0:
+            raise RuntimeError(
+                "No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry."
+            )
+        raise RuntimeError(
+            f"Only {final_count} relevant keywords were produced; the required minimum is {target}. "
+            "The AI provider returned too few unique results."
+        )
+    return final_count
+
+
+def _seed_anchored_keyword_expansions(
+    seed_keywords: list[str],
+    excluded: set[str],
+    needed: int,
+) -> list[dict[str, str]]:
+    """Create conservative, naturally phrased long-tails tied to every seed."""
+    from nlp.keywords import clean_phrase, is_valid_keyword
+
+    suffixes = [
+        "guide", "tutorial", "examples", "ideas", "tips", "techniques", "methods",
+        "strategy", "process", "workflow", "checklist", "template", "framework",
+        "principles", "fundamentals", "basics", "concepts", "terminology", "standards",
+        "requirements", "tools", "software", "resources", "training", "use cases",
+        "applications", "benefits", "limitations", "challenges", "common mistakes",
+        "troubleshooting", "optimization", "best practices", "comparison", "alternatives",
+        "pricing", "cost", "features", "setup", "implementation", "planning", "design",
+        "testing", "maintenance", "security", "performance", "automation", "integration",
+        "case studies", "questions", "answers", "trends", "solutions", "problems",
+    ]
+    frames = [
+        "what is {seed}", "how does {seed} work", "how to start {seed}",
+        "how to learn {seed}", "how to choose {seed}", "how to improve {seed}",
+        "how to plan {seed}", "how to implement {seed}", "how to optimize {seed}",
+        "when to use {seed}", "why use {seed}", "{seed} step by step",
+        "{seed} for beginners", "{seed} for professionals", "{seed} for business",
+        "{seed} for small business", "{seed} for teams", "{seed} for projects",
+        "best {seed} tools", "free {seed} tools", "online {seed} tools",
+        "{seed} tool comparison", "{seed} software comparison", "{seed} buying guide",
+        "{seed} beginner guide", "{seed} advanced guide", "{seed} practical guide",
+        "{seed} complete guide", "{seed} quick start guide", "{seed} expert tips",
+        "{seed} common questions", "{seed} real examples", "{seed} industry examples",
+        "{seed} mistakes to avoid", "{seed} problems and solutions",
+        "{seed} setup checklist", "{seed} planning checklist", "{seed} quality checklist",
+        "{seed} best practices checklist", "{seed} tools and resources",
+        "{seed} features and benefits", "{seed} cost and pricing",
+        "{seed} options and alternatives", "{seed} methods and techniques",
+        "{seed} strategy and planning", "{seed} implementation steps",
+        "{seed} optimization tips", "{seed} troubleshooting guide",
+    ]
+    candidates_by_seed: list[list[tuple[str, str]]] = []
+    for seed in seed_keywords:
+        base = clean_phrase(seed)
+        seed_candidates = [(f"{base} {suffix}", "long-tail") for suffix in suffixes]
+        seed_candidates.extend((frame.format(seed=base), "long-tail") for frame in frames)
+        candidates_by_seed.append(seed_candidates)
+
+    # Round-robin keeps every Gold Hunter seed represented instead of allowing
+    # the first seed to consume the entire target.
+    candidates: list[tuple[str, str]] = []
+    for position in range(max((len(items) for items in candidates_by_seed), default=0)):
+        for items in candidates_by_seed:
+            if position < len(items):
+                candidates.append(items[position])
+
+    results: list[dict[str, str]] = []
+    seen = {clean_phrase(phrase) for phrase in excluded}
+    for raw_phrase, keyword_type in candidates:
+        phrase = clean_phrase(raw_phrase)
+        if phrase in seen or not is_valid_keyword(phrase, min_words=2):
+            continue
+        seen.add(phrase)
+        results.append({"phrase": phrase, "type": keyword_type})
+        if len(results) >= needed:
+            break
+    return results
+
+
 def _refine_keyword_gap_recommendations(
     db: Session,
     project_id: uuid.UUID,
@@ -2012,7 +2136,7 @@ def _sync_project_counts(db: Session, project: Any) -> None:
 
     rows = db.execute(
         select(Url.status, func.count(Url.id))
-        .where(Url.project_id == project.id)
+        .where(Url.project_id == project.id, Url.source_type != "ai")
         .group_by(Url.status)
     ).all()
     status_counts = {status: count for status, count in rows}

@@ -5,13 +5,14 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 import csv
 from datetime import datetime, timedelta
 from app.database import get_db
 from app.models import User, Project, Keyword, KeywordUrl, Url, KeywordBank
 from app.schemas import KeywordOut, KeywordListResponse, KeywordSourceOut, SaveKeywordRequest, KeywordBulkSaveRequest, KeywordBankBulkActionRequest, KeywordBulkDeleteRequest
 from app.auth.jwt import get_current_user
+from app.config import settings
 from nlp.keywords import is_publishable_keyword, seed_keyword_terms
 from nlp.openrouter import ai_generated_source, generate_ai_keywords
 
@@ -99,10 +100,9 @@ async def generate_keywords(
         topic_terms=topic_terms,
         negative_terms=negative_terms,
         audit_summary=project.audit_summary,
+        apply_gap_filter=False,
+        target_count=min(60, settings.AI_KEYWORD_GENERATION_BATCH_SIZE),
     )
-    if not ai_keywords:
-        raise HTTPException(status_code=500, detail="Failed to generate AI keywords")
-        
     # Get existing keyword phrases in this project to avoid duplicates
     q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id)
     result = await db.execute(q_existing)
@@ -122,6 +122,35 @@ async def generate_keywords(
     # Combine both sets for filtering
     all_excluded = existing_phrases | own_phrases
     ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
+
+    collected = {kw["phrase"]: kw for kw in ai_keywords}
+    target_total = max(100, settings.MIN_KEYWORDS_PER_SCAN)
+    for _ in range(max(1, settings.AI_KEYWORD_GENERATION_MAX_BATCHES - 1)):
+        if len(existing_phrases) + len(collected) >= target_total:
+            break
+        batch = await generate_ai_keywords(
+            project.target_keywords,
+            topic_terms=topic_terms,
+            negative_terms=negative_terms,
+            audit_summary=project.audit_summary,
+            apply_gap_filter=False,
+            target_count=settings.AI_KEYWORD_GENERATION_BATCH_SIZE,
+            exclude_phrases=all_excluded | set(collected),
+        )
+        for item in batch:
+            if item["phrase"] not in all_excluded:
+                collected[item["phrase"]] = item
+
+    if len(existing_phrases) + len(collected) < target_total:
+        from workers.pipeline import _seed_anchored_keyword_expansions
+        fallback = _seed_anchored_keyword_expansions(
+            project.target_keywords,
+            all_excluded | set(collected),
+            target_total - len(existing_phrases) - len(collected),
+        )
+        for item in fallback:
+            collected[item["phrase"]] = item
+    ai_keywords = list(collected.values())
         
     # Get or create an AI source URL
     ai_url_str, ai_source_domain = ai_generated_source()
@@ -167,8 +196,11 @@ async def generate_keywords(
         if not link:
             db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
             
+    project.total_keywords = (
+        await db.execute(select(func.count(Keyword.id)).where(Keyword.project_id == project.id))
+    ).scalar_one()
     await db.commit()
-    return {"message": f"Generated {added_count} new keywords", "generated": len(ai_keywords)}
+    return {"message": f"Generated {added_count} new keywords", "generated": added_count}
 
 
 @router.post("/{project_id}/keywords/top-picks")
@@ -602,7 +634,7 @@ async def generate_hub_spoke(
         for s in surviving_spokes_map:
             s["node"][s["layer_name"]].append(inject_h2s(s["spoke"], s["target_kw"]))
 
-    from nlp.openrouter import _validate_hub_and_spoke
+    from nlp.openrouter import _validate_hub_and_spoke, build_hub_spoke_fallback
     allowed_keywords = {
         ("entity:" if kw.get("type") == "entity" else "") + kw["phrase"]
         for kw in existing_keywords
@@ -614,10 +646,21 @@ async def generate_hub_spoke(
         allowed_keywords=allowed_keywords,
     )
     if validation_error:
-        raise HTTPException(
-            status_code=502,
-            detail=f"The AI map failed a required constraint: {validation_error} Please generate it again.",
+        clusters = build_hub_spoke_fallback(clean_candidates, main_kw)
+        validation_error = _validate_hub_and_spoke(
+            clusters,
+            len(clean_candidates),
+            main_keyword=main_kw,
+            allowed_keywords={
+                ("entity:" if kw.get("type") == "entity" else "") + kw["phrase"]
+                for kw in clean_candidates
+            },
         )
+        if validation_error:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Unable to build a constraint-safe hub map: {validation_error}",
+            )
 
     from app.models import HubSpokeCluster
     q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)

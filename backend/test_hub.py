@@ -1,11 +1,11 @@
 import asyncio
-from app.database import async_session_maker
+from app.database import AsyncSessionLocal
 from app.models import Project, Keyword, KeywordUrl, Url
 from sqlalchemy import select
 import uuid
 
 async def main():
-    async with async_session_maker() as db:
+    async with AsyncSessionLocal() as db:
         # get any project
         result = await db.execute(select(Project).limit(1))
         project = result.scalar_one_or_none()

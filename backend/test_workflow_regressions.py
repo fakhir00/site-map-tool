@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select, text
@@ -174,7 +174,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             project = self.client.get(f'/api/projects/{pid}').json()
             self.assertEqual(project['status'], 'complete', self.client.get(f'/api/projects/{pid}/scan/jobs').text)
-            self.assertEqual(project['total_keywords'], 1)
+            self.assertGreaterEqual(project['total_keywords'], 100)
             self.assertEqual(project['urls_processed'], 2)
             self.seed_job(pid, status='paused')
             scraper.reset_mock()
@@ -194,6 +194,36 @@ class WorkflowTests(unittest.TestCase):
             self.client.post(f'/api/projects/{pid}/scan/start')
         self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'error')
         self.assertIn('No keyword gaps', self.client.get(f'/api/projects/{pid}/scan/jobs').json()[0]['error_message'])
+
+    def test_generate_reaches_100_and_hub_repairs_invalid_ai_map(self):
+        pid = self.project()
+        invalid_map = {
+            'hubs': [
+                {'hub_title': 'First', 'target_keyword': 'circuit diagram', 'layers': {}, 'sub_silos': []},
+                {'hub_title': 'Second', 'target_keyword': 'circuit diagram', 'layers': {}, 'sub_silos': []},
+            ]
+        }
+        with (
+            patch('app.keywords.router.generate_ai_keywords', new=AsyncMock(return_value=[])),
+            patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value={
+                'core_terms': ['circuit'], 'negative_terms': [],
+            })),
+        ):
+            response = self.client.post(f'/api/projects/{pid}/keywords/generate')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertGreaterEqual(self.client.get(f'/api/projects/{pid}').json()['total_keywords'], 100)
+
+        with (
+            patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value={
+                'core_terms': ['circuit'], 'negative_terms': [],
+            })),
+            patch('nlp.openrouter.cluster_hub_and_spoke', new=AsyncMock(return_value=invalid_map)),
+        ):
+            response = self.client.post(f'/api/projects/{pid}/keywords/hub-spoke')
+        self.assertEqual(response.status_code, 200, response.text)
+        mapping = response.json()['clusters']
+        self.assertEqual(len(mapping['hubs']), 1)
+        self.assertGreaterEqual(len(mapping['hubs'][0]['sub_silos']), 3)
 
 if __name__ == '__main__':
     unittest.main()

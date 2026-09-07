@@ -352,6 +352,8 @@ async def generate_ai_keywords(
     negative_terms: set[str] | None = None,
     audit_summary: str | None = None,
     apply_gap_filter: bool = True,
+    target_count: int = 25,
+    exclude_phrases: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate SEO keyword recommendations using the configured AI provider."""
     if not is_ai_configured():
@@ -362,14 +364,23 @@ async def generate_ai_keywords(
 
     if topic_terms is None:
         topic_terms = seed_keyword_terms(seed_keywords)
+    target_count = max(5, min(int(target_count), 60))
+    excluded = sorted(exclude_phrases or set())[-400:]
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate exactly 25 high-quality keyword opportunities: exactly 5 primary, 5 LSI, 5 long-tail, 5 entity, and 5 heading keywords.
+Generate exactly {target_count} high-quality, distinct keyword opportunities. Distribute them across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
 
+Website context:
+{audit_summary or "No additional context supplied."}
+
+Already collected phrases (do not repeat or paraphrase with the same search intent):
+{json.dumps(excluded)}
+
 Quality rules:
+- Allocate the output evenly across every seed keyword; no seed may be ignored.
 - Every keyword MUST be highly semantically relevant to the primary seed keywords.
 - Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
@@ -396,7 +407,7 @@ Each object must have:
             system_prompt="You output only valid JSON arrays.",
             user_prompt=prompt,
             temperature=0.35,
-            max_tokens=1600,
+            max_tokens=max(2200, target_count * 85),
         )
         if isinstance(payload, dict) and "keywords" in payload:
             payload = payload["keywords"]
@@ -429,7 +440,7 @@ Each object must have:
                 seed_keywords,
                 valid_keywords,
                 audit_summary=audit_summary,
-                max_keywords=25,
+                max_keywords=target_count,
             )
             if not filtered:
                 return []
@@ -455,6 +466,8 @@ def generate_ai_keywords_sync(
     negative_terms: set[str] | None = None,
     audit_summary: str | None = None,
     apply_gap_filter: bool = True,
+    target_count: int = 25,
+    exclude_phrases: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Synchronous version of generate_ai_keywords for background worker pipelines."""
     if not is_ai_configured():
@@ -465,14 +478,23 @@ def generate_ai_keywords_sync(
 
     if topic_terms is None:
         topic_terms = seed_keyword_terms(seed_keywords)
+    target_count = max(5, min(int(target_count), 60))
+    excluded = sorted(exclude_phrases or set())[-400:]
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate exactly 25 high-quality keyword opportunities: exactly 5 primary, 5 LSI, 5 long-tail, 5 entity, and 5 heading keywords.
+Generate exactly {target_count} high-quality, distinct keyword opportunities. Distribute them across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
 
+Website context:
+{audit_summary or "No additional context supplied."}
+
+Already collected phrases (do not repeat or paraphrase with the same search intent):
+{json.dumps(excluded)}
+
 Quality rules:
+- Allocate the output evenly across every seed keyword; no seed may be ignored.
 - Every keyword MUST be highly semantically relevant to the primary seed keywords.
 - Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
@@ -499,7 +521,7 @@ Each object must have:
             system_prompt="You output only valid JSON arrays.",
             user_prompt=prompt,
             temperature=0.35,
-            max_tokens=1600,
+            max_tokens=max(2200, target_count * 85),
         )
         if isinstance(payload, dict) and "keywords" in payload:
             payload = payload["keywords"]
@@ -530,7 +552,7 @@ Each object must have:
                 seed_keywords,
                 valid_keywords,
                 audit_summary=audit_summary,
-                max_keywords=25,
+                max_keywords=target_count,
             )
             if not filtered:
                 return []
@@ -1519,6 +1541,178 @@ Return ONLY a JSON object in this exact format:
         return None
 
 
+def _hub_intent_tokens(phrase: str) -> set[str]:
+    """Normalize words used to detect duplicate URLs and search intent."""
+    from nlp.keywords import STOPWORDS, clean_phrase
+
+    synonyms = {
+        "builder": "maker", "builders": "maker", "creator": "maker",
+        "creators": "maker", "generator": "maker", "generators": "maker",
+        "software": "tool", "tools": "tool", "tutorial": "guide",
+        "tutorials": "guide", "meanings": "meaning", "companies": "agency",
+        "services": "agency",
+    }
+    tokens: set[str] = set()
+    for token in clean_phrase(phrase).replace("-", " ").split():
+        if token in STOPWORDS:
+            continue
+        if token.endswith("s") and not token.endswith("ss") and len(token) > 4:
+            token = token[:-1]
+        tokens.add(synonyms.get(token, token))
+    return tokens
+
+
+def _hub_intent_similarity(left: str, right: str) -> float:
+    left_tokens = _hub_intent_tokens(left)
+    right_tokens = _hub_intent_tokens(right)
+    union = left_tokens | right_tokens
+    return len(left_tokens & right_tokens) / len(union) if union else 0.0
+
+
+def _hub_slug(phrase: str) -> str:
+    from nlp.keywords import clean_phrase
+    return re.sub(r"[^a-z0-9]+", "-", clean_phrase(phrase)).strip("-")
+
+
+def build_hub_spoke_fallback(
+    keywords: list[dict[str, Any]],
+    main_keyword: str,
+) -> dict[str, Any]:
+    """Build a valid map deterministically when the model violates constraints."""
+    from nlp.keywords import clean_phrase
+
+    main = clean_phrase(main_keyword) or "core topic"
+    entities: list[str] = []
+    unique: list[str] = []
+    merged_h2s: dict[str, list[str]] = {}
+    seen_slugs = {_hub_slug(main)}
+
+    for item in keywords:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        if not phrase or phrase == main:
+            continue
+        if item.get("type") == "entity":
+            if phrase not in entities:
+                entities.append(phrase)
+            continue
+        slug = _hub_slug(phrase)
+        if slug == _hub_slug(main) or _hub_intent_similarity(phrase, main) >= 0.82:
+            continue
+        duplicate_of = next(
+            (
+                kept for kept in unique
+                if slug == _hub_slug(kept) or _hub_intent_similarity(phrase, kept) >= 0.82
+            ),
+            None,
+        )
+        if duplicate_of:
+            merged_h2s.setdefault(duplicate_of, []).append(phrase)
+            continue
+        if slug and slug not in seen_slugs:
+            unique.append(phrase)
+            seen_slugs.add(slug)
+
+    # A silo target has its own URL, so reserve one keyword per silo in addition
+    # to the required eight article targets.
+    silo_count = min(5, len(unique) // 9)
+    if len(keywords) >= 26 and len(unique) >= 27:
+        silo_count = max(3, silo_count)
+    if silo_count == 0:
+        silo_count = 1 if len(unique) >= 9 else 0
+
+    master = {
+        "hub_title": f"📍 MASTER HUB: {main.title()}",
+        "target_keyword": main,
+        "layers": {},
+        "sub_silos": [],
+    }
+    if not silo_count:
+        # Small maps remain useful without manufacturing an underfilled silo.
+        master["layers"] = {
+            "🧱 Foundations": [
+                f"{phrase.title()} (Target Keyword: {phrase})" for phrase in unique
+            ]
+        }
+        return {"_planning_thought": "Built a compact map from the supplied keywords.", "hubs": [master]}
+
+    # Choose maximally different centers, then assign every remaining phrase to
+    # its closest center while keeping enough room for balanced, valid silos.
+    centers = [unique[0]]
+    while len(centers) < silo_count:
+        remaining = [phrase for phrase in unique if phrase not in centers]
+        centers.append(max(remaining, key=lambda phrase: min(_hub_intent_similarity(phrase, center) for center in centers)))
+    articles = [phrase for phrase in unique if phrase not in centers]
+    groups: list[list[str]] = [[] for _ in centers]
+    max_group = (len(articles) + silo_count - 1) // silo_count
+    for phrase in articles:
+        available = [index for index, group in enumerate(groups) if len(group) < max_group]
+        best = max(available, key=lambda index: (_hub_intent_similarity(phrase, centers[index]), -len(groups[index])))
+        groups[best].append(phrase)
+
+    layer_names = (
+        "🧱 Foundations",
+        "⚙️ Action",
+        "💰 Money",
+        "⚡️ ZERO COMPETITION QUICK-WINS",
+    )
+    money_words = {"best", "price", "pricing", "cost", "review", "reviews", "versus", "vs", "alternative", "alternatives"}
+    action_words = {"how", "guide", "tutorial", "setup", "create", "make", "use", "using", "steps"}
+
+    def preferred_layer(phrase: str, position: int) -> str:
+        words = set(clean_phrase(phrase).split())
+        if words & money_words:
+            return layer_names[2]
+        if words & action_words:
+            return layer_names[1]
+        if len(words) >= 5 or words & {"why", "when", "problem", "fix", "tips"}:
+            return layer_names[3]
+        return layer_names[position % 4]
+
+    for index, (center, group) in enumerate(zip(centers, groups), 1):
+        layers = {name: [] for name in layer_names}
+        for position, phrase in enumerate(group):
+            # Seed the four mandatory layers once, then classify by intent.
+            layer = layer_names[position] if position < 4 else preferred_layer(phrase, position)
+            extras = list(dict.fromkeys(merged_h2s.get(phrase, [])))
+            spoke = f"{phrase.title()} (Target Keyword: {phrase})"
+            if extras:
+                spoke += f" [Include H2: {', '.join(extras)}]"
+            layers[layer].append(spoke)
+        master["sub_silos"].append({
+            "hub_title": f"🪐 SUB-SILO {index}: {center.title()}",
+            "target_keyword": center,
+            "layers": layers,
+        })
+
+    # Entities are headings, never URLs. Attach each to the closest article.
+    for entity in entities:
+        best_node = None
+        best_position = None
+        best_score = -1.0
+        for silo in master["sub_silos"]:
+            for layer, spokes in silo["layers"].items():
+                for position, spoke in enumerate(spokes):
+                    target_match = re.search(r"\(Target Keyword:\s*(.*?)\)", spoke, re.IGNORECASE)
+                    score = _hub_intent_similarity(entity, target_match.group(1) if target_match else spoke)
+                    if score > best_score:
+                        best_node, best_position, best_score = spokes, position, score
+        if best_node is not None and best_position is not None:
+            if "[Include H2:" in best_node[best_position]:
+                best_node[best_position] = best_node[best_position].rstrip("]") + f", {entity}]"
+            else:
+                best_node[best_position] += f" [Include H2: {entity}]"
+
+    return {
+        "_planning_thought": f"Built {silo_count} balanced sub-silos and merged duplicate intents into H2 sections.",
+        "_deduplication_check": {
+            "unique_slugs": "Checked",
+            "semantic_intents": "Checked",
+            "entity_pages": "Converted to H2 sections",
+        },
+        "hubs": [master],
+    }
+
+
 def _validate_hub_and_spoke(
     payload: dict,
     total_kws: int,
@@ -1544,16 +1738,24 @@ def _validate_hub_and_spoke(
         return "Master hub sub_silos must be an array."
     if len(sub_silos) > 5:
         return f"A maximum of 5 sub-silos is allowed; received {len(sub_silos)}."
-    if total_kws >= 26 and len(sub_silos) < 3:
-        return f"At least 3 sub-silos are required when {total_kws} keywords are available."
+    available_pages = len([
+        keyword for keyword in (allowed_keywords or set()) if not keyword.startswith("entity:")
+    ]) or total_kws
+    if available_pages >= 27 and len(sub_silos) < 3:
+        return f"At least 3 sub-silos are required when {available_pages} page keywords are available."
 
     seen_targets: set[str] = set()
+    seen_slugs: set[str] = set()
+    seen_intents: list[str] = []
     entity_keywords = {
         clean_phrase(keyword[7:]) for keyword in (allowed_keywords or set()) if keyword.startswith("entity:")
     }
     allowed = {
         clean_phrase(keyword.removeprefix("entity:")) for keyword in (allowed_keywords or set())
     }
+    master_target = clean_phrase(str(master.get("target_keyword") or ""))
+    seen_slugs.add(_hub_slug(master_target))
+    seen_intents.append(master_target)
 
     def validate_layers(node: dict, label: str, minimum: int = 0) -> str | None:
         layers = node.get("layers", {})
@@ -1577,11 +1779,22 @@ def _validate_hub_and_spoke(
                 target = clean_phrase(matches[0])
                 if target in seen_targets:
                     return f"Duplicate target keyword: {target}."
+                slug = _hub_slug(target)
+                if slug in seen_slugs:
+                    return f"Duplicate URL slug: {slug}."
+                semantic_duplicate = next(
+                    (prior for prior in seen_intents if _hub_intent_similarity(target, prior) >= 0.82),
+                    None,
+                )
+                if semantic_duplicate:
+                    return f"Semantic intent duplication: {target} overlaps {semantic_duplicate}."
                 if target in entity_keywords:
                     return f"Entity keyword cannot be a standalone spoke: {target}."
                 if allowed and target not in allowed:
                     return f"Spoke target keyword was not supplied by the scan: {target}."
                 seen_targets.add(target)
+                seen_slugs.add(slug)
+                seen_intents.append(target)
         return None
 
     error = validate_layers(master, "Master hub")
@@ -1590,8 +1803,20 @@ def _validate_hub_and_spoke(
     for index, silo in enumerate(sub_silos, 1):
         if not isinstance(silo, dict):
             return f"Sub-silo {index} must be an object."
-        if clean_phrase(str(silo.get("target_keyword") or "")) == clean_phrase(str(master.get("target_keyword") or "")):
+        silo_target = clean_phrase(str(silo.get("target_keyword") or ""))
+        if silo_target == clean_phrase(str(master.get("target_keyword") or "")):
             return f"Sub-silo {index} duplicates the master target keyword."
+        silo_slug = _hub_slug(silo_target)
+        if not silo_target or silo_slug in seen_slugs:
+            return f"Sub-silo {index} has a duplicate or empty slug."
+        if silo_target in entity_keywords:
+            return f"Entity keyword cannot be a sub-silo target: {silo_target}."
+        if allowed and silo_target not in allowed:
+            return f"Sub-silo target keyword was not supplied by the scan: {silo_target}."
+        if any(_hub_intent_similarity(silo_target, prior) >= 0.82 for prior in seen_intents):
+            return f"Sub-silo {index} duplicates an existing semantic intent."
+        seen_slugs.add(silo_slug)
+        seen_intents.append(silo_target)
         error = validate_layers(silo, f"Sub-silo {index}", minimum=8)
         if error:
             return error
@@ -1604,10 +1829,12 @@ async def cluster_hub_and_spoke(
     audit_summary: str | None = None
 ) -> dict[str, Any] | None:
     """Cluster keywords into categorized Hub and Spoke architectures, strictly avoiding cannibalization."""
-    if not is_ai_configured() or not keywords:
+    if not keywords:
         return None
 
     trimmed = keywords[:500]
+    if not is_ai_configured():
+        return build_hub_spoke_fallback(trimmed, main_keyword)
     
     audit_context = f"""
 [WEBSITE CONTEXT (CRITICAL)]
@@ -1737,11 +1964,24 @@ Entity Keywords (DO NOT CREATE SPOKES FOR THESE. Distribute and append them as [
                     prompt += f"\n\n[SYSTEM FEEDBACK - ATTEMPT {attempt+1} FAILED]\nYour previous output was REJECTED because: {err}\nYou MUST fix this immediately."
                     continue
                 if err:
-                    logger.error("Hub-and-spoke output remained invalid: %s", err)
-                    return None
+                    logger.error("Hub-and-spoke output remained invalid: %s; using deterministic fallback", err)
+                    break
                 return payload
-            return None
+            logger.warning("Hub-and-spoke provider returned a non-object payload on attempt %d", attempt + 1)
         except Exception as exc:
             logger.error("Failed to cluster hub and spoke via %s on attempt %d: %s", ai_provider_name(), attempt+1, exc)
-            if attempt == max_retries - 1:
-                return None
+    fallback = build_hub_spoke_fallback(trimmed, main_keyword)
+    tagged_allowed = {
+        ("entity:" if kw.get("type") == "entity" else "") + str(kw.get("phrase") or "")
+        for kw in trimmed
+    }
+    fallback_error = _validate_hub_and_spoke(
+        fallback,
+        len(trimmed),
+        main_keyword=main_keyword,
+        allowed_keywords=tagged_allowed,
+    )
+    if fallback_error:
+        logger.error("Deterministic hub-and-spoke fallback failed validation: %s", fallback_error)
+        return None
+    return fallback
