@@ -26,6 +26,7 @@ class User(Base):
     projects: Mapped[List["Project"]] = relationship("Project", back_populates="user", cascade="all, delete-orphan")
     keyword_bank: Mapped[List["KeywordBank"]] = relationship("KeywordBank", back_populates="user", cascade="all, delete-orphan")
     goldhunter_scans: Mapped[List["GoldHunterScan"]] = relationship("GoldHunterScan", back_populates="user", cascade="all, delete-orphan")
+    hub_spoke_history: Mapped[List["HubSpokeHistory"]] = relationship("HubSpokeHistory", back_populates="user", cascade="all, delete-orphan")
 
 
 class Project(Base):
@@ -162,6 +163,27 @@ class HubSpokeCluster(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     project: Mapped["Project"] = relationship("Project")
+
+
+class HubSpokeHistory(Base):
+    __tablename__ = "hub_spoke_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    context: Mapped[Optional[str]] = mapped_column(Text)
+    keywords: Mapped[list] = mapped_column(JSON, nullable=False)
+    cleaned_keywords: Mapped[list] = mapped_column(JSON, nullable=False)
+    mapping_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user: Mapped["User"] = relationship("User", back_populates="hub_spoke_history")
+    project: Mapped[Optional["Project"]] = relationship("Project")
+
+    __table_args__ = (
+        Index("ix_hub_spoke_history_user_created_at", "user_id", "created_at"),
+    )
 
 
 class ArticleDraft(Base):

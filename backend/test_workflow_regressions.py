@@ -279,6 +279,43 @@ class WorkflowTests(unittest.TestCase):
             })
         self.assertEqual(built.status_code, 200, built.text)
         self.assertEqual(len(built.json()['clusters']['hubs']), 1)
+        history_id = built.json()['history_id']
+        history = self.client.get('/api/hub-spoke/history')
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(history.json()[0]['id'], history_id)
+        self.assertEqual(history.json()[0]['keyword_count'], 100)
+        restored = self.client.get(f'/api/hub-spoke/history/{history_id}')
+        self.assertEqual(restored.status_code, 200, restored.text)
+        self.assertEqual(restored.json()['context'], 'Circuit design education for electronics students.')
+        self.assertEqual(restored.json()['clusters'], built.json()['clusters'])
+        with self.sessions() as db:
+            other_user = User(email='other@example.com')
+            db.add(other_user)
+            db.commit()
+            other_user_id = other_user.id
+        self.client.headers['Authorization'] = f'Bearer {create_access_token(other_user_id)}'
+        self.assertEqual(self.client.get('/api/hub-spoke/history').json(), [])
+        self.assertEqual(self.client.get(f'/api/hub-spoke/history/{history_id}').status_code, 404)
+
+    def test_hub_workspace_imports_gap_keywords_with_selected_keyword_first(self):
+        pid = self.project()
+        with self.sessions() as db:
+            project_id = uuid.UUID(pid)
+            db.add_all([
+                Keyword(project_id=project_id, phrase='circuit symbols', frequency=8),
+                Keyword(project_id=project_id, phrase='circuit diagram examples', frequency=4),
+            ])
+            db.commit()
+
+        imported = self.client.get(
+            f'/api/hub-spoke/project-import/{pid}',
+            params={'primary_keyword': 'circuit diagram examples'},
+        )
+
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertEqual(imported.json()['keywords'][0], 'circuit diagram examples')
+        self.assertEqual(imported.json()['context'], 'Electronics tool')
+        self.assertEqual(imported.json()['project_id'], pid)
 
 if __name__ == '__main__':
     unittest.main()

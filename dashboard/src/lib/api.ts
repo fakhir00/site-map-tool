@@ -33,6 +33,7 @@ export type Project = {
   scan_frequency: string
   url_filter_patterns: string[] | null
   target_keywords: string[] | null
+  audit_summary?: string | null
   status: 'pending' | 'running' | 'paused' | 'complete' | 'error'
   urls_found: number
   urls_processed: number

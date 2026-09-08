@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Download, FileText, FileUp, Layers3, Network, Sparkles, Trash2, Wrench } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight, Clock3, Download, FileText, FileUp, Layers3, Network, Sparkles, Trash2, Wrench } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -13,6 +14,9 @@ type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
 type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 type Mapping = { hubs: Hub[]; _planning_thought?: string; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; writing_standards?: string[] }
+type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
+type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
+type ProjectImport = { project_id: string; project_name: string; keywords: string[]; context: string }
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
 const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
@@ -72,14 +76,54 @@ const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
 
 export function HubSpokeWorkspace() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const inputRef = useRef<HTMLInputElement>(null)
+  const importedKeyRef = useRef('')
   const [keywords, setKeywords] = useState<string[]>([])
   const [cleaned, setCleaned] = useState<string[]>([])
   const [contextOpen, setContextOpen] = useState(false)
   const [context, setContext] = useState('')
   const [mapping, setMapping] = useState<Mapping | null>(null)
-  const [busy, setBusy] = useState<'clean' | 'build' | null>(null)
+  const [busy, setBusy] = useState<'clean' | 'build' | 'load' | null>(null)
   const [error, setError] = useState('')
+  const [sourceProjectId, setSourceProjectId] = useState<string | null>(null)
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
+  const importProjectId = searchParams.get('project_id') || ''
+  const importKeyword = searchParams.get('keyword') || ''
+
+  const { data: history = [] } = useQuery({
+    queryKey: ['hub-spoke-history'],
+    queryFn: () => api.get<HistorySummary[]>('/hub-spoke/history'),
+  })
+
+  const projectImport = useQuery({
+    queryKey: ['hub-spoke-project-import', importProjectId, importKeyword],
+    queryFn: () => api.get<ProjectImport>(`/hub-spoke/project-import/${importProjectId}?primary_keyword=${encodeURIComponent(importKeyword)}`),
+    enabled: Boolean(importProjectId),
+    retry: false,
+  })
+  const importError = projectImport.error instanceof Error
+    ? projectImport.error.message
+    : projectImport.error
+      ? 'Could not import this Gap Hunter scan'
+      : ''
+  const visibleError = error || importError
+
+  useEffect(() => {
+    if (!projectImport.data) return
+    const importKey = `${projectImport.data.project_id}:${importKeyword}`
+    if (importedKeyRef.current === importKey) return
+    importedKeyRef.current = importKey
+    setKeywords(projectImport.data.keywords)
+    setCleaned([])
+    setContext(projectImport.data.context)
+    setContextOpen(true)
+    setMapping(null)
+    setSourceProjectId(projectImport.data.project_id)
+    setActiveHistoryId(null)
+    setError('')
+  }, [importKeyword, projectImport.data])
 
   const loadFile = async (file?: File) => {
     if (!file) return
@@ -90,6 +134,8 @@ export function HubSpokeWorkspace() {
     setKeywords(parseFile(await file.text()))
     setCleaned([])
     setMapping(null)
+    setSourceProjectId(null)
+    setActiveHistoryId(null)
     setError('')
   }
 
@@ -107,14 +153,35 @@ export function HubSpokeWorkspace() {
   const build = async () => {
     setBusy('build'); setError('')
     try {
-      const result = await api.postAI<{ keywords: string[]; clusters: Mapping }>('/hub-spoke/build', {
+      const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
         keywords: cleaned.length ? cleaned : keywords,
         context,
+        project_id: sourceProjectId,
       })
       setCleaned(result.keywords)
       setMapping(result.clusters)
+      setActiveHistoryId(result.history_id)
+      queryClient.invalidateQueries({ queryKey: ['hub-spoke-history'] })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Hub-spoke generation failed')
+    } finally { setBusy(null) }
+  }
+
+  const loadHistory = async (id: string) => {
+    setBusy('load'); setError('')
+    importedKeyRef.current = `${importProjectId}:${importKeyword}`
+    try {
+      const saved = await api.get<HistoryDetail>(`/hub-spoke/history/${id}`)
+      setKeywords(saved.keywords)
+      setCleaned(saved.cleaned_keywords)
+      setContext(saved.context)
+      setContextOpen(Boolean(saved.context))
+      setMapping(saved.clusters)
+      setSourceProjectId(saved.project_id)
+      setActiveHistoryId(saved.id)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the saved architecture')
     } finally { setBusy(null) }
   }
 
@@ -170,6 +237,25 @@ export function HubSpokeWorkspace() {
         <p className="mt-1 text-sm text-slate-500">Upload keyword research, remove noise with your context, then build a cannibalization-safe content architecture.</p>
       </section>
 
+      {history.length > 0 && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div><h3 className="font-bold">Previous Hub Spoke plans</h3><p className="mt-1 text-sm text-slate-500">Open any saved architecture and continue where you left off.</p></div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{history.length} saved</span>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {history.map((item) => (
+              <button key={item.id} type="button" disabled={busy !== null} onClick={() => loadHistory(item.id)} className={`rounded-xl border p-3 text-left transition hover:border-cyan-400 hover:bg-cyan-50/50 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20 ${activeHistoryId === item.id ? 'border-cyan-500 bg-cyan-50 dark:border-cyan-700 dark:bg-cyan-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
+                <span className="block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</span>
+                <span className="mt-1 flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{new Date(item.created_at).toLocaleString()} • {item.keyword_count.toLocaleString()} keywords</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {projectImport.isLoading && <Card className="p-4 text-sm text-slate-500">Loading keywords and audit context from Gap Hunter…</Card>}
+
       <Card className="space-y-5 p-6">
         <input ref={inputRef} className="hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(event) => loadFile(event.target.files?.[0])} />
         <button
@@ -184,7 +270,7 @@ export function HubSpokeWorkspace() {
           <span className="mt-1 text-sm text-slate-500">or click to add from your computer</span>
         </button>
 
-        {keywords.length > 0 && <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Loaded {keywords.length.toLocaleString()} keywords</p>}
+        {keywords.length > 0 && <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Loaded {keywords.length.toLocaleString()} keywords{sourceProjectId ? ' from Gap Hunter' : ''}</p>}
 
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={() => setContextOpen((value) => !value)}><Sparkles className="h-4 w-4" />Add context</Button>
@@ -204,7 +290,7 @@ export function HubSpokeWorkspace() {
           </div>
         )}
 
-        {error && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>}
+        {visibleError && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{visibleError}</p>}
       </Card>
 
       {cleaned.length > 0 && (
@@ -220,7 +306,7 @@ export function HubSpokeWorkspace() {
       {mapping && (
         <section className="space-y-4">
           <div className="flex items-center justify-between gap-4">
-            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Related keywords appear under Includes and belong on that same page.</p>{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
+            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Related keywords appear under Includes and belong on that same page.</p>{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
             <Button onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, context))}><Download className="h-4 w-4" />Download architecture prompt</Button>
           </div>
           {mapping.hubs.map((hub) => (

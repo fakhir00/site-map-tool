@@ -1,12 +1,17 @@
 import json
 import re
+import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user
-from app.models import User
+from app.database import get_db
+from app.models import HubSpokeHistory, Keyword, Project, User
 from nlp.keywords import clean_phrase, is_valid_keyword
 from nlp.openrouter import _achat_json, cluster_hub_and_spoke, is_ai_configured
 
@@ -16,6 +21,28 @@ router = APIRouter(prefix="/api/hub-spoke", tags=["hub-spoke-workspace"])
 class KeywordWorkspaceRequest(BaseModel):
     keywords: list[str] = Field(min_length=1, max_length=5000)
     context: str = Field(default="", max_length=12000)
+    project_id: uuid.UUID | None = None
+
+
+class HubSpokeHistorySummary(BaseModel):
+    id: uuid.UUID
+    project_id: uuid.UUID | None
+    title: str
+    keyword_count: int
+    created_at: datetime
+
+
+def _history_payload(record: HubSpokeHistory) -> dict[str, Any]:
+    return {
+        "id": record.id,
+        "project_id": record.project_id,
+        "title": record.title,
+        "context": record.context or "",
+        "keywords": record.keywords or [],
+        "cleaned_keywords": record.cleaned_keywords or [],
+        "clusters": record.mapping_data,
+        "created_at": record.created_at,
+    }
 
 
 def _basic_clean(values: list[str]) -> list[str]:
@@ -124,8 +151,17 @@ async def clean_uploaded_keywords(
 @router.post("/build")
 async def build_uploaded_hub_spoke(
     body: KeywordWorkspaceRequest,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    project_id = body.project_id
+    if project_id:
+        project_result = await db.execute(select(Project.id).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+        ))
+        if project_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Project not found")
     keywords = await _clean_with_context(body.keywords, body.context)
     if not keywords:
         raise HTTPException(status_code=422, detail="Upload a keyword list with at least one usable keyword.")
@@ -137,4 +173,94 @@ async def build_uploaded_hub_spoke(
     )
     if not mapping:
         raise HTTPException(status_code=502, detail="Could not build a constraint-safe hub-spoke map from this list.")
-    return {"keywords": keywords, "count": len(keywords), "clusters": mapping}
+    master = mapping.get("master_hub") if isinstance(mapping, dict) else None
+    title = str((master or {}).get("article_title") or keywords[0].title())[:255]
+    history = HubSpokeHistory(
+        user_id=current_user.id,
+        project_id=project_id,
+        title=title,
+        context=body.context,
+        keywords=body.keywords,
+        cleaned_keywords=keywords,
+        mapping_data=mapping,
+    )
+    db.add(history)
+    await db.flush()
+    await db.refresh(history)
+    return {
+        "keywords": keywords,
+        "count": len(keywords),
+        "clusters": mapping,
+        "history_id": history.id,
+    }
+
+
+@router.get("/project-import/{project_id}")
+async def import_project_keywords(
+    project_id: uuid.UUID,
+    primary_keyword: str = "",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project_result = await db.execute(select(Project).where(
+        Project.id == project_id,
+        Project.user_id == current_user.id,
+    ))
+    project = project_result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    result = await db.execute(
+        select(Keyword.phrase)
+        .where(Keyword.project_id == project.id)
+        .order_by(Keyword.frequency.desc(), Keyword.created_at.asc())
+        .limit(5000)
+    )
+    keywords = list(dict.fromkeys(str(value).strip() for value in result.scalars().all() if str(value).strip()))
+    selected = clean_phrase(primary_keyword)
+    selected_keyword = next((keyword for keyword in keywords if clean_phrase(keyword) == selected), None)
+    if selected_keyword:
+        keywords = [selected_keyword, *(keyword for keyword in keywords if keyword != selected_keyword)]
+    if not keywords:
+        raise HTTPException(status_code=404, detail="This Gap Hunter scan has no keywords to import yet.")
+    return {
+        "project_id": project.id,
+        "project_name": project.name,
+        "keywords": keywords,
+        "context": project.audit_summary or "",
+    }
+
+
+@router.get("/history", response_model=list[HubSpokeHistorySummary])
+async def list_hub_spoke_history(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(HubSpokeHistory)
+        .where(HubSpokeHistory.user_id == current_user.id)
+        .order_by(desc(HubSpokeHistory.created_at))
+        .limit(50)
+    )
+    return [{
+        "id": record.id,
+        "project_id": record.project_id,
+        "title": record.title,
+        "keyword_count": len(record.cleaned_keywords or []),
+        "created_at": record.created_at,
+    } for record in result.scalars().all()]
+
+
+@router.get("/history/{history_id}")
+async def get_hub_spoke_history(
+    history_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(HubSpokeHistory).where(
+        HubSpokeHistory.id == history_id,
+        HubSpokeHistory.user_id == current_user.id,
+    ))
+    record = result.scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=404, detail="Hub Spoke history not found")
+    return _history_payload(record)
