@@ -1,5 +1,6 @@
 """Offline regression tests using isolated databases and mocked providers."""
 import asyncio
+import json
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -88,6 +89,7 @@ class WorkflowTests(unittest.TestCase):
             'seeds': [
                 {'keyword': 'circuit diagram software', 'justification': 'Relevant tool intent'},
                 {'keyword': 'circuit diagram software', 'justification': 'Duplicate'},
+                {'keyword': 'dog age calculator', 'justification': 'Unrelated generic age overlap'},
             ],
         }
         with (
@@ -100,6 +102,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(len(seeds), 3)
         self.assertLessEqual(len(seeds), 5)
         self.assertEqual(len({seed['keyword'] for seed in seeds}), len(seeds))
+        self.assertNotIn('dog age calculator', {seed['keyword'] for seed in seeds})
 
         many_result = {
             **result,
@@ -319,7 +322,10 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(imported.status_code, 200, imported.text)
         self.assertEqual(imported.json()['keywords'][0], 'circuit diagram examples')
-        self.assertEqual(imported.json()['context'], 'Electronics tool')
+        imported_context = json.loads(imported.json()['context'])
+        self.assertEqual(imported_context['audit_summary'], 'Electronics tool')
+        self.assertEqual(imported_context['primary_keyword'], 'circuit diagram')
+        self.assertEqual(imported_context['seed_keywords'], ['circuit diagram'])
         self.assertEqual(imported.json()['project_id'], pid)
 
     def test_bulk_keyword_delete_cannot_touch_another_project(self):

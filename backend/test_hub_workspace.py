@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from app.hub_spoke.router import (
     _basic_clean,
     _clean_with_context,
+    _context_with_seed_keywords,
     _mechanical_relevance_filter,
     delete_hub_spoke_history,
 )
@@ -96,6 +97,20 @@ class HubWorkspaceTests(unittest.TestCase):
         ]
         self.assertEqual(_mechanical_relevance_filter(mixed, context), [
             "lunar age calculator", "how lunar age works", "korean lunar age",
+        ])
+
+    def test_all_imported_seeds_are_contextual_relevance_anchors(self):
+        context = _context_with_seed_keywords(
+            json.dumps({"primary_keyword": "circuit diagram maker", "industry_niche": "electronics"}),
+            ["circuit diagram maker", "pcb design software", "electrical schematic guide"],
+        )
+        self.assertEqual(json.loads(context)["seed_keywords"], [
+            "circuit diagram maker", "pcb design software", "electrical schematic guide",
+        ])
+        self.assertEqual(_mechanical_relevance_filter([
+            "circuit symbol reference", "pcb layout tutorial", "electrical schematic examples", "dog age calculator",
+        ], context), [
+            "circuit symbol reference", "pcb layout tutorial", "electrical schematic examples",
         ])
 
 

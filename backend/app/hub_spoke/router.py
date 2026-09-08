@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import get_current_user
 from app.database import get_db
 from app.models import HubSpokeHistory, Keyword, Project, User
-from nlp.keywords import clean_phrase, is_valid_keyword
+from nlp.keywords import clean_phrase, is_valid_keyword, normalize_seed_keywords
 from nlp.openrouter import _achat_json, cluster_hub_and_spoke, is_ai_configured
 
 router = APIRouter(prefix="/api/hub-spoke", tags=["hub-spoke-workspace"])
@@ -106,6 +106,39 @@ def _primary_keyword_from_context(context: str) -> str:
     return clean_phrase(match.group(1)) if match else ""
 
 
+def _seed_keywords_from_context(context: str) -> list[str]:
+    """Return every authoritative seed embedded in Hub Spoke context."""
+    values: list[str] = []
+    try:
+        payload = json.loads(context)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = None
+    if isinstance(payload, dict):
+        values.append(str(payload.get("primary_keyword") or ""))
+        for item in payload.get("seed_keywords", []) or []:
+            values.append(str(item.get("keyword") if isinstance(item, dict) else item))
+        for item in payload.get("seeds", []) or []:
+            values.append(str(item.get("keyword") if isinstance(item, dict) else item))
+    else:
+        values.append(_primary_keyword_from_context(context))
+    return normalize_seed_keywords(values)
+
+
+def _context_with_seed_keywords(context: str, seed_keywords: list[str]) -> str:
+    """Expose project seeds in the editable context sent to Hub Spoke."""
+    seeds = normalize_seed_keywords(seed_keywords)
+    try:
+        parsed = json.loads(context) if context.strip() else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = {"audit_summary": context.strip()} if context.strip() else {}
+    if not isinstance(parsed, dict):
+        parsed = {"audit_summary": context.strip()}
+    parsed["seed_keywords"] = seeds
+    if seeds and not parsed.get("primary_keyword"):
+        parsed["primary_keyword"] = seeds[0]
+    return json.dumps(parsed, indent=2)
+
+
 def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]:
     """Reject isolated off-topic phrases without relying on the AI provider."""
     from nlp.keywords import BROAD_TOPIC_TERMS, keyword_terms
@@ -118,21 +151,28 @@ def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]
     dominant_terms = {term for term, count in document_frequency.items() if count >= threshold}
     context_terms = keyword_terms(context, min_len=2) if context.strip() else set()
     positions = {phrase: index for index, phrase in enumerate(keywords)}
-    primary_keyword = _primary_keyword_from_context(context)
-    primary_terms = keyword_terms(primary_keyword, min_len=2)
+    seed_keywords = _seed_keywords_from_context(context)
+    seed_rules: list[tuple[set[str], int]] = []
+    for seed in seed_keywords:
+        seed_terms = keyword_terms(seed, min_len=2)
+        distinctive_terms = seed_terms - BROAD_TOPIC_TERMS
+        required_terms = distinctive_terms or seed_terms
+        if required_terms:
+            required_overlap = 1 if distinctive_terms or len(required_terms) == 1 else 2
+            seed_rules.append((required_terms, required_overlap))
 
-    if primary_terms:
-        distinctive_terms = primary_terms - BROAD_TOPIC_TERMS
-        required_terms = distinctive_terms or primary_terms
-        required_overlap = 1 if distinctive_terms or len(required_terms) == 1 else 2
+    if seed_rules:
         # Never allow a candidate list to redefine an explicit site topic. If
-        # no candidate contains its defining term, the correct result is an
+        # no candidate contains any seed's defining term, the correct result is an
         # empty list and a clear 422 response rather than an off-topic plan.
-        if not any(len(terms & required_terms) >= required_overlap for terms in term_sets.values()):
+        def matches_seed(terms: set[str]) -> bool:
+            return any(len(terms & required) >= overlap for required, overlap in seed_rules)
+
+        if not any(matches_seed(terms) for terms in term_sets.values()):
             return []
         return [
             phrase for phrase in keywords
-            if len(term_sets[phrase] & required_terms) >= required_overlap
+            if matches_seed(term_sets[phrase])
         ]
 
     def anchor_score(phrase: str) -> tuple[int, int]:
@@ -254,9 +294,13 @@ async def build_uploaded_hub_spoke(
         raise HTTPException(status_code=422, detail=detail)
     rejected_keywords = [phrase for phrase in _basic_clean(body.keywords) if phrase not in set(keywords)]
     typed = [{"phrase": phrase, "type": "long-tail"} for phrase in keywords]
+    main_keyword = _primary_keyword_from_context(body.context)
+    if not main_keyword:
+        context_seeds = _seed_keywords_from_context(body.context)
+        main_keyword = context_seeds[0] if context_seeds else keywords[0]
     mapping = await cluster_hub_and_spoke(
         typed,
-        main_keyword=keywords[0],
+        main_keyword=main_keyword,
         audit_summary=body.context or "Uploaded keyword research list",
     )
     if not mapping:
@@ -319,7 +363,7 @@ async def import_project_keywords(
         "project_id": project.id,
         "project_name": project.name,
         "keywords": keywords,
-        "context": project.audit_summary or "",
+        "context": _context_with_seed_keywords(project.audit_summary or "", project.target_keywords or []),
     }
 
 

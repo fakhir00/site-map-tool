@@ -61,7 +61,7 @@ async def scan_gold_hunter(
         import json
         audit_summary = json.dumps(audit_summary, indent=2)
 
-    from nlp.keywords import normalize_seed_keywords
+    from nlp.keywords import is_topic_relevant_keyword, normalize_seed_keywords, seed_keyword_terms
     normalized_seeds = []
     for item in result.get("seeds", []) or []:
         if not isinstance(item, dict):
@@ -74,11 +74,21 @@ async def scan_gold_hunter(
                 "justification": str(item.get("justification") or "Selected from the Gold Hunter audit."),
             })
 
+    audit_primary = ""
+    if isinstance(audit_data, dict):
+        primary_values = normalize_seed_keywords([str(audit_data.get("primary_keyword") or "")])
+        audit_primary = primary_values[0] if primary_values else ""
+    if audit_primary:
+        primary_terms = seed_keyword_terms([audit_primary])
+        normalized_seeds = [
+            seed for seed in normalized_seeds
+            if is_topic_relevant_keyword(seed["keyword"], [audit_primary], primary_terms)
+        ]
+
     # The gap scan needs multiple discovery angles. If a provider truncates its
     # JSON, complete the set from the audited primary topic and opportunities.
     if len(normalized_seeds) < 3 and isinstance(audit_data, dict):
-        primary = normalize_seed_keywords([str(audit_data.get("primary_keyword") or "")])
-        primary_keyword = primary[0] if primary else ""
+        primary_keyword = audit_primary
         audit_candidates = [
             primary_keyword,
             *(audit_data.get("content_opportunities") or []),
@@ -89,7 +99,9 @@ async def scan_gold_hunter(
             if not values:
                 continue
             keyword = values[0]
-            if primary_keyword and primary_keyword not in keyword and len(keyword.split()) <= 4:
+            if primary_keyword and not is_topic_relevant_keyword(
+                keyword, [primary_keyword], seed_keyword_terms([primary_keyword])
+            ):
                 keyword = f"{primary_keyword} {keyword}"
             if any(seed["keyword"] == keyword for seed in normalized_seeds):
                 continue
