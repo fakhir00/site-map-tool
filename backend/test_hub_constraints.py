@@ -10,11 +10,15 @@ from nlp.openrouter import (
     build_hub_spoke_fallback,
     cluster_hub_and_spoke,
 )
-from workers.pipeline import _seed_anchored_keyword_expansions
-
-
 def spoke(keyword):
     return f"{keyword.title()} (Target Keyword: {keyword})"
+
+
+def circuit_keyword_fixture(count=100):
+    return [
+        {"phrase": f"circuit diagram maker topic {index}", "type": "long-tail"}
+        for index in range(1, count + 1)
+    ]
 
 
 class HubConstraintTests(TestCase):
@@ -117,7 +121,7 @@ class HubConstraintTests(TestCase):
         self.assertEqual(chat.await_count, 2)
 
     def test_fallback_builds_balanced_unique_constraint_safe_map(self):
-        keywords = _seed_anchored_keyword_expansions(["circuit diagram maker"], set(), 100)
+        keywords = circuit_keyword_fixture()
         # Add duplicates and entities; they must become H2s rather than URLs.
         keywords.extend([
             {"phrase": "circuit diagram maker tutorials", "type": "long-tail"},
@@ -132,11 +136,14 @@ class HubConstraintTests(TestCase):
         self.assertIsNone(_validate_hub_and_spoke(
             payload, len(keywords), "circuit diagram maker", allowed
         ))
-        rendered = json.dumps(payload).lower()
-        self.assertIn("include: electrical standard", rendered)
+        self.assertIn("electrical standard", {
+            entity
+            for item in payload["spokes"]
+            for entity in item.get("entity_terms", [])
+        })
 
     def test_cluster_uses_fallback_when_ai_is_unavailable(self):
-        keywords = _seed_anchored_keyword_expansions(["circuit diagram maker"], set(), 100)
+        keywords = circuit_keyword_fixture()
         with patch("nlp.openrouter.is_ai_configured", return_value=False):
             result = asyncio.run(cluster_hub_and_spoke(keywords, main_keyword="circuit diagram maker"))
         self.assertIsNotNone(result)

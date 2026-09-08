@@ -3,7 +3,14 @@ from unittest import TestCase
 from unittest.mock import patch
 import uuid
 
-from nlp.openrouter import _balanced_keyword_candidates, extract_keywords_from_urls_ai, filter_keyword_gap_recommendations
+from nlp.openrouter import (
+    _balanced_keyword_candidates,
+    _keyword_generation_support_is_valid,
+    extract_keywords_from_urls_ai,
+    filter_keyword_gap_recommendations,
+    generate_ai_keywords_sync,
+)
+from nlp.keywords import is_publishable_keyword
 from workers.pipeline import (
     _balanced_competitor_domains,
     _discover_competitor_domains,
@@ -12,26 +19,99 @@ from workers.pipeline import (
     _keyword_matches_topic,
     _llm_filter_competitor_domains,
     _search_result_urls,
-    _seed_anchored_keyword_expansions,
     _with_source_url_ids,
 )
 
 
 class PipelineFilterTests(TestCase):
+    def test_extraction_artifacts_are_not_publishable_keywords(self):
+        self.assertFalse(is_publishable_keyword("age korean age", min_words=2))
+        self.assertFalse(is_publishable_keyword("traditional korean traditional", min_words=2))
+        self.assertTrue(is_publishable_keyword("lunar age in korea", min_words=2))
+
     def test_comma_separated_seeds_are_scanned_individually(self):
         self.assertEqual(
             _clean_seed_keywords(["circuit diagrams, wiring diagrams; pcb layouts"]),
             ["circuit diagrams", "wiring diagrams", "pcb layouts"],
         )
 
-    def test_generic_seed_expansion_still_reaches_100_relevant_phrases(self):
-        seeds = ["diagram maker"]
-        expanded = _seed_anchored_keyword_expansions(seeds, set(), 100)
-        self.assertEqual(len(expanded), 100)
-        self.assertTrue(all(
-            _keyword_matches_topic(item["phrase"], seeds, set(), set())
-            for item in expanded
+    def test_generated_keywords_require_real_input_support(self):
+        seeds = ["lunar age calculator"]
+        audit = "Core action: compare lunar and solar ages"
+        evidence = ["lunar age in years months and days"]
+
+        self.assertTrue(_keyword_generation_support_is_valid(
+            {"support_source": "seed", "support_phrase": "lunar age calculator"},
+            seeds, evidence, audit,
         ))
+        self.assertTrue(_keyword_generation_support_is_valid(
+            {"support_source": "competitor", "support_phrase": evidence[0]},
+            seeds, evidence, audit,
+        ))
+        self.assertTrue(_keyword_generation_support_is_valid(
+            {"support_source": "audit", "support_phrase": "compare lunar and solar ages"},
+            seeds, evidence, audit,
+        ))
+        self.assertFalse(_keyword_generation_support_is_valid(
+            {"support_source": "competitor", "support_phrase": "lunar age pricing"},
+            seeds, evidence, audit,
+        ))
+        self.assertTrue(_keyword_generation_support_is_valid(
+            {"phrase": "lunar age calculator by birth date"},
+            seeds, evidence, audit,
+        ))
+        self.assertFalse(_keyword_generation_support_is_valid(
+            {"phrase": "korean age calculator"},
+            seeds, evidence, audit,
+        ))
+
+    def test_generator_accepts_legacy_schema_for_exact_seed_long_tails(self):
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._chat_json", return_value=[{
+                "phrase": "lunar age calculator by birth date",
+                "type": "long-tail",
+            }]),
+        ):
+            result = generate_ai_keywords_sync(
+                ["lunar age calculator"],
+                topic_terms={"lunar", "age", "birth", "date"},
+                apply_gap_filter=False,
+            )
+
+        self.assertEqual(result, [{
+            "phrase": "lunar age calculator by birth date",
+            "type": "long-tail",
+        }])
+
+    def test_generator_discards_keywords_with_fabricated_support(self):
+        payload = [
+            {
+                "phrase": "lunar age leap month",
+                "type": "long-tail",
+                "support_source": "audit",
+                "support_phrase": "impact of leap months",
+            },
+            {
+                "phrase": "lunar age pricing",
+                "type": "long-tail",
+                "support_source": "competitor",
+                "support_phrase": "lunar age pricing",
+            },
+        ]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._chat_json", return_value=payload),
+        ):
+            result = generate_ai_keywords_sync(
+                ["lunar age calculator"],
+                topic_terms={"lunar", "age", "leap", "month"},
+                audit_summary="Content opportunity: impact of leap months",
+                evidence_phrases=["lunar age years months days"],
+                apply_gap_filter=False,
+            )
+
+        self.assertEqual(result, [{"phrase": "lunar age leap month", "type": "long-tail"}])
 
     def test_competitor_discovery_runs_every_seed_and_balances_results(self):
         project = SimpleNamespace(

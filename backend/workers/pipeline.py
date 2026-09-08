@@ -635,9 +635,20 @@ def _process_competitor_keyword_gaps(
     )
     if filtered is None:
         filtered = _fallback_gap_recommendations(extracted, settings.AI_KEYWORD_GAP_RESULT_LIMIT)
+    from nlp.keywords import is_publishable_keyword
     filtered = [
         item for item in filtered
-        if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
+        if is_publishable_keyword(
+            str(item.get("phrase") or ""),
+            min_words=2,
+            negative_terms=negative_terms,
+        )
+        and _keyword_matches_topic(
+            str(item.get("phrase") or ""),
+            seed_keywords,
+            topic_terms,
+            negative_terms,
+        )
     ]
     filtered = _with_source_url_ids(filtered, extracted)
     if not filtered:
@@ -1934,7 +1945,7 @@ def _ensure_minimum_keyword_count(
     ai_generated_source: Any,
     evidence_phrases: list[str] | None = None,
 ) -> int:
-    """Expand in distinct batches until the scan has the configured minimum."""
+    """Pursue the configured research goal without padding unsupported results."""
     from app.models import Keyword, Url
     from nlp.keywords import clean_phrase
 
@@ -1943,7 +1954,6 @@ def _ensure_minimum_keyword_count(
         clean_phrase(row[0])
         for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_id)).all()
     }
-    initial_count = len(existing)
     own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     excluded = existing | own_phrases
     if len(existing) >= target:
@@ -2011,33 +2021,6 @@ def _ensure_minimum_keyword_count(
         else:
             logger.warning("[%s] Keyword expansion batch %s returned no new relevant phrases", project_id, batch_number + 1)
 
-    # A provider can occasionally truncate or return an empty batch. When the
-    # scan found real competitor evidence, complete the set with conservative
-    # seed-anchored search patterns so a transient provider issue cannot leave a
-    # half-built project.
-    if len(existing) < target and (initial_count > 0 or len(existing) > 0) and seed_keywords:
-        fallback_items = _seed_anchored_keyword_expansions(
-            seed_keywords,
-            excluded,
-            target - len(existing),
-            evidence_phrases=evidence_phrases,
-        )
-        fallback_accumulator: dict[str, dict[str, Any]] = {}
-        for item in fallback_items:
-            phrase = item["phrase"]
-            if not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
-                continue
-            fallback_accumulator[phrase] = {
-                "type": item["type"],
-                "count": 1,
-                "url_ids": {ai_url.id},
-                "score": 1.0,
-                "source": "sitemap_ai",
-                "tier": "outlier",
-            }
-        _store_keywords(db, project_id, fallback_accumulator)
-        existing.update(fallback_accumulator)
-
     final_count = db.execute(
         select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
     ).scalar_one()
@@ -2047,82 +2030,12 @@ def _ensure_minimum_keyword_count(
                 "No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry."
             )
         logger.warning(
-            "[%s] Only %s relevant keywords were produced (target %s). Continuing with produced keywords.",
+            "[%s] Produced %s evidence-backed keywords (research goal %s). Refusing to pad the result with unsupported variants.",
             project_id,
             final_count,
             target,
         )
     return final_count
-
-
-def _seed_anchored_keyword_expansions(
-    seed_keywords: list[str],
-    excluded: set[str],
-    needed: int,
-    evidence_phrases: list[str] | None = None,
-) -> list[dict[str, str]]:
-    """Create conservative, naturally phrased long-tails tied to every seed."""
-    from nlp.keywords import clean_phrase, is_valid_keyword
-
-    suffixes = [
-        "guide", "tutorial", "examples", "ideas", "tips", "techniques", "methods",
-        "strategy", "process", "workflow", "checklist", "template", "framework",
-        "principles", "fundamentals", "basics", "concepts", "terminology", "standards",
-        "requirements", "tools", "software", "resources", "training", "use cases",
-        "applications", "benefits", "limitations", "challenges", "common mistakes",
-        "troubleshooting", "optimization", "best practices", "comparison", "alternatives",
-        "pricing", "cost", "features", "setup", "implementation", "planning", "design",
-        "testing", "maintenance", "security", "performance", "automation", "integration",
-        "case studies", "questions", "answers", "trends", "solutions", "problems",
-    ]
-    frames = [
-        "what is {seed}", "how does {seed} work", "how to start {seed}",
-        "how to learn {seed}", "how to choose {seed}", "how to improve {seed}",
-        "how to plan {seed}", "how to implement {seed}", "how to optimize {seed}",
-        "when to use {seed}", "why use {seed}", "{seed} step by step",
-        "{seed} for beginners", "{seed} for professionals", "{seed} for business",
-        "{seed} for small business", "{seed} for teams", "{seed} for projects",
-        "best {seed} tools", "free {seed} tools", "online {seed} tools",
-        "{seed} tool comparison", "{seed} software comparison", "{seed} buying guide",
-        "{seed} beginner guide", "{seed} advanced guide", "{seed} practical guide",
-        "{seed} complete guide", "{seed} quick start guide", "{seed} expert tips",
-        "{seed} common questions", "{seed} real examples", "{seed} industry examples",
-        "{seed} mistakes to avoid", "{seed} problems and solutions",
-        "{seed} setup checklist", "{seed} planning checklist", "{seed} quality checklist",
-        "{seed} best practices checklist", "{seed} tools and resources",
-        "{seed} features and benefits", "{seed} cost and pricing",
-        "{seed} options and alternatives", "{seed} methods and techniques",
-        "{seed} strategy and planning", "{seed} implementation steps",
-        "{seed} optimization tips", "{seed} troubleshooting guide",
-    ]
-    candidates_by_seed: list[list[tuple[str, str]]] = []
-    for seed in seed_keywords:
-        base = clean_phrase(seed)
-        seed_candidates = [(f"{base} {suffix}", "long-tail") for suffix in suffixes]
-        seed_candidates.extend((frame.format(seed=base), "long-tail") for frame in frames)
-        candidates_by_seed.append(seed_candidates)
-
-    # Round-robin keeps every Gold Hunter seed represented instead of allowing
-    # the first seed to consume the entire target.
-    candidates: list[tuple[str, str]] = [
-        (phrase, "long-tail") for phrase in (evidence_phrases or [])
-    ]
-    for position in range(max((len(items) for items in candidates_by_seed), default=0)):
-        for items in candidates_by_seed:
-            if position < len(items):
-                candidates.append(items[position])
-
-    results: list[dict[str, str]] = []
-    seen = {clean_phrase(phrase) for phrase in excluded}
-    for raw_phrase, keyword_type in candidates:
-        phrase = clean_phrase(raw_phrase)
-        if phrase in seen or not is_valid_keyword(phrase, min_words=2):
-            continue
-        seen.add(phrase)
-        results.append({"phrase": phrase, "type": keyword_type})
-        if len(results) >= needed:
-            break
-    return results
 
 
 def _refine_keyword_gap_recommendations(
