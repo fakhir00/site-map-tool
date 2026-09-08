@@ -8,12 +8,17 @@ import { Card } from '../components/ui/Card'
 type LayerMap = Record<string, string[]>
 type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[]; layers: LayerMap }
 type Hub = Silo & { sub_silos?: Silo[] }
-type SpokeDetail = { article_title: string; target_keyword: string; word_count_suggestion?: number; content_brief?: string; h2_sections?: { h2_heading: string }[] }
-type Mapping = { hubs: Hub[]; _planning_thought?: string; master_hub?: { content_brief?: string; word_count_suggestion?: number }; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[] }
+type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
+type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
+type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
+type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
+type Mapping = { hubs: Hub[]; _planning_thought?: string; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; writing_standards?: string[] }
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
 const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
 const shouldBuildTool = (keyword: string) => toolIntent.test(keyword) && !informationalIntent.test(keyword)
+const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+const pageSlug = (keyword: string, supplied?: string) => supplied || `/${slugify(keyword)}/`
 
 const parseSpoke = (spoke: string) => {
   const target = spoke.match(/\(Target Keyword:\s*(.*?)\)/i)?.[1]?.trim() || spoke.trim()
@@ -35,6 +40,34 @@ const downloadText = (name: string, content: string) => {
   anchor.download = name
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
+  const lines = ['# GRAND WEBSITE ARCHITECTURE BUILD PROMPT', '', 'Build the complete website architecture below. Follow every page specification and preserve the assigned keyword placements.', '']
+  if (context.trim()) lines.push('## Website context', context.trim(), '')
+  lines.push('## Global writing standards')
+  ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
+  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, FAQ schema, and internal links.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', '- Treat the suggested word count as a useful depth target; satisfy intent without padding.', '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
+
+  const addPage = (label: string, page: PageDetail) => {
+    const target = page.target_keyword || ''
+    lines.push(`## ${label}: ${page.article_title || target}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- Target keyword: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
+    if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
+    if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
+    if (page.h2_sections?.length) { lines.push('- H2 plan:'); page.h2_sections.forEach((section) => lines.push(`  - ${section.h2_heading}: ${section.section_definition || 'Cover this section directly.'}${section.targeted_keywords_placed_here?.length ? ` Keywords: ${section.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
+    if (page.faq_schema_questions?.length) { lines.push('- FAQ schema:'); page.faq_schema_questions.forEach((faq) => lines.push(`  - ${faq.question}${faq.targeted_keywords_placed_here?.length ? ` Keywords: ${faq.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
+    if (page.entity_terms?.length) lines.push(`- Entities to use naturally: ${page.entity_terms.join(', ')}`)
+    if (page.internal_links?.length) lines.push(`- Required internal links to these target pages: ${page.internal_links.join(', ')}`)
+    if (page.writing_instructions) lines.push(`- Writing instructions: ${page.writing_instructions}`)
+    lines.push('')
+  }
+
+  if (mapping.master_hub) addPage('MASTER HUB', mapping.master_hub)
+  ;(mapping.spokes || []).forEach((spoke, index) => addPage(`SPOKE ${index + 1} — ${spoke.spoke_category || 'Strategic article'}`, spoke))
+  lines.push('## Interlinking strategy', mapping.interlinking_strategy || 'Every spoke links to the Master Hub and to the most relevant next-step spoke.', '')
+  if (mapping.filtered_irrelevant_keywords?.length) lines.push('## Do not target these filtered keywords', ...mapping.filtered_irrelevant_keywords.map((keyword) => `- ${keyword}`), '')
+  lines.push('Begin by creating the Master Hub, then build each spoke in order. Return production-ready pages and tools that follow this architecture.')
+  return lines.join('\n')
 }
 
 export function HubSpokeWorkspace() {
@@ -85,24 +118,25 @@ export function HubSpokeWorkspace() {
     } finally { setBusy(null) }
   }
 
-  const openTarget = (keyword: string, included: string[] = []) => {
+  const openTarget = (keyword: string, included: string[] = [], pageType?: string) => {
     const params = new URLSearchParams({ keyword })
     if (included.length) params.set('cluster', included.join('\n'))
-    navigate(`${shouldBuildTool(keyword) ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
+    navigate(`${pageType === 'tool' || shouldBuildTool(keyword) ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
   }
 
   const renderPage = (spoke: string) => {
     const page = parseSpoke(spoke)
     const detail = mapping?.spokes?.find((item) => item.target_keyword.toLowerCase() === page.target.toLowerCase())
-    const isTool = shouldBuildTool(`${page.title} ${page.target}`)
+    const isTool = detail?.page_type === 'tool' || shouldBuildTool(`${page.title} ${page.target}`)
     const Icon = isTool ? Wrench : FileText
     return (
-      <button key={spoke} type="button" onClick={() => openTarget(page.target, page.included)} className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-cyan-600">
+      <button key={spoke} type="button" onClick={() => openTarget(page.target, page.included, detail?.page_type)} className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-cyan-600">
         <div className="flex items-start gap-3">
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isTool ? 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300' : 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300'}`}><Icon className="h-4 w-4" /></span>
           <span className="min-w-0 flex-1">
             <span className="block font-semibold text-slate-900 dark:text-slate-100">{page.title}</span>
             <span className="mt-0.5 block text-xs text-slate-500">Target: {page.target}</span>
+            <span className="mt-0.5 block font-mono text-xs text-emerald-700 dark:text-emerald-400">Slug: {pageSlug(page.target, detail?.slug)}</span>
             {detail?.content_brief && <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{detail.content_brief}</span>}
             {(detail?.word_count_suggestion || detail?.h2_sections?.length) && <span className="mt-2 block text-xs text-slate-400">{detail.word_count_suggestion?.toLocaleString()} words{detail.h2_sections?.length ? ` • ${detail.h2_sections.length} planned sections` : ''}</span>}
             {page.included.length > 0 && <span className="mt-3 block rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><strong>Includes:</strong> {page.included.join(' • ')}</span>}
@@ -187,13 +221,13 @@ export function HubSpokeWorkspace() {
         <section className="space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Related keywords appear under Includes and belong on that same page.</p>{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
-            <Button onClick={() => downloadText('hub-spoke-architecture.txt', JSON.stringify(mapping, null, 2))}><Download className="h-4 w-4" />Download architecture</Button>
+            <Button onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, context))}><Download className="h-4 w-4" />Download architecture prompt</Button>
           </div>
           {mapping.hubs.map((hub) => (
             <Card key={hub.target_keyword} className="overflow-hidden p-0">
-              <button type="button" onClick={() => openTarget(hub.target_keyword, hub.h2_keywords)} className="group flex w-full items-start gap-4 bg-gradient-to-r from-cyan-700 to-blue-700 p-6 text-left text-white">
+              <button type="button" onClick={() => openTarget(hub.target_keyword, hub.h2_keywords, mapping.master_hub?.page_type)} className="group flex w-full items-start gap-4 bg-gradient-to-r from-cyan-700 to-blue-700 p-6 text-left text-white">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15"><Network className="h-5 w-5" /></span>
-                <span className="min-w-0 flex-1"><span className="text-xs font-bold uppercase tracking-widest text-cyan-100">Master hub</span><span className="mt-1 block text-xl font-bold">{hub.hub_title}</span><span className="mt-1 block text-sm text-cyan-100">Target: {hub.target_keyword}</span></span>
+                <span className="min-w-0 flex-1"><span className="text-xs font-bold uppercase tracking-widest text-cyan-100">Master hub</span><span className="mt-1 block text-xl font-bold">{hub.hub_title}</span><span className="mt-1 block text-sm text-cyan-100">Target: {hub.target_keyword}</span><span className="mt-0.5 block font-mono text-xs text-cyan-100">Slug: {pageSlug(hub.target_keyword, mapping.master_hub?.slug)}</span></span>
                 <span className="mt-2 flex items-center gap-1 text-xs font-semibold">Open page <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
               </button>
               <div className="space-y-7 p-6">

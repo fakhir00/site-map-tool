@@ -372,8 +372,9 @@ async def generate_hub_spoke(
         raise HTTPException(status_code=400, detail="No valid parent keywords found after filtering.")
 
     # Phase 2: Send to LLM
-    top_candidates = clean_candidates[:300]
-    remaining = clean_candidates[300:]
+    # Keep placement decisions (H2 vs FAQ vs entity) inside one coherent plan.
+    top_candidates = clean_candidates[:500]
+    remaining = clean_candidates[500:]
     
     clean_keywords_for_llm = [
         {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
@@ -386,9 +387,10 @@ async def generate_hub_spoke(
     clusters = await cluster_hub_and_spoke(clean_keywords_for_llm, main_keyword=main_kw, audit_summary=project.audit_summary)
     if not clusters:
         raise HTTPException(status_code=500, detail="Failed to cluster keywords")
+    detailed_architecture = isinstance(clusters.get("master_hub"), dict) and isinstance(clusters.get("spokes"), list)
 
     # Phase 4: Auto-Map Remaining Keywords
-    if remaining and "hubs" in clusters and isinstance(clusters["hubs"], list) and len(clusters["hubs"]) > 0:
+    if remaining and not detailed_architecture and "hubs" in clusters and isinstance(clusters["hubs"], list) and len(clusters["hubs"]) > 0:
         from nlp.keywords import phrase_similarity
         import re
         
@@ -523,7 +525,9 @@ async def generate_hub_spoke(
         if tokens:
             seen_tokens_map[tuple(tokens)] = phrase
 
-    if clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
+    # The detailed architect has already assigned H2, FAQ, and entity terms.
+    # The old card-only dedup pass would desynchronise those assignments.
+    if not detailed_architecture and clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
         def inject_h2s(spoke_str: str, target_kw: str) -> str:
             extras = h2_map.get(target_kw.lower(), [])
             if extras:

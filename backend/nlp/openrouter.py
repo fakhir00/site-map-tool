@@ -1889,18 +1889,61 @@ def _hub_spoke_category(phrase: str) -> str:
     return "Educational topics"
 
 
+ARCHITECTURE_WRITING_STANDARDS = [
+    "Answer the search intent directly before adding background.",
+    "Use active voice, plain language, precise claims, and no filler.",
+    "Use the primary keyword naturally in the H1, introduction, and relevant headings.",
+    "Open with an implicit definition, then explain the main benefits and uses in the same order as the article.",
+    "Define abbreviations on first use and use entities in their correct context.",
+    "Match question headings with immediate explicit answers; start boolean answers with Yes or No.",
+    "Use concrete examples, helpful analogies, useful tables or steps, and verifiable facts without inventing evidence.",
+    "Quantify claims when reliable numbers exist, keep list grammar parallel, and answer place, time, and method questions in the requested context first.",
+    "Use a natural expert tone and make every word serve the reader.",
+    "Avoid vague hype, keyword stuffing, unclear pronouns, repetitive conclusions, and AI-style filler phrases.",
+]
+
+
 def _deepseek_plan_to_hub_schema(payload: dict[str, Any], main_keyword: str) -> dict[str, Any]:
     """Add the visual-card schema while retaining DeepSeek's detailed editorial plan."""
     from nlp.keywords import clean_phrase
 
-    if "hubs" in payload or not isinstance(payload.get("master_hub"), dict):
+    if not isinstance(payload.get("master_hub"), dict):
         return payload
+    payload.pop("hubs", None)
     master_plan = payload["master_hub"]
     main = clean_phrase(str(master_plan.get("target_keyword") or main_keyword)) or clean_phrase(main_keyword)
+    master_plan["target_keyword"] = main
+    # Generate URLs from normalized targets so model creativity can never
+    # introduce malformed or duplicate slugs.
+    master_plan["slug"] = f"/{_hub_slug(main)}/"
+    master_plan["page_type"] = str(master_plan.get("page_type") or ("tool" if any(
+        word in main.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder")
+    ) else "article")).lower()
+    master_plan.setdefault("writing_instructions", "Follow the global writing standards, satisfy the primary intent immediately, and make this the definitive navigation and conversion page for the topic.")
+    master_plan.setdefault("tool_functions", [])
+    if master_plan["page_type"] == "tool" and not master_plan["tool_functions"]:
+        master_plan["tool_functions"] = _default_architecture_tool_functions(main)
+    payload.setdefault("writing_standards", ARCHITECTURE_WRITING_STANDARDS)
     master_keywords = [
         clean_phrase(str(value)) for value in (master_plan.get("targeted_keywords") or [])
         if clean_phrase(str(value)) and clean_phrase(str(value)) != main
     ]
+    for section in master_plan.get("h2_sections", []) or []:
+        if isinstance(section, dict):
+            master_keywords.extend(
+                clean_phrase(str(value)) for value in section.get("targeted_keywords_placed_here", []) or []
+                if clean_phrase(str(value)) and clean_phrase(str(value)) != main
+            )
+    for faq in master_plan.get("faq_schema_questions", []) or []:
+        if isinstance(faq, dict):
+            master_keywords.extend(
+                clean_phrase(str(value)) for value in faq.get("targeted_keywords_placed_here", []) or []
+                if clean_phrase(str(value)) and clean_phrase(str(value)) != main
+            )
+    master_keywords.extend(
+        clean_phrase(str(value)) for value in master_plan.get("entity_terms", []) or []
+        if clean_phrase(str(value)) and clean_phrase(str(value)) != main
+    )
     layers: dict[str, list[str]] = {}
     for article in payload.get("spokes", []) or []:
         if not isinstance(article, dict):
@@ -1908,6 +1951,15 @@ def _deepseek_plan_to_hub_schema(payload: dict[str, Any], main_keyword: str) -> 
         target = clean_phrase(str(article.get("target_keyword") or ""))
         if not target:
             continue
+        article["target_keyword"] = target
+        article["slug"] = f"/{_hub_slug(target)}/"
+        article["page_type"] = str(article.get("page_type") or ("tool" if any(
+            word in target.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder")
+        ) else "article")).lower()
+        article.setdefault("writing_instructions", "Follow the global writing standards, answer the page's distinct intent immediately, and avoid repeating the Master Hub or another spoke.")
+        article.setdefault("tool_functions", [])
+        if article["page_type"] == "tool" and not article["tool_functions"]:
+            article["tool_functions"] = _default_architecture_tool_functions(target)
         included: list[str] = []
         for section in article.get("h2_sections", []) or []:
             if isinstance(section, dict):
@@ -1935,6 +1987,15 @@ def _deepseek_plan_to_hub_schema(payload: dict[str, Any], main_keyword: str) -> 
             "sub_silos": [],
         }],
     }
+
+
+def _default_architecture_tool_functions(target: str) -> list[str]:
+    return [
+        f"Provide the core interactive result promised by the '{target}' search intent.",
+        "Collect only the inputs required to generate the result and validate them with clear inline feedback.",
+        "Let the user edit, reset, copy, download, or export the result where the output format permits it.",
+        "Work on mobile and desktop, preserve accessible labels, and show a clear next action after generation.",
+    ]
 
 
 def build_hub_spoke_fallback(
@@ -1967,37 +2028,64 @@ def build_hub_spoke_fallback(
     for phrase in phrases[spoke_count:]:
         center = max(centers, key=lambda candidate: _hub_intent_similarity(phrase, candidate))
         assignments[center].append(phrase)
+    entity_assignments: dict[str, list[str]] = {center: [] for center in centers}
     for entity in entities:
         center = max(centers, key=lambda candidate: _hub_intent_similarity(entity, candidate))
-        assignments[center].append(entity)
+        entity_assignments[center].append(entity)
 
     spokes = []
     for center in centers:
         included = assignments[center]
+        faq_keywords = [phrase for phrase in included if phrase.split()[0] in {"what", "why", "when", "where", "can", "does", "is", "are"}]
+        h2_keywords = [phrase for phrase in included if phrase not in faq_keywords]
+        is_tool = any(word in center.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder"))
         spokes.append({
             "spoke_category": _hub_spoke_category(center),
             "article_title": center.title(),
             "target_keyword": center,
+            "slug": f"/{_hub_slug(center)}/",
+            "page_type": "tool" if is_tool else "article",
             "word_count_suggestion": 2000,
             "content_brief": f"Satisfy the search intent for {center} and connect readers to the {main} hub.",
             "h2_sections": [{
                 "h2_heading": "Related questions and subtopics",
-                "targeted_keywords_placed_here": included,
-            }] if included else [],
-            "faq_schema_questions": [],
-            "entity_terms": [],
+                "section_definition": "Cover these closely related terms together only where they require a substantive section.",
+                "targeted_keywords_placed_here": h2_keywords,
+            }] if h2_keywords else [],
+            "faq_schema_questions": [
+                {"question": phrase.title() + "?", "targeted_keywords_placed_here": [phrase]}
+                for phrase in faq_keywords
+            ],
+            "entity_terms": entity_assignments[center],
+            "tool_functions": _default_architecture_tool_functions(center) if is_tool else [],
+            "internal_links": [main],
+            "writing_instructions": "Answer the target intent immediately. Use active voice, plain language, specific examples, clear heading-answer alignment, natural entities, and no filler or unsupported claims.",
         })
     plan = {
         "filtered_irrelevant_keywords": [],
-        "total_relevant_keywords_covered": len(phrases) + 1,
+        "total_relevant_keywords_covered": len(phrases) + len(entities) + 1,
         "master_hub": {
             "article_title": main.title(),
             "target_keyword": main,
+            "slug": f"/{_hub_slug(main)}/",
+            "page_type": "tool" if any(word in main.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder")) else "article",
+            "word_count_suggestion": 3500,
             "content_brief": f"The definitive home-page guide and primary conversion page for {main}.",
             "targeted_keywords": [main],
+            "tool_functions": _default_architecture_tool_functions(main) if any(word in main.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder")) else [],
+            "h2_sections": [{
+                "h2_heading": f"What is {main.title()}?",
+                "section_definition": "Define the central topic, establish its value, and route readers to the most relevant detailed spokes.",
+                "targeted_keywords_placed_here": [],
+            }],
+            "faq_schema_questions": [],
+            "entity_terms": [],
+            "internal_links": centers,
+            "writing_instructions": "Answer the main intent immediately, use a precise H1 and descriptive H2s, write in active voice, remove filler, use entities naturally, and make every section useful to the target reader.",
         },
         "spokes": spokes,
         "interlinking_strategy": "Every spoke links to the Master Hub. Related spokes link to one another where the next article answers the reader's natural follow-up question.",
+        "writing_standards": ARCHITECTURE_WRITING_STANDARDS,
     }
     return _deepseek_plan_to_hub_schema(plan, main)
 
@@ -2328,27 +2416,45 @@ Return only this JSON object:
   "master_hub": {{
     "article_title": "Compelling home-page hub title",
     "target_keyword": "{main_keyword}",
+    "slug": "/exact-clean-slug/",
+    "page_type": "tool or article",
     "word_count_suggestion": 3500,
     "content_brief": "What this definitive hub must cover",
-    "targeted_keywords": ["keywords assigned to the hub"]
+    "targeted_keywords": ["keywords assigned to the hub"],
+    "tool_functions": ["required function when page_type is tool"],
+    "h2_sections": [
+      {{"h2_heading": "Useful heading", "section_definition": "What this section must explain and why", "targeted_keywords_placed_here": ["only keywords that need this heading"]}}
+    ],
+    "faq_schema_questions": [
+      {{"question": "Relevant question?", "targeted_keywords_placed_here": ["assigned keyword"]}}
+    ],
+    "entity_terms": ["supporting term that belongs naturally in the copy"],
+    "internal_links": ["target keyword of a spoke this page must link to"],
+    "writing_instructions": "Page-specific instructions"
   }},
   "spokes": [
     {{
       "spoke_category": "Comparisons, Tutorials, References, Theory, or Use Cases",
       "article_title": "Compelling article title",
       "target_keyword": "one distinct primary keyword",
+      "slug": "/exact-clean-slug/",
+      "page_type": "article or tool",
       "word_count_suggestion": 2000,
       "content_brief": "Specific content focus and value to the website audience",
+      "tool_functions": ["List concrete inputs, actions, validation, output, export, and UX functions when this is a tool page; otherwise return an empty array"],
       "h2_sections": [
-        {{"h2_heading": "Useful heading", "targeted_keywords_placed_here": ["assigned keyword"]}}
+        {{"h2_heading": "Useful heading", "section_definition": "What this section must explain and why", "targeted_keywords_placed_here": ["only keywords that need this heading"]}}
       ],
       "faq_schema_questions": [
         {{"question": "Relevant question?", "targeted_keywords_placed_here": ["assigned keyword"]}}
       ],
-      "entity_terms": ["supporting entity"]
+      "entity_terms": ["supporting term that belongs naturally in the copy"],
+      "internal_links": ["master target keyword", "closely related spoke target keyword"],
+      "writing_instructions": "Page-specific instructions derived from the writing standards"
     }}
   ],
-  "interlinking_strategy": "A concrete authority-loop linking strategy"
+  "interlinking_strategy": "A concrete authority-loop linking strategy",
+  "writing_standards": {json.dumps(ARCHITECTURE_WRITING_STANDARDS)}
 }}
 
 Final checks: return 10-20 spokes, exactly one Master Hub, no duplicate target keywords, no nested silos, and no relevant keyword left unmapped.

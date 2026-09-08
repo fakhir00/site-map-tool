@@ -3,7 +3,12 @@ import json
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 
-from nlp.openrouter import _validate_hub_and_spoke, build_hub_spoke_fallback, cluster_hub_and_spoke
+from nlp.openrouter import (
+    _deepseek_plan_to_hub_schema,
+    _validate_hub_and_spoke,
+    build_hub_spoke_fallback,
+    cluster_hub_and_spoke,
+)
 from workers.pipeline import _seed_anchored_keyword_expansions
 
 
@@ -84,3 +89,52 @@ class HubConstraintTests(TestCase):
         with patch("nlp.openrouter.is_ai_configured", return_value=False):
             result = asyncio.run(cluster_hub_and_spoke(keywords, main_keyword="circuit diagram maker"))
         self.assertIsNotNone(result)
+
+    def test_detailed_plan_canonicalizes_slugs_and_preserves_keyword_roles(self):
+        raw = {
+            "master_hub": {
+                "article_title": "Circuit Diagram Maker",
+                "target_keyword": "Circuit Diagram Maker",
+                "slug": "bad slug",
+                "page_type": "tool",
+                "targeted_keywords": ["circuit drawing platform"],
+                "h2_sections": [{
+                    "h2_heading": "How it works",
+                    "section_definition": "Explain the workflow.",
+                    "targeted_keywords_placed_here": ["draw circuit diagrams"],
+                }],
+                "faq_schema_questions": [{
+                    "question": "Is it free?",
+                    "targeted_keywords_placed_here": ["free circuit diagram maker"],
+                }],
+                "entity_terms": ["IEC 60617"],
+            },
+            "spokes": [{
+                "spoke_category": "Tutorials",
+                "article_title": f"Article {index}",
+                "target_keyword": f"circuit guide {index}",
+                "slug": "/same-slug/",
+                "page_type": "article",
+                "h2_sections": [{
+                    "h2_heading": "Practical steps",
+                    "section_definition": "Show the process.",
+                    "targeted_keywords_placed_here": [f"draw circuit {index}"],
+                }],
+                "faq_schema_questions": [{
+                    "question": "What is required?",
+                    "targeted_keywords_placed_here": [f"circuit requirements {index}"],
+                }],
+                "entity_terms": [f"component {index}"],
+            } for index in range(1, 11)],
+        }
+
+        result = _deepseek_plan_to_hub_schema(raw, "circuit diagram maker")
+
+        self.assertEqual(result["master_hub"]["slug"], "/circuit-diagram-maker/")
+        self.assertTrue(result["master_hub"]["tool_functions"])
+        self.assertEqual(result["spokes"][0]["slug"], "/circuit-guide-1/")
+        self.assertEqual(result["spokes"][0]["h2_sections"][0]["targeted_keywords_placed_here"], ["draw circuit 1"])
+        self.assertEqual(result["spokes"][0]["faq_schema_questions"][0]["targeted_keywords_placed_here"], ["circuit requirements 1"])
+        self.assertEqual(result["spokes"][0]["entity_terms"], ["component 1"])
+        self.assertIn("free circuit diagram maker", result["hubs"][0]["h2_keywords"])
+        self.assertIn("iec 60617", result["hubs"][0]["h2_keywords"])
