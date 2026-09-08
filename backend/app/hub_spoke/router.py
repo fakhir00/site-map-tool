@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user
@@ -270,3 +270,17 @@ async def get_hub_spoke_history(
     if not record:
         raise HTTPException(status_code=404, detail="Hub Spoke history not found")
     return _history_payload(record)
+
+
+@router.delete("/history/{history_id}", status_code=204)
+async def delete_hub_spoke_history(
+    history_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(delete(HubSpokeHistory).where(
+        HubSpokeHistory.id == history_id,
+        HubSpokeHistory.user_id == current_user.id,
+    ))
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Hub Spoke history not found")

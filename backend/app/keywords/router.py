@@ -831,10 +831,17 @@ async def bulk_delete_keywords(
         return {"message": "No keywords to delete"}
 
     # Fetch keywords first to get their phrases so we can remove them from HubSpoke
-    q_kw = select(Keyword).where(Keyword.id.in_(body.keyword_ids))
+    q_kw = select(Keyword).where(
+        Keyword.id.in_(body.keyword_ids),
+        Keyword.project_id == project_id,
+    )
     res_kw = await db.execute(q_kw)
     keywords_to_delete = res_kw.scalars().all()
     phrases_to_remove = {k.phrase for k in keywords_to_delete}
+    valid_ids = [keyword.id for keyword in keywords_to_delete]
+
+    if not valid_ids:
+        return {"message": "No matching keywords to delete"}
     
     # Keyword deletion will cascade to KeywordUrl automatically if configured, 
     # but we can manually delete from Keyword to be safe
@@ -842,18 +849,18 @@ async def bulk_delete_keywords(
     
     # Delete KeywordUrls first to be completely safe against FK constraints
     await db.execute(
-        delete(KeywordUrl).where(KeywordUrl.keyword_id.in_(body.keyword_ids))
+        delete(KeywordUrl).where(KeywordUrl.keyword_id.in_(valid_ids))
     )
     
     # Delete KeywordBank entries associated with these keywords
     await db.execute(
-        delete(KeywordBank).where(KeywordBank.keyword_id.in_(body.keyword_ids))
+        delete(KeywordBank).where(KeywordBank.keyword_id.in_(valid_ids))
     )
     
     # Finally delete the keywords themselves
     result = await db.execute(
         delete(Keyword).where(
-            Keyword.id.in_(body.keyword_ids),
+            Keyword.id.in_(valid_ids),
             Keyword.project_id == project_id
         )
     )
@@ -892,7 +899,7 @@ async def bulk_delete_keywords(
             
     await db.commit()
     
-    return {"message": f"Successfully deleted keywords"}
+    return {"message": f"Successfully deleted {len(valid_ids)} keyword{'s' if len(valid_ids) != 1 else ''}"}
 
 
 @bank_router.get("")

@@ -112,27 +112,33 @@ export function ProjectsList() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
+    onError: (error) => {
+      alert(error instanceof Error ? error.message : 'Could not delete the project.')
+    },
   })
 
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isDeletingBulk, setIsDeletingBulk] = useState(false)
+  const visibleProjectIds = new Set(filteredProjects.map((project) => project.id))
+  const selectedVisibleIds = Array.from(selectedIds).filter((id) => visibleProjectIds.has(id))
 
   const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return
-    if (!window.confirm(`Delete ${selectedIds.size} projects?`)) return
+    if (selectedVisibleIds.length === 0) return
+    if (!window.confirm(`Permanently delete ${selectedVisibleIds.length} project${selectedVisibleIds.length === 1 ? '' : 's'}?`)) return
     
     setIsDeletingBulk(true)
     try {
-      await Promise.all(
-        Array.from(selectedIds).map(id => api.delete(`/projects/${id}`))
-      )
-      queryClient.invalidateQueries({ queryKey: ['projects'] })
-      setSelectedIds(new Set())
+      const ids = selectedVisibleIds
+      const results = await Promise.allSettled(ids.map(id => api.delete(`/projects/${id}`)))
+      const failedIds = ids.filter((_id, index) => results[index].status === 'rejected')
+      await queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setSelectedIds(new Set(failedIds))
+      if (failedIds.length > 0) {
+        alert(`${ids.length - failedIds.length} projects deleted. ${failedIds.length} could not be deleted and remain selected.`)
+        return
+      }
       setIsSelectionMode(false)
-    } catch (err) {
-      console.error('Failed to bulk delete', err)
-      alert('Failed to delete some projects.')
     } finally {
       setIsDeletingBulk(false)
     }
@@ -193,7 +199,7 @@ export function ProjectsList() {
       <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-          <Input className="pl-9" onChange={(event) => setSearch(event.target.value)} placeholder="Search projects" value={search} />
+          <Input className="pl-9" onChange={(event) => { setSearch(event.target.value); setSelectedIds(new Set()) }} placeholder="Search projects" value={search} />
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
@@ -202,31 +208,32 @@ export function ProjectsList() {
               <Button
                 variant="secondary"
                 size="sm"
+                disabled={filteredProjects.length === 0}
                 onClick={() => {
-                  if (selectedIds.size === filteredProjects.length) {
+                  if (selectedVisibleIds.length === filteredProjects.length) {
                     setSelectedIds(new Set())
                   } else {
                     setSelectedIds(new Set(filteredProjects.map(p => p.id)))
                   }
                 }}
               >
-                {selectedIds.size === filteredProjects.length ? 'Deselect All' : 'Select All'}
+                {selectedVisibleIds.length === filteredProjects.length ? 'Deselect All' : 'Select All'}
               </Button>
               <Button 
                 variant="danger"
                 size="sm"
-                disabled={selectedIds.size === 0 || isDeletingBulk}
+                disabled={selectedVisibleIds.length === 0 || isDeletingBulk}
                 onClick={handleBulkDelete}
               >
                 {isDeletingBulk ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
-                Delete ({selectedIds.size})
+                Delete ({selectedVisibleIds.length})
               </Button>
               <Button variant="secondary" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
                 Cancel
               </Button>
             </>
           ) : (
-            <Button variant="secondary" size="sm" onClick={() => setIsSelectionMode(true)}>
+            <Button variant="secondary" size="sm" disabled={filteredProjects.length === 0} onClick={() => setIsSelectionMode(true)}>
               Select
             </Button>
           )}

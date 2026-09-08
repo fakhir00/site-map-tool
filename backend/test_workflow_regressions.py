@@ -296,6 +296,11 @@ class WorkflowTests(unittest.TestCase):
         self.client.headers['Authorization'] = f'Bearer {create_access_token(other_user_id)}'
         self.assertEqual(self.client.get('/api/hub-spoke/history').json(), [])
         self.assertEqual(self.client.get(f'/api/hub-spoke/history/{history_id}').status_code, 404)
+        self.assertEqual(self.client.delete(f'/api/hub-spoke/history/{history_id}').status_code, 404)
+        self.client.headers['Authorization'] = f'Bearer {create_access_token(self.user_id)}'
+        self.assertEqual(self.client.delete(f'/api/hub-spoke/history/{history_id}').status_code, 204)
+        self.assertEqual(self.client.get('/api/hub-spoke/history').json(), [])
+        self.assertEqual(self.client.get(f'/api/hub-spoke/history/{history_id}').status_code, 404)
 
     def test_hub_workspace_imports_gap_keywords_with_selected_keyword_first(self):
         pid = self.project()
@@ -316,6 +321,33 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(imported.json()['keywords'][0], 'circuit diagram examples')
         self.assertEqual(imported.json()['context'], 'Electronics tool')
         self.assertEqual(imported.json()['project_id'], pid)
+
+    def test_bulk_keyword_delete_cannot_touch_another_project(self):
+        first_project_id = uuid.UUID(self.project())
+        second_project_id = uuid.UUID(self.project())
+        with self.sessions() as db:
+            first_keyword = Keyword(project_id=first_project_id, phrase='first project keyword', frequency=2)
+            second_keyword = Keyword(project_id=second_project_id, phrase='second project keyword', frequency=3)
+            db.add_all([first_keyword, second_keyword])
+            db.flush()
+            first_keyword_id = first_keyword.id
+            second_keyword_id = second_keyword.id
+            db.add_all([
+                KeywordBank(user_id=self.user_id, keyword_id=first_keyword_id),
+                KeywordBank(user_id=self.user_id, keyword_id=second_keyword_id),
+            ])
+            db.commit()
+
+        response = self.client.post(f'/api/projects/{first_project_id}/keywords/bulk-delete', json={
+            'keyword_ids': [str(first_keyword_id), str(second_keyword_id)],
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('1 keyword', response.json()['message'])
+        with self.sessions() as db:
+            self.assertIsNone(db.get(Keyword, first_keyword_id))
+            self.assertIsNotNone(db.get(Keyword, second_keyword_id))
+            second_bank = db.scalar(select(KeywordBank).where(KeywordBank.keyword_id == second_keyword_id))
+            self.assertIsNotNone(second_bank)
 
     def test_keyword_list_and_csv_export_batch_source_data(self):
         pid = self.project()

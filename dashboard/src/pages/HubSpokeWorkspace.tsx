@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Clock3, Download, FileText, FileUp, Layers3, Network, Sparkles, Trash2, Wrench } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight, Clock3, Download, FileText, FileUp, Layers3, Loader2, Network, Sparkles, Trash2, Wrench, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -96,6 +96,30 @@ export function HubSpokeWorkspace() {
     queryKey: ['hub-spoke-history'],
     queryFn: () => api.get<HistorySummary[]>('/hub-spoke/history'),
   })
+
+  const deleteHistoryMutation = useMutation({
+    mutationFn: (id: string) => api.delete<null>(`/hub-spoke/history/${id}`),
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<HistorySummary[]>(['hub-spoke-history'], (items = []) =>
+        items.filter((item) => item.id !== id),
+      )
+      if (activeHistoryId === id) {
+        setActiveHistoryId(null)
+      }
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : 'Could not delete the saved architecture')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['hub-spoke-history'] })
+    },
+  })
+
+  const deleteHistory = (item: HistorySummary) => {
+    if (!window.confirm(`Permanently delete “${item.title}”? This cannot be undone.`)) return
+    setError('')
+    deleteHistoryMutation.mutate(item.id)
+  }
 
   const projectImport = useQuery({
     queryKey: ['hub-spoke-project-import', importProjectId, importKeyword],
@@ -245,10 +269,24 @@ export function HubSpokeWorkspace() {
           </div>
           <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {history.map((item) => (
-              <button key={item.id} type="button" disabled={busy !== null} onClick={() => loadHistory(item.id)} className={`rounded-xl border p-3 text-left transition hover:border-cyan-400 hover:bg-cyan-50/50 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20 ${activeHistoryId === item.id ? 'border-cyan-500 bg-cyan-50 dark:border-cyan-700 dark:bg-cyan-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
-                <span className="block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</span>
-                <span className="mt-1 flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{new Date(item.created_at).toLocaleString()} • {item.keyword_count.toLocaleString()} keywords</span>
-              </button>
+              <div key={item.id} className={`relative rounded-xl border transition hover:border-cyan-400 hover:bg-cyan-50/50 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20 ${activeHistoryId === item.id ? 'border-cyan-500 bg-cyan-50 dark:border-cyan-700 dark:bg-cyan-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
+                <button type="button" disabled={busy !== null || deleteHistoryMutation.isPending} onClick={() => loadHistory(item.id)} className="block w-full p-3 pr-11 text-left disabled:opacity-60">
+                  <span className="block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</span>
+                  <span className="mt-1 flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{new Date(item.created_at).toLocaleString()} • {item.keyword_count.toLocaleString()} keywords</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Permanently delete ${item.title}`}
+                  title="Permanently delete plan"
+                  disabled={busy !== null || deleteHistoryMutation.isPending}
+                  onClick={() => deleteHistory(item)}
+                  className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-100 hover:text-rose-700 disabled:opacity-50 dark:hover:bg-rose-950/50 dark:hover:text-rose-300"
+                >
+                  {deleteHistoryMutation.isPending && deleteHistoryMutation.variables === item.id
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <X className="h-4 w-4" />}
+                </button>
+              </div>
             ))}
           </div>
         </Card>

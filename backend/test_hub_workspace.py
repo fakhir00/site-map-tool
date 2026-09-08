@@ -1,7 +1,11 @@
 import unittest
-from unittest.mock import patch
+import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
-from app.hub_spoke.router import _basic_clean, _clean_with_context
+from fastapi import HTTPException
+
+from app.hub_spoke.router import _basic_clean, _clean_with_context, delete_hub_spoke_history
 from nlp.openrouter import _validate_hub_and_spoke
 
 
@@ -36,6 +40,30 @@ class HubWorkspaceTests(unittest.TestCase):
                 "Circuit diagram software and electronics education for engineering students.",
             ))
         self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
+
+
+class HubWorkspaceDeleteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_history_delete_is_scoped_to_the_current_user(self):
+        db = AsyncMock()
+        db.execute.return_value = SimpleNamespace(rowcount=1)
+        history_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+
+        await delete_hub_spoke_history(history_id, SimpleNamespace(id=user_id), db)
+
+        statement = db.execute.await_args.args[0]
+        sql = str(statement)
+        self.assertIn("hub_spoke_history.id", sql)
+        self.assertIn("hub_spoke_history.user_id", sql)
+
+    async def test_missing_or_unowned_history_returns_not_found(self):
+        db = AsyncMock()
+        db.execute.return_value = SimpleNamespace(rowcount=0)
+
+        with self.assertRaises(HTTPException) as raised:
+            await delete_hub_spoke_history(uuid.uuid4(), SimpleNamespace(id=uuid.uuid4()), db)
+
+        self.assertEqual(raised.exception.status_code, 404)
 
 
 if __name__ == "__main__":

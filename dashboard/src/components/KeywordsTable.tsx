@@ -117,11 +117,13 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
 
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const pageKeywordIds = new Set((data?.items || []).map((keyword) => keyword.id))
+  const selectedPageIds = Array.from(selectedIds).filter((id) => pageKeywordIds.has(id))
 
   const bulkSaveMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => 
       api.post<{ message: string }>(`/projects/${projectId}/keywords/bulk-save`, {
-        keyword_ids: Array.from(selectedIds), 
+        keyword_ids: selectedPageIds,
         notes: tag 
       }),
     onSuccess: (data) => {
@@ -135,7 +137,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   const bulkDeleteMutation = useMutation({
     mutationFn: () => 
       api.post<{ message: string }>(`/projects/${projectId}/keywords/bulk-delete`, {
-        keyword_ids: Array.from(selectedIds)
+        keyword_ids: selectedPageIds
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['keywords', projectId] })
@@ -198,6 +200,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               onChange={(event) => {
                 setSearch(event.target.value)
                 setPage(1)
+                setSelectedIds(new Set())
               }}
               placeholder="Search gaps"
               value={search}
@@ -209,6 +212,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
             onChange={(event) => {
               setType(event.target.value)
               setPage(1)
+              setSelectedIds(new Set())
             }}
             value={type}
           >
@@ -228,20 +232,21 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <Button
                 variant="secondary"
                 size="sm"
+                disabled={keywords.length === 0}
                 onClick={() => {
-                  if (selectedIds.size === keywords.length) {
+                  if (selectedPageIds.length === keywords.length) {
                     setSelectedIds(new Set())
                   } else {
                     setSelectedIds(new Set(keywords.map(k => k.id)))
                   }
                 }}
               >
-                {selectedIds.size === keywords.length ? 'Deselect All' : 'Select All'}
+                {keywords.length > 0 && selectedPageIds.length === keywords.length ? 'Deselect All' : 'Select All'}
               </Button>
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={selectedIds.size === 0 || bulkSaveMutation.isPending}
+                disabled={selectedPageIds.length === 0 || bulkSaveMutation.isPending}
                 onClick={() => bulkSaveMutation.mutate({ tag: '#tool' })}
               >
                 Tool Page
@@ -249,7 +254,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={selectedIds.size === 0 || bulkSaveMutation.isPending}
+                disabled={selectedPageIds.length === 0 || bulkSaveMutation.isPending}
                 onClick={() => bulkSaveMutation.mutate({ tag: '#blog' })}
               >
                 Blog
@@ -257,7 +262,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={selectedIds.size === 0}
+                disabled={selectedPageIds.length === 0}
                 onClick={() => {
                   const selectedKeywords = keywords.filter(k => selectedIds.has(k.id)).map(k => k.phrase).join('\n')
                   navigator.clipboard.writeText(selectedKeywords)
@@ -269,7 +274,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <Button
                 variant="danger"
                 size="sm"
-                disabled={selectedIds.size === 0 || bulkDeleteMutation.isPending}
+                disabled={selectedPageIds.length === 0 || bulkDeleteMutation.isPending}
                 onClick={() => {
                   if (confirm('Are you sure you want to permanently delete these keywords?')) {
                     bulkDeleteMutation.mutate()
@@ -283,7 +288,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               </Button>
             </>
           ) : (
-            <Button variant="secondary" size="sm" onClick={() => setIsSelectionMode(true)}>
+            <Button variant="secondary" size="sm" disabled={keywords.length === 0} onClick={() => setIsSelectionMode(true)}>
               Select
             </Button>
           )}
@@ -447,11 +452,11 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                 Page {page} of {data.pages} · {data.total.toLocaleString()} keywords
               </p>
               <div className="flex gap-2">
-                <Button disabled={page === 1} onClick={() => setPage((current) => current - 1)} size="sm" variant="secondary">
+                <Button disabled={page === 1} onClick={() => { setSelectedIds(new Set()); setPage((current) => current - 1) }} size="sm" variant="secondary">
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
-                <Button disabled={page === data.pages} onClick={() => setPage((current) => current + 1)} size="sm" variant="secondary">
+                <Button disabled={page === data.pages} onClick={() => { setSelectedIds(new Set()); setPage((current) => current + 1) }} size="sm" variant="secondary">
                   Next
                   <ChevronRight className="h-4 w-4" />
                 </Button>

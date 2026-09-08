@@ -15,6 +15,8 @@ export type SavedKeywordsTableProps = {
 export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }: SavedKeywordsTableProps) {
   const queryClient = useQueryClient()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const availableIds = new Set(keywords.map((keyword) => keyword.id))
+  const selectedVisibleIds = Array.from(selectedIds).filter((id) => availableIds.has(id))
 
   const bulkActionMutation = useMutation({
     mutationFn: (data: { keyword_bank_ids: string[]; action: string }) =>
@@ -26,7 +28,7 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
   })
 
   const toggleAll = () => {
-    if (selectedIds.size === keywords.length) {
+    if (selectedVisibleIds.length === keywords.length) {
       setSelectedIds(new Set())
     } else {
       setSelectedIds(new Set(keywords.map(kw => kw.id)))
@@ -41,9 +43,10 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
   }
 
   const handleBulkAction = (action: 'mark_done' | 'mark_not_done' | 'delete') => {
-    if (selectedIds.size === 0) return
+    if (selectedVisibleIds.length === 0) return
+    if (action === 'delete' && !window.confirm(`Permanently delete ${selectedVisibleIds.length} saved keyword${selectedVisibleIds.length === 1 ? '' : 's'}?`)) return
     bulkActionMutation.mutate({
-      keyword_bank_ids: Array.from(selectedIds),
+      keyword_bank_ids: selectedVisibleIds,
       action,
     })
   }
@@ -54,13 +57,13 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
         <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Saved Keywords</h3>
         
         <div className="flex items-center gap-2">
-          {selectedIds.size > 0 && (
+          {selectedVisibleIds.length > 0 && (
             <>
-              <span className="text-sm text-slate-500 dark:text-slate-400 mr-2">{selectedIds.size} selected</span>
+              <span className="text-sm text-slate-500 dark:text-slate-400 mr-2">{selectedVisibleIds.length} selected</span>
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={selectedIds.size === 0}
+                disabled={selectedVisibleIds.length === 0}
                 onClick={() => {
                   const selectedKeywordsText = keywords.filter(k => selectedIds.has(k.id)).map(k => k.phrase).join('\n')
                   navigator.clipboard.writeText(selectedKeywordsText)
@@ -110,7 +113,7 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-cyan-600 focus:ring-cyan-600 cursor-pointer"
-                  checked={keywords.length > 0 && selectedIds.size === keywords.length}
+                  checked={keywords.length > 0 && selectedVisibleIds.length === keywords.length}
                   onChange={toggleAll}
                   disabled={keywords.length === 0}
                 />
