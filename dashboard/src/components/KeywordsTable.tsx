@@ -288,6 +288,16 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
             </Button>
           )}
 
+          <Button
+            onClick={() => navigate(`/hub-spoke?project_id=${encodeURIComponent(projectId)}`)}
+            size="sm"
+            variant="secondary"
+            className="text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-950/30 dark:hover:bg-cyan-950/50 dark:border-cyan-800/50"
+          >
+            <Network className="h-4 w-4" />
+            Hub Spoke
+          </Button>
+
           <Button 
             disabled={topPicksMutation.isPending} 
             onClick={() => topPicksMutation.mutate()} 
@@ -321,14 +331,13 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                   <th className="px-5 py-3 font-semibold">Sources</th>
                   <th className="px-5 py-3 text-right font-semibold">Write</th>
                   <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
-                  <th className="px-5 py-3 text-right font-semibold">Hub Spoke</th>
                   <th className="px-5 py-3 text-right font-semibold">Save</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                 {keywords.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={9}>
+                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={8}>
                       No keyword gaps found yet.
                     </td>
                   </tr>
@@ -409,17 +418,6 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
                         >
                           <FilePenLine className="h-4 w-4" />
                           {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
-                        </Button>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <Button
-                          onClick={() => navigate(`/hub-spoke?project_id=${encodeURIComponent(projectId)}&keyword=${encodeURIComponent(keyword.phrase)}`)}
-                          size="sm"
-                          variant="secondary"
-                          title="Build a Hub Spoke plan from this scan"
-                        >
-                          <Network className="h-4 w-4" />
-                          Hub Spoke
                         </Button>
                       </td>
                       <td className="px-5 py-4 text-right">
