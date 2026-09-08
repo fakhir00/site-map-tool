@@ -317,5 +317,31 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(imported.json()['context'], 'Electronics tool')
         self.assertEqual(imported.json()['project_id'], pid)
 
+    def test_keyword_list_and_csv_export_batch_source_data(self):
+        pid = self.project()
+        with self.sessions() as db:
+            project_id = uuid.UUID(pid)
+            keyword = Keyword(project_id=project_id, phrase='circuit design software', frequency=3)
+            source = Url(
+                project_id=project_id,
+                url='https://competitor.example/circuit-design',
+                source_type='competitor',
+                source_domain='https://competitor.example',
+            )
+            db.add_all([keyword, source])
+            db.flush()
+            db.add(KeywordUrl(keyword_id=keyword.id, url_id=source.id))
+            db.commit()
+
+        listed = self.client.get(f'/api/projects/{pid}/keywords')
+        exported = self.client.get(f'/api/projects/{pid}/keywords/export')
+
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(listed.json()['items'][0]['source_urls'], ['https://competitor.example/circuit-design'])
+        self.assertEqual(exported.status_code, 200, exported.text)
+        self.assertTrue(exported.headers['content-type'].startswith('text/csv'))
+        self.assertIn('circuit design software', exported.text)
+        self.assertIn('https://competitor.example/circuit-design', exported.text)
+
 if __name__ == '__main__':
     unittest.main()

@@ -3,7 +3,7 @@ import io
 from typing import Optional
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 import csv
@@ -31,8 +31,7 @@ async def list_keywords(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    project = await _assert_owns_project(project_id, current_user.id, db)
-    topic_terms = seed_keyword_terms(project.target_keywords)
+    await _assert_owns_project(project_id, current_user.id, db)
 
     q = select(Keyword).where(Keyword.project_id == project_id)
     if keyword_type:
@@ -45,7 +44,7 @@ async def list_keywords(
     result = await db.execute(q)
     filtered_keywords = [
         keyword for keyword in result.scalars().all()
-        if _is_displayable_keyword(keyword, topic_terms)
+        if _is_displayable_keyword(keyword)
     ]
 
     if sort_by == "frequency":
@@ -59,9 +58,10 @@ async def list_keywords(
     start = (page - 1) * page_size
     keywords = filtered_keywords[start:start + page_size]
 
+    sources_by_keyword = await _keyword_sources_map(db, [kw.id for kw in keywords], limit_per_keyword=10)
     items = []
     for kw in keywords:
-        sources = await _keyword_sources(db, kw.id, limit=10)
+        sources = sources_by_keyword.get(kw.id, [])
         kw_out = KeywordOut.model_validate(kw)
         kw_out.source_urls = [source.url for source in sources]
         kw_out.sources = sources
@@ -171,32 +171,39 @@ async def generate_keywords(
         db.add(ai_url)
         await db.flush()
         
-    added_count = 0
+    candidate_phrases = [item["phrase"] for item in ai_keywords]
+    keyword_result = await db.execute(select(Keyword).where(
+        Keyword.project_id == project.id,
+        Keyword.phrase.in_(candidate_phrases),
+    ))
+    keywords_by_phrase = {keyword.phrase: keyword for keyword in keyword_result.scalars().all()}
+    new_keywords = []
     for kw_data in ai_keywords:
         phrase = kw_data["phrase"]
-        kw_type = kw_data["type"]
-        
-        q_kw = select(Keyword).where(Keyword.project_id == project.id, Keyword.phrase == phrase)
-        result = await db.execute(q_kw)
-        keyword = result.scalar_one_or_none()
-        
-        if not keyword:
+        if phrase not in keywords_by_phrase:
             keyword = Keyword(
                 project_id=project.id,
                 phrase=phrase,
-                keyword_type=kw_type,
+                keyword_type=kw_data["type"],
                 frequency=1,
             )
             db.add(keyword)
-            await db.flush()
-            added_count += 1
-            
-        # Link keyword to AI URL
-        q_link = select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)
-        result = await db.execute(q_link)
-        link = result.scalar_one_or_none()
-        if not link:
-            db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
+            keywords_by_phrase[phrase] = keyword
+            new_keywords.append(keyword)
+    if new_keywords:
+        await db.flush()
+
+    candidate_ids = [keywords_by_phrase[phrase].id for phrase in candidate_phrases]
+    linked_result = await db.execute(select(KeywordUrl.keyword_id).where(
+        KeywordUrl.url_id == ai_url.id,
+        KeywordUrl.keyword_id.in_(candidate_ids),
+    ))
+    linked_ids = set(linked_result.scalars().all())
+    db.add_all([
+        KeywordUrl(keyword_id=keyword_id, url_id=ai_url.id)
+        for keyword_id in candidate_ids if keyword_id not in linked_ids
+    ])
+    added_count = len(new_keywords)
             
     project.total_keywords = (
         await db.execute(select(func.count(Keyword.id)).where(Keyword.project_id == project.id))
@@ -261,26 +268,26 @@ async def generate_top_picks(
         db.add(ai_url)
         await db.flush()
         
-    updated_count = 0
-    for kw_data in ai_keywords:
-        phrase = kw_data["phrase"]
-        
-        # We know they must exist because the AI picked them from existing_phrases,
-        # but let's be safe.
-        q_kw = select(Keyword).where(Keyword.project_id == project.id, Keyword.phrase == phrase)
-        result = await db.execute(q_kw)
-        keyword = result.scalar_one_or_none()
-        
-        if keyword:
-            keyword.keyword_type = "top-pick"
-            updated_count += 1
-            
-            # Ensure it's linked to the Top Picks URL so it shows up in the UI filter
-            q_link = select(KeywordUrl).where(KeywordUrl.keyword_id == keyword.id, KeywordUrl.url_id == ai_url.id)
-            res_link = await db.execute(q_link)
-            link = res_link.scalar_one_or_none()
-            if not link:
-                db.add(KeywordUrl(keyword_id=keyword.id, url_id=ai_url.id))
+    selected_phrases = [item["phrase"] for item in ai_keywords]
+    selected_result = await db.execute(select(Keyword).where(
+        Keyword.project_id == project.id,
+        Keyword.phrase.in_(selected_phrases),
+    ))
+    selected_keywords = list(selected_result.scalars().all())
+    for keyword in selected_keywords:
+        keyword.keyword_type = "top-pick"
+
+    selected_ids = [keyword.id for keyword in selected_keywords]
+    linked_result = await db.execute(select(KeywordUrl.keyword_id).where(
+        KeywordUrl.url_id == ai_url.id,
+        KeywordUrl.keyword_id.in_(selected_ids),
+    ))
+    linked_ids = set(linked_result.scalars().all())
+    db.add_all([
+        KeywordUrl(keyword_id=keyword_id, url_id=ai_url.id)
+        for keyword_id in selected_ids if keyword_id not in linked_ids
+    ])
+    updated_count = len(selected_keywords)
             
     await db.commit()
     return {"message": f"Identified {updated_count} existing keywords as top picks", "generated": updated_count}
@@ -695,8 +702,7 @@ async def export_keywords(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    project = await _assert_owns_project(project_id, current_user.id, db)
-    topic_terms = seed_keyword_terms(project.target_keywords)
+    await _assert_owns_project(project_id, current_user.id, db)
 
     result = await db.execute(
         select(Keyword)
@@ -705,7 +711,7 @@ async def export_keywords(
     )
     keywords = [
         keyword for keyword in result.scalars().all()
-        if _is_displayable_keyword(keyword, topic_terms)
+        if _is_displayable_keyword(keyword)
     ]
 
     output = io.StringIO()
@@ -719,8 +725,9 @@ async def export_keywords(
         "Search Volume",
         "Difficulty",
     ])
+    sources_by_keyword = await _keyword_sources_map(db, [kw.id for kw in keywords])
     for kw in keywords:
-        sources = await _keyword_sources(db, kw.id)
+        sources = sources_by_keyword.get(kw.id, [])
         source_domains = sorted(dict.fromkeys(_source_label(source) for source in sources))
         writer.writerow([
             kw.phrase,
@@ -733,8 +740,11 @@ async def export_keywords(
         ])
 
     output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
+    # A regular response releases the DB session immediately. The former sync
+    # StreamingResponse kept the connection open while Render sent the file and
+    # amplified intermittent hosted-Postgres SSL disconnects.
+    return Response(
+        content="\ufeff" + output.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=keywords-{project_id}.csv"},
     )
@@ -954,34 +964,37 @@ async def bulk_action_keyword_bank(
     return {"message": f"Action {body.action} completed successfully"}
 
 
-def _is_displayable_keyword(keyword: Keyword, topic_terms: set[str]) -> bool:
+def _is_displayable_keyword(keyword: Keyword) -> bool:
     if keyword.keyword_type == "top-pick":
         return True
     return is_publishable_keyword(keyword.phrase, min_words=2)
 
 
-async def _keyword_sources(
+async def _keyword_sources_map(
     db: AsyncSession,
-    keyword_id: uuid.UUID,
-    limit: int | None = None,
-) -> list[KeywordSourceOut]:
-    q = (
-        select(Url.url, Url.source_type, Url.source_domain)
-        .join(KeywordUrl, KeywordUrl.url_id == Url.id)
-        .where(KeywordUrl.keyword_id == keyword_id)
-        .order_by(Url.source_domain.asc().nullslast(), Url.url.asc())
+    keyword_ids: list[uuid.UUID],
+    limit_per_keyword: int | None = None,
+) -> dict[uuid.UUID, list[KeywordSourceOut]]:
+    """Fetch sources for a page or export in one query instead of one per keyword."""
+    if not keyword_ids:
+        return {}
+    result = await db.execute(
+        select(KeywordUrl.keyword_id, Url.url, Url.source_type, Url.source_domain)
+        .join(Url, Url.id == KeywordUrl.url_id)
+        .where(KeywordUrl.keyword_id.in_(keyword_ids))
+        .order_by(KeywordUrl.keyword_id, Url.source_domain.asc().nullslast(), Url.url.asc())
     )
-    if limit:
-        q = q.limit(limit)
-    result = await db.execute(q)
-    return [
-        KeywordSourceOut(
+    grouped: dict[uuid.UUID, list[KeywordSourceOut]] = {keyword_id: [] for keyword_id in keyword_ids}
+    for keyword_id, url, source_type, source_domain in result.all():
+        sources = grouped.setdefault(keyword_id, [])
+        if limit_per_keyword is not None and len(sources) >= limit_per_keyword:
+            continue
+        sources.append(KeywordSourceOut(
             url=url,
             source_type=source_type,
             source_domain=source_domain or _source_origin(url),
-        )
-        for url, source_type, source_domain in result.all()
-    ]
+        ))
+    return grouped
 
 
 def _source_label(source: KeywordSourceOut) -> str:

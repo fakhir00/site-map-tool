@@ -7,7 +7,7 @@ const isLocalHost =
 const DEFAULT_API_URL =
   !isBrowser || isLocalHost ? 'http://localhost:8000/api' : '/api'
 const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, '')
-const REQUEST_TIMEOUT_MS = 20_000
+const REQUEST_TIMEOUT_MS = 45_000
 const ARTICLE_REQUEST_TIMEOUT_MS = 300_000
 const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
 export const DEMO_BACKEND_ENABLED =
@@ -383,8 +383,15 @@ export const api = {
     throw new ApiError(apiConnectionMessage('html'), response.status)
   },
 
-  get<T>(endpoint: string, options: ApiRequestInit = {}): Promise<T> {
-    return api.fetch<T>(endpoint, { ...options, method: 'GET' })
+  async get<T>(endpoint: string, options: ApiRequestInit = {}): Promise<T> {
+    try {
+      return await api.fetch<T>(endpoint, { ...options, method: 'GET' })
+    } catch (error) {
+      const retryable = error instanceof ApiError && (error.status === 0 || [502, 503, 504].includes(error.status))
+      if (!retryable || options.signal?.aborted) throw error
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      return api.fetch<T>(endpoint, { ...options, method: 'GET' })
+    }
   },
 
   post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}): Promise<T> {

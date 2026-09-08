@@ -74,7 +74,7 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
   )
 }
 
-export function KeywordsTable({ projectId }: { projectId: string }) {
+export function KeywordsTable({ projectId, isActive = false }: { projectId: string; isActive?: boolean }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
@@ -97,7 +97,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
       return api.get<KeywordListResponse>(`/projects/${projectId}/keywords?${params}`)
     },
     enabled: Boolean(projectId),
-    refetchInterval: 7000,
+    refetchInterval: isActive ? 7000 : false,
   })
 
   const saveMutation = useMutation({
@@ -167,7 +167,7 @@ export function KeywordsTable({ projectId }: { projectId: string }) {
   const handleExport = async () => {
     setExportError('')
     try {
-      const blob = await api.get<Blob>(`/projects/${projectId}/keywords/export`)
+      const blob = await api.get<Blob>(`/projects/${projectId}/keywords/export`, { timeoutMs: 60_000 })
       const url = window.URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url

@@ -1,11 +1,15 @@
 # Python virtual environments
 venv/
 .venv/
+.venv*/
 env/
 *.egg-info/
 __pycache__/
 *.pyc
 *.pyo
+*.db
+*.sqlite
+*.sqlite3
 
 # Node dependencies
 node_modules/
@@ -33,6 +37,11 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local diagnostics and generated exports
+login_debug.txt
+prompt_output.txt
+hub-spoke-map-*.txt
 
 # Editor / IDE
 .vscode/*

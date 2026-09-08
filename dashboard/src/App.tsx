@@ -1,19 +1,22 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { DashboardLayout } from './components/DashboardLayout'
-import { Login } from './pages/Login'
-import { Register } from './pages/Register'
-import { ProjectsList } from './pages/ProjectsList'
-import { ProjectDetail } from './pages/ProjectDetail'
-import { Settings } from './pages/Settings'
-import WebsitePromptGenerator from './pages/WebsitePromptGenerator'
-import GapPageGenerator from './pages/GapPageGenerator'
-import ScanInterface from './pages/ScanInterface'
-import WriteBlog from './pages/WriteBlog'
-import WriteBlogArticle from './pages/WriteBlogArticle'
-import SavedKeywords from './pages/SavedKeywords'
-import { GoldHunter } from './pages/GoldHunter'
-import { HubSpokeWorkspace } from './pages/HubSpokeWorkspace'
 import { auth } from './lib/api'
+import { ThemeProvider } from './components/ThemeProvider'
+
+const Login = lazy(() => import('./pages/Login').then((module) => ({ default: module.Login })))
+const Register = lazy(() => import('./pages/Register').then((module) => ({ default: module.Register })))
+const ProjectsList = lazy(() => import('./pages/ProjectsList').then((module) => ({ default: module.ProjectsList })))
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail').then((module) => ({ default: module.ProjectDetail })))
+const Settings = lazy(() => import('./pages/Settings').then((module) => ({ default: module.Settings })))
+const WebsitePromptGenerator = lazy(() => import('./pages/WebsitePromptGenerator'))
+const GapPageGenerator = lazy(() => import('./pages/GapPageGenerator'))
+const ScanInterface = lazy(() => import('./pages/ScanInterface'))
+const WriteBlog = lazy(() => import('./pages/WriteBlog'))
+const WriteBlogArticle = lazy(() => import('./pages/WriteBlogArticle'))
+const SavedKeywords = lazy(() => import('./pages/SavedKeywords'))
+const GoldHunter = lazy(() => import('./pages/GoldHunter').then((module) => ({ default: module.GoldHunter })))
+const HubSpokeWorkspace = lazy(() => import('./pages/HubSpokeWorkspace').then((module) => ({ default: module.HubSpokeWorkspace })))
 
 function PrivateRoute() {
   const location = useLocation()
@@ -33,13 +36,12 @@ function PublicRoute() {
   return <Outlet />
 }
 
-import { ThemeProvider } from './components/ThemeProvider'
-
 function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="sitemap-theme">
       <BrowserRouter>
-        <Routes>
+        <Suspense fallback={<div className="mx-auto mt-24 h-32 max-w-5xl animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />}>
+          <Routes>
           <Route element={<PublicRoute />}>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -62,7 +64,8 @@ function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </ThemeProvider>
   )

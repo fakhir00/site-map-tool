@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer, X } from 'lucide-react'
@@ -8,9 +8,10 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
 import { KeywordsTable } from '../components/KeywordsTable'
-import { CompetitorGraph } from '../components/CompetitorGraph'
 import { SemanticMetrics } from '../components/SemanticMetrics'
 import { LiveSignals } from '../components/LiveSignals'
+
+const CompetitorGraph = lazy(() => import('../components/CompetitorGraph').then((module) => ({ default: module.CompetitorGraph })))
 
 function statusBadge(status: Project['status'] | string) {
   if (status === 'complete') return <Badge variant="teal">Complete</Badge>
@@ -62,28 +63,29 @@ export function ProjectDetail() {
     queryKey: ['project', projectId],
     queryFn: () => api.get<Project>(`/projects/${projectId}`),
     enabled: Boolean(projectId),
-    refetchInterval: 5000,
+    refetchInterval: (query) => ['pending', 'running'].includes(query.state.data?.status || '') ? 5000 : false,
   })
+  const projectIsActive = project?.status === 'pending' || project?.status === 'running'
 
   const { data: stats } = useQuery({
     queryKey: ['project-stats', projectId],
     queryFn: () => api.get<ProjectStats>(`/projects/${projectId}/stats`),
     enabled: Boolean(projectId),
-    refetchInterval: 5000,
+    refetchInterval: projectIsActive ? 5000 : false,
   })
 
   const { data: scanStatus } = useQuery({
     queryKey: ['scan-status', projectId],
     queryFn: () => api.get<ScanProgress>(`/projects/${projectId}/scan/status`),
     enabled: Boolean(projectId),
-    refetchInterval: 3000,
+    refetchInterval: projectIsActive ? 3000 : false,
   })
 
   const { data: jobs = [] } = useQuery({
     queryKey: ['scan-jobs', projectId],
     queryFn: () => api.get<ScanJob[]>(`/projects/${projectId}/scan/jobs`),
     enabled: Boolean(projectId),
-    refetchInterval: 5000,
+    refetchInterval: projectIsActive ? 5000 : false,
   })
 
 
@@ -92,7 +94,7 @@ export function ProjectDetail() {
     queryKey: ['project-sources', projectId],
     queryFn: () => api.get<ProjectSource[]>(`/projects/${projectId}/sources`),
     enabled: Boolean(projectId),
-    refetchInterval: 7000,
+    refetchInterval: projectIsActive ? 7000 : false,
   })
 
   const startScanMutation = useMutation({
@@ -260,7 +262,9 @@ export function ProjectDetail() {
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="flex flex-col gap-4">
-          <CompetitorGraph sources={sources} isActive={isRunning} />
+          <Suspense fallback={<div className="h-80 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />}>
+            <CompetitorGraph sources={sources} isActive={isRunning} />
+          </Suspense>
           <SemanticMetrics isActive={isRunning} />
         </div>
 
@@ -334,7 +338,7 @@ export function ProjectDetail() {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">Keyword gaps</h3>
         </div>
-        <KeywordsTable projectId={projectId} />
+        <KeywordsTable projectId={projectId} isActive={projectIsActive} />
       </section>
 
       <section>

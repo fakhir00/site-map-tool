@@ -236,18 +236,24 @@ async def list_hub_spoke_history(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(HubSpokeHistory)
+        select(
+            HubSpokeHistory.id,
+            HubSpokeHistory.project_id,
+            HubSpokeHistory.title,
+            HubSpokeHistory.cleaned_keywords,
+            HubSpokeHistory.created_at,
+        )
         .where(HubSpokeHistory.user_id == current_user.id)
         .order_by(desc(HubSpokeHistory.created_at))
         .limit(50)
     )
     return [{
-        "id": record.id,
-        "project_id": record.project_id,
-        "title": record.title,
-        "keyword_count": len(record.cleaned_keywords or []),
-        "created_at": record.created_at,
-    } for record in result.scalars().all()]
+        "id": history_id,
+        "project_id": project_id,
+        "title": title,
+        "keyword_count": len(cleaned_keywords or []),
+        "created_at": created_at,
+    } for history_id, project_id, title, cleaned_keywords, created_at in result.all()]
 
 
 @router.get("/history/{history_id}")

@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+*.log
+.env
+.DS_Store
+test*.py
+diag.py
+check_db.py
+prompt_output.txt
+login_debug.txt

@@ -13,7 +13,7 @@ export default function WriteBlogArticle() {
     queryKey: ['project-articles', projectId],
     queryFn: () => api.get<ArticleListResponse>(`/projects/${projectId}/articles`),
     enabled: Boolean(projectId),
-    refetchInterval: 10000,
+    refetchInterval: (query) => query.state.data?.items.some((article) => article.status === 'generating') ? 4000 : false,
   })
 
   if (!projectId) {

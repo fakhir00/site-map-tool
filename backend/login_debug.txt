@@ -1,2 +1,0 @@
-Login attempt: email='fakhirbaig27@gmail.com', password='password123'
-Success!
