@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
-from app.hub_spoke.router import _basic_clean, _clean_with_context, delete_hub_spoke_history
+from app.hub_spoke.router import (
+    _basic_clean,
+    _clean_with_context,
+    _mechanical_relevance_filter,
+    delete_hub_spoke_history,
+)
 from nlp.openrouter import _validate_hub_and_spoke
 
 
@@ -38,6 +43,37 @@ class HubWorkspaceTests(unittest.TestCase):
             cleaned = asyncio.run(_clean_with_context(
                 ["circuit diagram symbols", "electronic circuit tutorial", "car insurance quotes", "celebrity news"],
                 "Circuit diagram software and electronics education for engineering students.",
+            ))
+        self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
+
+    def test_mechanical_filter_rejects_an_unrelated_keyword_group(self):
+        cleaned = _mechanical_relevance_filter(
+            [
+                "circuit diagram maker",
+                "electronic circuit symbols",
+                "circuit drawing software",
+                "car insurance quotes",
+                "cheap vehicle insurance",
+            ],
+            "A circuit design tool for electronics students and engineers.",
+        )
+        self.assertEqual(cleaned, [
+            "circuit diagram maker",
+            "electronic circuit symbols",
+            "circuit drawing software",
+        ])
+
+    def test_mechanical_filter_runs_after_ai_selection(self):
+        import asyncio
+
+        candidates = ["circuit diagram symbols", "electronic circuit tutorial", "celebrity news today"]
+        with (
+            patch("app.hub_spoke.router.is_ai_configured", return_value=True),
+            patch("app.hub_spoke.router._achat_json", new=AsyncMock(return_value={"keywords": candidates})),
+        ):
+            cleaned = asyncio.run(_clean_with_context(
+                candidates,
+                "Circuit diagram software and electronics education.",
             ))
         self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
 

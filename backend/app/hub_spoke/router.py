@@ -1,6 +1,8 @@
 import json
+import math
 import re
 import uuid
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
@@ -88,12 +90,54 @@ def _fallback_context_filter(keywords: list[str], context: str) -> list[str]:
     return result
 
 
+def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]:
+    """Reject isolated off-topic phrases without relying on the AI provider."""
+    from nlp.keywords import keyword_terms
+
+    if len(keywords) < 2:
+        return keywords
+    term_sets = {phrase: keyword_terms(phrase, min_len=2) for phrase in keywords}
+    document_frequency = Counter(term for terms in term_sets.values() for term in terms)
+    threshold = max(2, math.ceil(len(keywords) * 0.08))
+    dominant_terms = {term for term, count in document_frequency.items() if count >= threshold}
+    context_terms = keyword_terms(context, min_len=2) if context.strip() else set()
+    positions = {phrase: index for index, phrase in enumerate(keywords)}
+
+    def anchor_score(phrase: str) -> tuple[int, int]:
+        terms = term_sets[phrase]
+        return (
+            len(terms & context_terms),
+            sum(document_frequency[term] for term in terms) * len(keywords) - positions[phrase],
+        )
+
+    anchor = max(keywords, key=anchor_score)
+    anchor_terms = term_sets[anchor]
+    if not anchor_terms and not context_terms and not dominant_terms:
+        return keywords
+
+    relevant: list[str] = []
+    for phrase in keywords:
+        terms = term_sets[phrase]
+        anchor_overlap = terms & anchor_terms
+        context_overlap = terms & context_terms
+        dominant_overlap = terms & dominant_terms
+        if (
+            phrase == anchor
+            or anchor_overlap
+            or len(context_overlap) >= 2
+            or (context_overlap and dominant_overlap)
+            or (not context_terms and dominant_overlap)
+        ):
+            relevant.append(phrase)
+    return relevant
+
+
 async def _clean_with_context(keywords: list[str], context: str) -> list[str]:
     cleaned = _basic_clean(keywords)
     if not cleaned:
         return cleaned
     if not is_ai_configured():
-        return _fallback_context_filter(cleaned, context) if context.strip() else cleaned
+        return _mechanical_relevance_filter(cleaned, context)
 
     accepted: list[str] = []
     for start in range(0, len(cleaned), 100):
@@ -134,7 +178,7 @@ Return JSON: {{"keywords": ["exact candidate", "exact candidate"]}}
             phrase = clean_phrase(str(item))
             if phrase in allowed:
                 accepted.append(phrase)
-    return list(dict.fromkeys(accepted))
+    return _mechanical_relevance_filter(list(dict.fromkeys(accepted)), context)
 
 
 @router.post("/clean")
@@ -165,6 +209,7 @@ async def build_uploaded_hub_spoke(
     keywords = await _clean_with_context(body.keywords, body.context)
     if not keywords:
         raise HTTPException(status_code=422, detail="Upload a keyword list with at least one usable keyword.")
+    rejected_keywords = [phrase for phrase in _basic_clean(body.keywords) if phrase not in set(keywords)]
     typed = [{"phrase": phrase, "type": "long-tail"} for phrase in keywords]
     mapping = await cluster_hub_and_spoke(
         typed,
@@ -173,6 +218,11 @@ async def build_uploaded_hub_spoke(
     )
     if not mapping:
         raise HTTPException(status_code=502, detail="Could not build a constraint-safe hub-spoke map from this list.")
+    if isinstance(mapping, dict) and rejected_keywords:
+        mapping["filtered_irrelevant_keywords"] = list(dict.fromkeys([
+            *(mapping.get("filtered_irrelevant_keywords") or []),
+            *rejected_keywords,
+        ]))
     master = mapping.get("master_hub") if isinstance(mapping, dict) else None
     title = str((master or {}).get("article_title") or keywords[0].title())[:255]
     history = HubSpokeHistory(

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from nlp.openrouter import (
     _deepseek_plan_to_hub_schema,
+    _sanitize_detailed_hub_plan,
     _validate_hub_and_spoke,
     build_hub_spoke_fallback,
     cluster_hub_and_spoke,
@@ -13,7 +14,7 @@ from workers.pipeline import _seed_anchored_keyword_expansions
 
 
 def spoke(keyword):
-    return f"Useful title (Target Keyword: {keyword})"
+    return f"{keyword.title()} (Target Keyword: {keyword})"
 
 
 class HubConstraintTests(TestCase):
@@ -46,6 +47,56 @@ class HubConstraintTests(TestCase):
         payload = self.valid_payload()
         payload["hubs"][0]["layers"]["Strategic articles"][1] = spoke("kw 1")
         self.assertIn("Duplicate", _validate_hub_and_spoke(payload, 10, "circuit diagram"))
+
+    def test_validator_rejects_word_order_cannibalization(self):
+        payload = self.valid_payload()
+        payload["hubs"][0]["layers"]["Strategic articles"][0] = spoke("iron condor vs iron butterfly")
+        payload["hubs"][0]["layers"]["Strategic articles"][1] = spoke("iron butterfly vs iron condor")
+        allowed = {
+            "circuit diagram", "iron condor vs iron butterfly", "iron butterfly vs iron condor",
+            *(f"kw {index}" for index in range(3, 11)),
+        }
+        self.assertIn("Duplicate keyword intent", _validate_hub_and_spoke(
+            payload, 10, "circuit diagram", allowed
+        ))
+
+    def test_cleanup_removes_irrelevant_and_duplicate_spokes(self):
+        keywords = [
+            {"phrase": "circuit diagram", "type": "primary"},
+            {"phrase": "circuit symbols guide", "type": "long-tail"},
+            {"phrase": "guide circuit symbols", "type": "long-tail"},
+            {"phrase": "circuit troubleshooting", "type": "long-tail"},
+        ]
+        raw = {
+            "master_hub": {"article_title": "Circuit Diagram", "target_keyword": "circuit diagram"},
+            "spokes": [
+                {
+                    "article_title": "Circuit Symbols Guide",
+                    "target_keyword": "circuit symbols guide",
+                    "h2_sections": [
+                        {"h2_heading": "Circuit troubleshooting", "targeted_keywords_placed_here": ["circuit troubleshooting", "celebrity news"]},
+                        {"h2_heading": "Car insurance rates", "targeted_keywords_placed_here": []},
+                    ],
+                    "faq_schema_questions": [{"question": "Celebrity news today?", "targeted_keywords_placed_here": []}],
+                    "entity_terms": ["circuit troubleshooting", "celebrity news"],
+                },
+                {"article_title": "Reordered Symbols", "target_keyword": "guide circuit symbols"},
+                {"article_title": "Circuit Symbols Guide", "target_keyword": "circuit troubleshooting"},
+                {"article_title": "Car Insurance Quotes", "target_keyword": "car insurance quotes"},
+            ],
+        }
+
+        result = _sanitize_detailed_hub_plan(raw, keywords, "circuit diagram")
+
+        self.assertEqual([item["target_keyword"] for item in result["spokes"]], ["circuit symbols guide"])
+        self.assertEqual(result["_deduplication_check"]["duplicates_removed"], 2)
+        self.assertIn("car insurance quotes", result["filtered_irrelevant_keywords"])
+        included = result["spokes"][0]["h2_sections"][0]["targeted_keywords_placed_here"]
+        self.assertIn("guide circuit symbols", included)
+        self.assertNotIn("celebrity news", included)
+        self.assertEqual(result["spokes"][0]["entity_terms"], ["circuit troubleshooting"])
+        self.assertEqual(result["spokes"][0]["faq_schema_questions"], [])
+        self.assertEqual(len(result["spokes"][0]["h2_sections"]), 1)
 
     def test_cluster_retries_invalid_model_output(self):
         def plan(count):

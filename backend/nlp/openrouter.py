@@ -1903,6 +1903,187 @@ ARCHITECTURE_WRITING_STANDARDS = [
 ]
 
 
+def _allowed_hub_target(target: str, allowed: set[str], main_keyword: str) -> bool:
+    """Allow supplied targets and a broader parent that consolidates variants."""
+    from nlp.keywords import clean_phrase
+
+    target = clean_phrase(target)
+    if not target:
+        return False
+    if target == clean_phrase(main_keyword) or target in allowed:
+        return True
+    prefix = target + " "
+    return sum(1 for keyword in allowed if keyword.startswith(prefix)) >= 2
+
+
+def _sanitize_hub_keyword_values(values: Any, allowed: set[str], excluded: str = "") -> list[str]:
+    from nlp.keywords import clean_phrase
+
+    excluded = clean_phrase(excluded)
+    return list(dict.fromkeys(
+        phrase for value in (values or [])
+        if (phrase := clean_phrase(str(value))) in allowed and phrase != excluded
+    ))
+
+
+def _article_keyword_placements(article: dict[str, Any], allowed: set[str]) -> list[str]:
+    values: list[Any] = [*(article.get("targeted_keywords") or []), *(article.get("entity_terms") or [])]
+    for section in article.get("h2_sections", []) or []:
+        if isinstance(section, dict):
+            values.extend(section.get("targeted_keywords_placed_here") or [])
+    for faq in article.get("faq_schema_questions", []) or []:
+        if isinstance(faq, dict):
+            values.extend(faq.get("targeted_keywords_placed_here") or [])
+    return _sanitize_hub_keyword_values(values, allowed)
+
+
+def _sanitize_detailed_hub_plan(
+    payload: dict[str, Any],
+    keywords: list[dict[str, Any]],
+    main_keyword: str,
+) -> dict[str, Any]:
+    """Mechanically remove irrelevant placements and competing page intents."""
+    from nlp.keywords import clean_phrase, keyword_terms
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("master_hub"), dict):
+        return payload
+    allowed = {
+        clean_phrase(str(item.get("phrase") or "")) for item in keywords
+        if clean_phrase(str(item.get("phrase") or ""))
+    }
+    main = clean_phrase(main_keyword) or "core topic"
+    allowed.add(main)
+    all_topic_terms = set().union(*(keyword_terms(value, min_len=2) for value in allowed)) if allowed else set()
+    removed_irrelevant: list[str] = []
+    duplicate_redirects: dict[str, str] = {}
+
+    def sanitize_article(article: dict[str, Any], target: str) -> None:
+        article["target_keyword"] = target
+        article["slug"] = f"/{_hub_slug(target)}/"
+        article["targeted_keywords"] = _sanitize_hub_keyword_values(
+            article.get("targeted_keywords"), allowed, target
+        )
+        article["entity_terms"] = _sanitize_hub_keyword_values(article.get("entity_terms"), allowed, target)
+        clean_sections = []
+        for section in article.get("h2_sections", []) or []:
+            if not isinstance(section, dict):
+                continue
+            placements = _sanitize_hub_keyword_values(
+                section.get("targeted_keywords_placed_here"), allowed, target
+            )
+            heading = str(section.get("h2_heading") or "").strip()
+            heading_terms = keyword_terms(heading, min_len=2)
+            if heading and (not heading_terms or heading_terms & all_topic_terms or placements):
+                section["targeted_keywords_placed_here"] = placements
+                clean_sections.append(section)
+        article["h2_sections"] = clean_sections
+        clean_faqs = []
+        for faq in article.get("faq_schema_questions", []) or []:
+            if not isinstance(faq, dict):
+                continue
+            placements = _sanitize_hub_keyword_values(
+                faq.get("targeted_keywords_placed_here"), allowed, target
+            )
+            question = str(faq.get("question") or "").strip()
+            question_terms = keyword_terms(question, min_len=2)
+            if question and (not question_terms or question_terms & all_topic_terms or placements):
+                faq["targeted_keywords_placed_here"] = placements
+                clean_faqs.append(faq)
+        article["faq_schema_questions"] = clean_faqs
+        title = str(article.get("article_title") or target.title()).strip()
+        if keyword_terms(title, min_len=2) and not keyword_terms(title, min_len=2) & (
+            keyword_terms(target, min_len=2) | all_topic_terms
+        ):
+            title = target.title()
+        article["article_title"] = title or target.title()
+
+    master = payload["master_hub"]
+    master["target_keyword"] = main
+    sanitize_article(master, main)
+    kept: list[dict[str, Any]] = []
+
+    def merge_duplicate(destination: dict[str, Any], source: dict[str, Any], source_target: str) -> None:
+        placements = _article_keyword_placements(source, allowed)
+        if source_target in allowed and source_target != clean_phrase(str(destination.get("target_keyword") or "")):
+            placements.insert(0, source_target)
+        placements = list(dict.fromkeys(placements))
+        if not placements:
+            return
+        sections = destination.setdefault("h2_sections", [])
+        if not sections:
+            sections.append({
+                "h2_heading": "Related searches to cover",
+                "section_definition": "Cover these overlapping searches on this page instead of creating competing URLs.",
+                "targeted_keywords_placed_here": [],
+            })
+        current = sections[0].setdefault("targeted_keywords_placed_here", [])
+        sections[0]["targeted_keywords_placed_here"] = list(dict.fromkeys([*current, *placements]))
+
+    for raw_article in payload.get("spokes", []) or []:
+        if not isinstance(raw_article, dict):
+            continue
+        article = dict(raw_article)
+        target = clean_phrase(str(article.get("target_keyword") or ""))
+        if not _allowed_hub_target(target, allowed, main):
+            if target:
+                removed_irrelevant.append(target)
+            continue
+        sanitize_article(article, target)
+        slug = _hub_slug(target)
+        title_key = clean_phrase(str(article.get("article_title") or target))
+        fingerprint = tuple(sorted(_hub_intent_tokens(target)))
+        duplicate_index = next((
+            index for index, existing in enumerate(kept)
+            if target == clean_phrase(str(existing.get("target_keyword") or ""))
+            or slug == _hub_slug(str(existing.get("target_keyword") or ""))
+            or title_key == clean_phrase(str(existing.get("article_title") or ""))
+            or fingerprint == tuple(sorted(_hub_intent_tokens(str(existing.get("target_keyword") or ""))))
+            or _hub_intent_similarity(target, str(existing.get("target_keyword") or "")) >= 0.78
+        ), None)
+        duplicates_master = (
+            target == main
+            or slug == _hub_slug(main)
+            or title_key == clean_phrase(str(master.get("article_title") or main))
+            or fingerprint == tuple(sorted(_hub_intent_tokens(main)))
+            or _hub_intent_similarity(target, main) >= 0.85
+        )
+        if duplicates_master:
+            merge_duplicate(master, article, target)
+            duplicate_redirects[target] = main
+            continue
+        if duplicate_index is not None:
+            destination = kept[duplicate_index]
+            destination_target = clean_phrase(str(destination.get("target_keyword") or ""))
+            merge_duplicate(destination, article, target)
+            duplicate_redirects[target] = destination_target
+            continue
+        kept.append(article)
+
+    valid_targets = {main, *(clean_phrase(str(article.get("target_keyword") or "")) for article in kept)}
+    for article in [master, *kept]:
+        links = []
+        for value in article.get("internal_links", []) or []:
+            target = clean_phrase(str(value))
+            target = duplicate_redirects.get(target, target)
+            if target in valid_targets and target != clean_phrase(str(article.get("target_keyword") or "")):
+                links.append(target)
+        article["internal_links"] = list(dict.fromkeys(links))
+
+    payload["spokes"] = kept
+    payload["filtered_irrelevant_keywords"] = list(dict.fromkeys([
+        *_sanitize_hub_keyword_values(payload.get("filtered_irrelevant_keywords"), allowed),
+        *removed_irrelevant,
+    ]))
+    payload["_deduplication_check"] = {
+        "unique_target_keywords": "Checked",
+        "unique_titles": "Checked",
+        "unique_slugs": "Checked",
+        "semantic_intents": "Checked",
+        "duplicates_removed": len(duplicate_redirects),
+    }
+    return payload
+
+
 def _deepseek_plan_to_hub_schema(payload: dict[str, Any], main_keyword: str) -> dict[str, Any]:
     """Add the visual-card schema while retaining DeepSeek's detailed editorial plan."""
     from nlp.keywords import clean_phrase
@@ -2005,6 +2186,7 @@ def build_hub_spoke_fallback(
     """Build one Master Hub and 10-20 flat spokes if the provider is unavailable."""
     from nlp.keywords import clean_phrase
 
+    keywords = _prepare_hub_page_keywords(keywords, main_keyword)
     main = clean_phrase(main_keyword) or "core topic"
     entities = list(dict.fromkeys(
         clean_phrase(str(item.get("phrase") or "")) for item in keywords
@@ -2087,6 +2269,7 @@ def build_hub_spoke_fallback(
         "interlinking_strategy": "Every spoke links to the Master Hub. Related spokes link to one another where the next article answers the reader's natural follow-up question.",
         "writing_standards": ARCHITECTURE_WRITING_STANDARDS,
     }
+    plan = _sanitize_detailed_hub_plan(plan, keywords, main)
     return _deepseek_plan_to_hub_schema(plan, main)
 
 
@@ -2121,6 +2304,8 @@ def _validate_hub_and_spoke(
         return f"The plan must contain 10 to 20 spokes; received {spoke_count}."
     seen_targets: set[str] = set()
     seen_slugs: set[str] = set()
+    seen_titles: set[str] = set()
+    seen_fingerprints: set[tuple[str, ...]] = set()
     seen_intents: list[str] = []
     entity_keywords = {
         clean_phrase(keyword[7:]) for keyword in (allowed_keywords or set()) if keyword.startswith("entity:")
@@ -2141,6 +2326,8 @@ def _validate_hub_and_spoke(
 
     master_target = clean_phrase(str(master.get("target_keyword") or ""))
     seen_slugs.add(_hub_slug(master_target))
+    seen_titles.add(master_target)
+    seen_fingerprints.add(tuple(sorted(_hub_intent_tokens(master_target))))
     seen_intents.append(master_target)
 
     def validate_layers(node: dict, label: str, minimum: int = 0) -> str | None:
@@ -2168,12 +2355,26 @@ def _validate_hub_and_spoke(
                 slug = _hub_slug(target)
                 if slug in seen_slugs:
                     return f"Duplicate URL slug: {slug}."
+                title = clean_phrase(str(spoke).split("(Target Keyword:", 1)[0].replace("[Tool]", ""))
+                if title in seen_titles:
+                    return f"Duplicate article title: {title}."
+                fingerprint = tuple(sorted(_hub_intent_tokens(target)))
+                if fingerprint in seen_fingerprints:
+                    return f"Duplicate keyword intent: {target}."
+                duplicate_intent = next(
+                    (existing for existing in seen_intents if _hub_intent_similarity(target, existing) >= 0.78),
+                    None,
+                )
+                if duplicate_intent:
+                    return f"Cannibalizing keyword intent: {target} overlaps {duplicate_intent}."
                 if target in entity_keywords:
                     return f"Entity keyword cannot be a standalone spoke: {target}."
                 if not is_allowed_target(target):
                     return f"Spoke target keyword was not supplied by the scan: {target}."
                 seen_targets.add(target)
                 seen_slugs.add(slug)
+                seen_titles.add(title)
+                seen_fingerprints.add(fingerprint)
                 seen_intents.append(target)
         return None
 
@@ -2386,7 +2587,7 @@ async def cluster_hub_and_spoke(
     if not keywords:
         return None
 
-    trimmed = keywords[:500]
+    trimmed = _prepare_hub_page_keywords(keywords[:500], main_keyword)
     if not is_ai_configured():
         return build_hub_spoke_fallback(trimmed, main_keyword)
 
@@ -2473,6 +2674,7 @@ Final checks: return 10-20 spokes, exactly one Master Hub, no duplicate target k
             )
             if not isinstance(raw_payload, dict):
                 raise ValueError("Provider returned a non-object plan")
+            raw_payload = _sanitize_detailed_hub_plan(raw_payload, trimmed, main_keyword)
             payload = _deepseek_plan_to_hub_schema(raw_payload, main_keyword)
             error = _validate_hub_and_spoke(
                 payload,

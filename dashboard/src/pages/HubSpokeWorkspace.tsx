@@ -13,7 +13,8 @@ type SectionDetail = { h2_heading: string; section_definition?: string; targeted
 type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
 type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
-type Mapping = { hubs: Hub[]; _planning_thought?: string; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; writing_standards?: string[] }
+type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
+type Mapping = { hubs: Hub[]; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; writing_standards?: string[] }
 type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
 type ProjectImport = { project_id: string; project_name: string; keywords: string[]; context: string }
@@ -49,6 +50,7 @@ const downloadText = (name: string, content: string) => {
 const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
   const lines = ['# GRAND WEBSITE ARCHITECTURE BUILD PROMPT', '', 'Build the complete website architecture below. Follow every page specification and preserve the assigned keyword placements.', '']
   if (context.trim()) lines.push('## Website context', context.trim(), '')
+  if (mapping._deduplication_check) lines.push('## Mechanical SEO validation', `- Duplicate targets, titles, slugs, and semantic intents: checked`, `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
   lines.push('## Global writing standards')
   ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
   lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, FAQ schema, and internal links.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', '- Treat the suggested word count as a useful depth target; satisfy intent without padding.', '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
@@ -344,7 +346,7 @@ export function HubSpokeWorkspace() {
       {mapping && (
         <section className="space-y-4">
           <div className="flex items-center justify-between gap-4">
-            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Related keywords appear under Includes and belong on that same page.</p>{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
+            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Related keywords appear under Includes and belong on that same page.</p>{mapping._deduplication_check && <p className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">Cannibalization check passed{mapping._deduplication_check.duplicates_removed ? ` • ${mapping._deduplication_check.duplicates_removed} duplicates merged` : ''}</p>}{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
             <Button onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, context))}><Download className="h-4 w-4" />Download architecture prompt</Button>
           </div>
           {mapping.hubs.map((hub) => (
