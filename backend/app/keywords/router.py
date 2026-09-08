@@ -109,8 +109,8 @@ async def generate_keywords(
     result = await db.execute(q_existing)
     existing_phrases = {row[0] for row in result.all()}
     
-    # Get own website URL-path keywords to filter out
-    topic_terms = seed_keyword_terms(seed_keywords)
+    # Keep the semantic terms derived from the audit. Replacing them with
+    # seed-only terms here discarded useful context during manual generation.
     q_own_urls = select(Url.url).where(Url.project_id == project.id, Url.source_type == "own")
     result = await db.execute(q_own_urls)
     own_urls = result.scalars().all()
@@ -143,15 +143,6 @@ async def generate_keywords(
             if item["phrase"] not in all_excluded:
                 collected[item["phrase"]] = item
 
-    if len(existing_phrases) + len(collected) < target_total:
-        from workers.pipeline import _seed_anchored_keyword_expansions
-        fallback = _seed_anchored_keyword_expansions(
-            seed_keywords,
-            all_excluded | set(collected),
-            target_total - len(existing_phrases) - len(collected),
-        )
-        for item in fallback:
-            collected[item["phrase"]] = item
     ai_keywords = list(collected.values())
         
     # Get or create an AI source URL

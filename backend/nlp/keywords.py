@@ -155,6 +155,16 @@ def is_publishable_keyword(
     cleaned = clean_phrase(phrase)
     if not is_valid_keyword(cleaned, min_words=min_words):
         return False
+
+    words = cleaned.split()
+    # Scraped headings and navigation text often produce fragments such as
+    # "age korean age". Repeated meaningful terms in a short phrase are a
+    # strong signal that this is an extraction artifact, not a search query.
+    meaningful_words = [word for word in words if word not in STOPWORDS]
+    if len(meaningful_words) != len(set(meaningful_words)):
+        return False
+    if len(words) > 8:
+        return False
         
     terms = keyword_terms(cleaned, min_len=2)
     

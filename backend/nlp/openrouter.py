@@ -12,6 +12,30 @@ logger = logging.getLogger(__name__)
 ALLOWED_KEYWORD_TYPES = {"primary", "lsi", "long-tail", "entity", "heading"}
 
 
+def _keyword_generation_support_is_valid(
+    item: dict[str, Any],
+    seed_keywords: list[str],
+    evidence_phrases: list[str] | None,
+    audit_summary: str | None,
+) -> bool:
+    """Require every generated idea to identify a real input that supports it."""
+    from nlp.keywords import clean_phrase, normalize_seed_keywords
+
+    source = str(item.get("support_source") or "").strip().lower()
+    support = clean_phrase(str(item.get("support_phrase") or ""))
+    if not support:
+        return False
+    if source == "seed":
+        return support in set(normalize_seed_keywords(seed_keywords))
+    if source == "competitor":
+        evidence = {clean_phrase(value) for value in (evidence_phrases or []) if value}
+        return support in evidence
+    if source == "audit":
+        audit = clean_phrase(audit_summary or "")
+        return bool(audit and len(support.split()) >= 2 and support in audit)
+    return False
+
+
 def normalize_keyword_type(value: Any) -> str:
     keyword_type = str(value or "lsi").strip().lower().replace("_", "-")
     if keyword_type in {"longtail", "long tail"}:
@@ -370,7 +394,7 @@ async def generate_ai_keywords(
     evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate exactly {target_count} high-quality, distinct keyword opportunities. Distribute them across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
+Generate up to {target_count} high-quality, distinct keyword opportunities. Return fewer when the supplied evidence and context do not support that many. Distribute valid results across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
@@ -388,6 +412,9 @@ Quality rules:
 - Allocate the output evenly across every seed keyword; no seed may be ignored.
 - Use the website context to match its competition, target audience, core action, capabilities, boundaries, and search intent.
 - Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
+- Each result must cite exactly one supplied seed, one exact competitor phrase, or a short exact phrase from the website context as its support. Never claim support that is absent from the inputs.
+- A phrase must represent a query a real member of the target audience would search. Do not create variants merely to reach the requested count.
+- Do not attach generic modifiers such as pricing, security, training, trends, templates, or software unless that exact need is supported by the competitor evidence or website context.
 - Every keyword MUST be highly semantically relevant to the primary seed keywords.
 - Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
@@ -408,6 +435,8 @@ Return ONLY a JSON array of objects. Do not include markdown formatting, explana
 Each object must have:
 - "phrase": the keyword phrase (string, lowercase)
 - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
+- "support_source": one of "seed", "competitor", or "audit"
+- "support_phrase": the exact seed, exact competitor phrase, or short exact phrase from the website context that supports this keyword
 """
     try:
         payload = await _achat_json(
@@ -432,6 +461,8 @@ Each object must have:
                 if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
                     continue
                 if not is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms):
+                    continue
+                if not _keyword_generation_support_is_valid(kw, seed_keywords, evidence, audit_summary):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
@@ -493,7 +524,7 @@ def generate_ai_keywords_sync(
     evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate exactly {target_count} high-quality, distinct keyword opportunities. Distribute them across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
+Generate up to {target_count} high-quality, distinct keyword opportunities. Return fewer when the supplied evidence and context do not support that many. Distribute valid results across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
@@ -511,6 +542,9 @@ Quality rules:
 - Allocate the output evenly across every seed keyword; no seed may be ignored.
 - Use the website context to match its competition, target audience, core action, capabilities, boundaries, and search intent.
 - Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
+- Each result must cite exactly one supplied seed, one exact competitor phrase, or a short exact phrase from the website context as its support. Never claim support that is absent from the inputs.
+- A phrase must represent a query a real member of the target audience would search. Do not create variants merely to reach the requested count.
+- Do not attach generic modifiers such as pricing, security, training, trends, templates, or software unless that exact need is supported by the competitor evidence or website context.
 - Every keyword MUST be highly semantically relevant to the primary seed keywords.
 - Absolutely NO unrelated keywords, hallucinated terms, or irrelevant BS.
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
@@ -531,6 +565,8 @@ Return ONLY a JSON array of objects. Do not include markdown formatting, explana
 Each object must have:
 - "phrase": the keyword phrase (string, lowercase)
 - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
+- "support_source": one of "seed", "competitor", or "audit"
+- "support_phrase": the exact seed, exact competitor phrase, or short exact phrase from the website context that supports this keyword
 """
     try:
         payload = _chat_json(
@@ -555,6 +591,8 @@ Each object must have:
                 if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
                     continue
                 if not is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms):
+                    continue
+                if not _keyword_generation_support_is_valid(kw, seed_keywords, evidence, audit_summary):
                     continue
                 valid_keywords.append({
                     "phrase": phrase,
@@ -806,7 +844,6 @@ If the query does NOT directly support, align with, or fall under the exact mech
 - Each returned object must include:
   - "source_phrase": exact original phrase from the candidates
   - "phrase": the normalized search query
-  - "volume": Estimated volume (High/Medium/Low)
   - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
 
 Candidates:
@@ -825,7 +862,7 @@ Candidates:
         if not isinstance(payload, list):
             return None
 
-        from nlp.keywords import clean_phrase
+        from nlp.keywords import clean_phrase, is_publishable_keyword
 
         valid: list[dict[str, Any]] = []
         source_candidates = {
@@ -844,6 +881,8 @@ Candidates:
             if not source_phrase and phrase in candidate_phrases:
                 source_phrase = phrase
             if not source_phrase or source_phrase not in candidate_phrases or not phrase:
+                continue
+            if not is_publishable_keyword(phrase, min_words=2):
                 continue
             source_candidate = source_candidates[source_phrase]
             valid_item = {

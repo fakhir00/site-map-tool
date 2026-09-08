@@ -194,7 +194,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(db.execute(select(Url)).scalars().all(), [])
             self.assertEqual(db.execute(select(HubSpokeCluster)).scalars().all(), [])
 
-    def test_full_scan_and_resume_with_no_pending_urls(self):
+    def test_full_scan_keeps_evidence_without_quota_padding_and_resumes(self):
         from scraping.crawler import ScrapedPage
         pid = self.project()
         def extract(seeds, urls, **kwargs):
@@ -213,7 +213,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             project = self.client.get(f'/api/projects/{pid}').json()
             self.assertEqual(project['status'], 'complete', self.client.get(f'/api/projects/{pid}/scan/jobs').text)
-            self.assertGreaterEqual(project['total_keywords'], 100)
+            self.assertEqual(project['total_keywords'], 1)
             self.assertEqual(project['urls_processed'], 2)
             self.seed_job(pid, status='paused')
             scraper.reset_mock()
@@ -234,7 +234,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'error')
         self.assertIn('No keyword gaps', self.client.get(f'/api/projects/{pid}/scan/jobs').json()[0]['error_message'])
 
-    def test_generate_reaches_100_and_hub_repairs_invalid_ai_map(self):
+    def test_generate_does_not_pad_empty_ai_results_and_hub_repairs_invalid_ai_map(self):
         pid = self.project()
         invalid_map = {
             'hubs': [
@@ -250,7 +250,19 @@ class WorkflowTests(unittest.TestCase):
         ):
             response = self.client.post(f'/api/projects/{pid}/keywords/generate')
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertGreaterEqual(self.client.get(f'/api/projects/{pid}').json()['total_keywords'], 100)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['total_keywords'], 0)
+
+        # Hub repair is a separate behavior and needs real candidate input.
+        with self.sessions() as db:
+            db.add_all([
+                Keyword(
+                    project_id=uuid.UUID(pid),
+                    phrase=f'circuit diagram topic {index}',
+                    keyword_type='long-tail',
+                )
+                for index in range(21)
+            ])
+            db.commit()
 
         with (
             patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value={
