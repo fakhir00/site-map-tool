@@ -105,6 +105,14 @@ class PipelineFilterTests(TestCase):
         self.assertFalse(_keyword_matches_topic("fishbone diagram template", ["circuit diagram"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("electrical fitness guide", ["circuit diagram"], topic_terms, set()))
 
+    def test_generic_age_overlap_cannot_redefine_lunar_age_topic(self):
+        topic_terms = {"lunar", "calendar", "age", "chinese", "korean", "solar"}
+        self.assertTrue(_keyword_matches_topic("lunar age in korea", ["lunar age calculator"], topic_terms, set()))
+        self.assertTrue(_keyword_matches_topic("moon calendar conversion", ["lunar age calculator"], {"moon", "calendar", "conversion"}, set()))
+        self.assertFalse(_keyword_matches_topic("korean age calculator", ["lunar age calculator"], topic_terms, set()))
+        self.assertFalse(_keyword_matches_topic("dog age in human years", ["lunar age calculator"], topic_terms, set()))
+        self.assertFalse(_keyword_matches_topic("age milliseconds calculator", ["lunar age calculator"], topic_terms, set()))
+
     def test_search_result_urls_stops_after_google_has_enough_results(self):
         with (
             patch(

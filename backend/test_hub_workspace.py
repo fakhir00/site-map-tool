@@ -1,4 +1,5 @@
 import unittest
+import json
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -76,6 +77,26 @@ class HubWorkspaceTests(unittest.TestCase):
                 "Circuit diagram software and electronics education.",
             ))
         self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
+
+    def test_explicit_primary_keyword_cannot_be_redefined_by_generic_age_terms(self):
+        context = json.dumps({
+            "primary_keyword": "lunar age calculator",
+            "industry_niche": "lunar calendar and age conversion tools",
+            "target_audience": ["people researching age systems in China and Korea"],
+        })
+        unrelated = [
+            "korean age calculator", "korean age system", "international age",
+            "age months calculator", "age milliseconds calculator", "dogs age", "age cat",
+        ]
+        self.assertEqual(_mechanical_relevance_filter(unrelated, context), [])
+
+        mixed = [
+            "lunar age calculator", "how lunar age works", "korean lunar age",
+            "korean age calculator", "age milliseconds calculator", "dogs age",
+        ]
+        self.assertEqual(_mechanical_relevance_filter(mixed, context), [
+            "lunar age calculator", "how lunar age works", "korean lunar age",
+        ])
 
 
 class HubWorkspaceDeleteTests(unittest.IsolatedAsyncioTestCase):

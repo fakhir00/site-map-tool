@@ -63,6 +63,12 @@ IGNORED_TOPIC_TERMS = {
     "company", "companies", "free", "cheap", "guide", "tutorial", "tutorials",
 }
 
+# These words describe broad formats or measurements and are unsafe as the
+# only overlap with a more specific seed such as "lunar age calculator".
+BROAD_TOPIC_TERMS = {
+    "age", "calendar", "date", "day", "month", "year", "system",
+}
+
 
 def clean_phrase(phrase: str) -> str:
     """Clean and normalize a keyword phrase."""
@@ -191,7 +197,14 @@ def is_topic_relevant_keyword(
     if any(re.search(rf"\b{re.escape(seed)}\b", cleaned) for seed in normalized_seeds):
         return True
     anchors = seed_keyword_terms(normalized_seeds)
-    if phrase_terms & anchors:
+    distinctive_anchors = anchors - BROAD_TOPIC_TERMS
+    if phrase_terms & distinctive_anchors:
+        return True
+    # A generic head-term-only match is a common source of topic drift (for
+    # example, pet age or Korean legal age for a lunar age calculator).
+    if distinctive_anchors and phrase_terms & (anchors & BROAD_TOPIC_TERMS):
+        return False
+    if not distinctive_anchors and phrase_terms & anchors:
         return True
     return len(phrase_terms & (topic_terms or set())) >= 2
 

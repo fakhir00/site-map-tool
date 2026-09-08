@@ -90,18 +90,50 @@ def _fallback_context_filter(keywords: list[str], context: str) -> list[str]:
     return result
 
 
+def _primary_keyword_from_context(context: str) -> str:
+    """Read the explicit seed from JSON or JSON-like audit context."""
+    if not context.strip():
+        return ""
+    try:
+        payload = json.loads(context)
+        if isinstance(payload, dict):
+            value = payload.get("primary_keyword")
+            if value:
+                return clean_phrase(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    match = re.search(r'["\']?primary[_\s-]*keyword["\']?\s*:\s*["\']([^"\'\n,}]+)', context, re.IGNORECASE)
+    return clean_phrase(match.group(1)) if match else ""
+
+
 def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]:
     """Reject isolated off-topic phrases without relying on the AI provider."""
-    from nlp.keywords import keyword_terms
+    from nlp.keywords import BROAD_TOPIC_TERMS, keyword_terms
 
-    if len(keywords) < 2:
-        return keywords
+    if not keywords:
+        return []
     term_sets = {phrase: keyword_terms(phrase, min_len=2) for phrase in keywords}
     document_frequency = Counter(term for terms in term_sets.values() for term in terms)
     threshold = max(2, math.ceil(len(keywords) * 0.08))
     dominant_terms = {term for term, count in document_frequency.items() if count >= threshold}
     context_terms = keyword_terms(context, min_len=2) if context.strip() else set()
     positions = {phrase: index for index, phrase in enumerate(keywords)}
+    primary_keyword = _primary_keyword_from_context(context)
+    primary_terms = keyword_terms(primary_keyword, min_len=2)
+
+    if primary_terms:
+        distinctive_terms = primary_terms - BROAD_TOPIC_TERMS
+        required_terms = distinctive_terms or primary_terms
+        required_overlap = 1 if distinctive_terms or len(required_terms) == 1 else 2
+        # Never allow a candidate list to redefine an explicit site topic. If
+        # no candidate contains its defining term, the correct result is an
+        # empty list and a clear 422 response rather than an off-topic plan.
+        if not any(len(terms & required_terms) >= required_overlap for terms in term_sets.values()):
+            return []
+        return [
+            phrase for phrase in keywords
+            if len(term_sets[phrase] & required_terms) >= required_overlap
+        ]
 
     def anchor_score(phrase: str) -> tuple[int, int]:
         terms = term_sets[phrase]
@@ -188,7 +220,13 @@ async def clean_uploaded_keywords(
 ):
     keywords = await _clean_with_context(body.keywords, body.context)
     if not keywords:
-        raise HTTPException(status_code=422, detail="No relevant keywords remained after cleaning.")
+        primary_keyword = _primary_keyword_from_context(body.context)
+        detail = (
+            f"No keywords matching the primary topic '{primary_keyword}' remained after cleaning. "
+            "The source list must contain that topic or a verified semantic equivalent."
+            if primary_keyword else "No relevant keywords remained after cleaning."
+        )
+        raise HTTPException(status_code=422, detail=detail)
     return {"keywords": keywords, "count": len(keywords)}
 
 
@@ -208,7 +246,12 @@ async def build_uploaded_hub_spoke(
             raise HTTPException(status_code=404, detail="Project not found")
     keywords = await _clean_with_context(body.keywords, body.context)
     if not keywords:
-        raise HTTPException(status_code=422, detail="Upload a keyword list with at least one usable keyword.")
+        primary_keyword = _primary_keyword_from_context(body.context)
+        detail = (
+            f"The keyword list does not contain usable keywords for the primary topic '{primary_keyword}'."
+            if primary_keyword else "Upload a keyword list with at least one usable keyword."
+        )
+        raise HTTPException(status_code=422, detail=detail)
     rejected_keywords = [phrase for phrase in _basic_clean(body.keywords) if phrase not in set(keywords)]
     typed = [{"phrase": phrase, "type": "long-tail"} for phrase in keywords]
     mapping = await cluster_hub_and_spoke(
