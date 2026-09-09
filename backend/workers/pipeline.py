@@ -837,11 +837,12 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
 
     own_root = _registered_domain(project.own_domain or project.domain)
     required_terms = _search_required_terms(seed_keywords)
-    competitor_limit = max(10, settings.MAX_COMPETITOR_DOMAINS)
-    candidate_limit = max(competitor_limit * 2, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
+    competitor_limit = max(20, settings.MAX_COMPETITOR_DOMAINS)
+    candidate_limit = max(competitor_limit * 3, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
     # Reserve discovery capacity for every Gold Hunter seed. A global limit here
     # previously let the first seed exhaust the pool before later seeds ran.
-    per_kw_limit = max(4, min(settings.GOOGLE_SERP_RESULT_LIMIT, candidate_limit // len(seed_keywords)))
+    serp_limit = max(15, settings.GOOGLE_SERP_RESULT_LIMIT)
+    per_kw_limit = max(4, min(serp_limit, candidate_limit // len(seed_keywords)))
     search_locale = getattr(project, 'search_locale', 'us') or 'us'
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
@@ -883,7 +884,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
         # 1. Primary explicit search for this specific keyword
         primary_results_added = False
         if is_apify_configured():
-            apify_results = search_google_via_apify(kw, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
+            apify_results = search_google_via_apify(kw, max_results=serp_limit, country_code=search_locale)
             for res in apify_results:
                 add_domain(res["url"], require_relevance=False, query=kw, source="apify_page_1")
                 primary_results_added = True
@@ -908,7 +909,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
             searched_queries.add(query)
             query_results_added = False
             if is_apify_configured():
-                apify_results = search_google_via_apify(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, country_code=search_locale)
+                apify_results = search_google_via_apify(query, max_results=serp_limit, country_code=search_locale)
                 for res in apify_results:
                     add_domain(res["url"], query=query)
                     query_results_added = True
@@ -2024,6 +2025,33 @@ def _ensure_minimum_keyword_count(
     final_count = db.execute(
         select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
     ).scalar_one()
+    if final_count == 0:
+        # Search providers, competitor sites, or the AI provider can all be
+        # temporarily unavailable. Gold Hunter seeds are still verified user
+        # inputs and provide a truthful baseline without invented variants.
+        baseline: dict[str, dict[str, Any]] = {}
+        for raw_seed in seed_keywords:
+            phrase = clean_phrase(raw_seed)
+            if not phrase:
+                continue
+            baseline[phrase] = {
+                "type": "primary",
+                "count": 1,
+                "url_ids": {ai_url.id},
+                "score": 1.0,
+                "source": "sitemap_ai",
+                "tier": "outlier",
+            }
+        if baseline:
+            _store_keywords(db, project_id, baseline)
+            final_count = db.execute(
+                select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
+            ).scalar_one()
+            logger.warning(
+                "[%s] External keyword enrichment returned no results; retained %s verified seed keywords.",
+                project_id,
+                final_count,
+            )
     if final_count < target:
         if final_count == 0:
             raise RuntimeError(

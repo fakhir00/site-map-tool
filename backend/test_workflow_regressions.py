@@ -223,7 +223,7 @@ class WorkflowTests(unittest.TestCase):
             scraper.assert_not_called()
             self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'complete')
 
-    def test_empty_scan_reports_error(self):
+    def test_empty_enrichment_retains_verified_seed_and_completes(self):
         pid = self.project()
         with ExitStack() as mocks:
             mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=(set(), set())))
@@ -231,8 +231,9 @@ class WorkflowTests(unittest.TestCase):
             mocks.enter_context(patch('workers.pipeline._discover_content_urls', return_value=[]))
             mocks.enter_context(patch('nlp.openrouter.generate_ai_keywords_sync', return_value=[]))
             self.client.post(f'/api/projects/{pid}/scan/start')
-        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'error')
-        self.assertIn('No keyword gaps', self.client.get(f'/api/projects/{pid}/scan/jobs').json()[0]['error_message'])
+        project = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(project['status'], 'complete')
+        self.assertGreaterEqual(project['total_keywords'], 1)
 
     def test_generate_does_not_pad_empty_ai_results_and_hub_repairs_invalid_ai_map(self):
         pid = self.project()
