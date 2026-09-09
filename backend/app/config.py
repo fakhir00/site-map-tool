@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-chat"
     APIFY_API_TOKEN: str = ""
+    DATAFORSEO_LOGIN: str = ""
+    DATAFORSEO_PASSWORD: str = ""
+    DATAFORSEO_API_LOGIN: str = ""
+    DATAFORSEO_API_PASSWORD: str = ""
+    DATAFORSEO_DEFAULT_LOCATION: str = "United States"
+    DATAFORSEO_DEFAULT_LANGUAGE: str = "English"
+    DATAFORSEO_LOCATION_CODE: int = 0
+    DATAFORSEO_LANGUAGE_CODE: str = ""
+    DATAFORSEO_RESULT_LIMIT: int = 200
+    DATAFORSEO_MAX_COST_PER_SCAN: float = 0.08
+    DATAFORSEO_CACHE_DAYS: int = 30
     TOKENROUTER_API_KEY: str = ""
     TOKENROUTER_MODEL: str = "moonshotai/kimi-k3-free"
     TOKENROUTER_WRITING_MODEL: str = "moonshotai/kimi-k3-free"

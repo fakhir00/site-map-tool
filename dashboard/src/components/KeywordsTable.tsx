@@ -333,6 +333,8 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                   <th className="px-5 py-3 font-semibold">Intent</th>
                   <th className="px-5 py-3 font-semibold">Type</th>
                   <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
+                  <th className="px-5 py-3 text-right font-semibold">Volume</th>
+                  <th className="px-5 py-3 text-right font-semibold">Difficulty</th>
                   <th className="px-5 py-3 font-semibold">Sources</th>
                   <th className="px-5 py-3 text-right font-semibold">Write</th>
                   <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
@@ -342,7 +344,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                 {keywords.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={8}>
+                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={10}>
                       No keyword gaps found yet.
                     </td>
                   </tr>
@@ -374,6 +376,12 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                       </td>
                       <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
                       <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">{keyword.frequency}</td>
+                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">
+                        {keyword.search_volume?.toLocaleString() ?? '—'}
+                      </td>
+                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">
+                        {keyword.difficulty != null ? Math.round(keyword.difficulty) : '—'}
+                      </td>
                       <td className="px-5 py-4">
                         <div className="flex max-w-[360px] flex-wrap gap-1.5">
                           {sourceDomains(keyword).slice(0, 4).map((source) => (

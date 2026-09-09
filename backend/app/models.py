@@ -127,6 +127,18 @@ class Keyword(Base):
     __table_args__ = (UniqueConstraint("project_id", "phrase", name="uq_project_phrase"),)
 
 
+class KeywordResearchCache(Base):
+    """Shared cache for paid keyword-provider responses."""
+    __tablename__ = "keyword_research_cache"
+
+    cache_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="dataforseo")
+    response_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    request_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class KeywordUrl(Base):
     __tablename__ = "keyword_urls"
 

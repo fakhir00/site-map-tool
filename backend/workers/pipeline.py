@@ -367,6 +367,15 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
         gap_started = time.monotonic()
         competitor_evidence: list[str] = []
+        dataforseo_count = _process_dataforseo_keywords(
+            db,
+            project_uuid,
+            project.own_domain or project.domain,
+            seed_keywords,
+            topic_terms,
+            negative_terms,
+        )
+        logger.info("[%s] DataForSEO pass stored %s keywords", project_id, dataforseo_count)
         competitor_gap_count = _process_competitor_keyword_gaps(
             db,
             project_uuid,
@@ -682,6 +691,68 @@ def _process_competitor_keyword_gaps(
 
     _store_keywords(db, project_id, acc)
     return len(acc)
+
+
+def _process_dataforseo_keywords(
+    db: Session,
+    project_id: uuid.UUID,
+    domain: str,
+    seed_keywords: list[str],
+    topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
+) -> int:
+    """Store paid-provider keywords only after deterministic relevance checks."""
+    from app.models import Url
+    from nlp.dataforseo import collect_keyword_research, is_dataforseo_configured
+    from nlp.keywords import clean_phrase, is_publishable_keyword
+
+    if not is_dataforseo_configured():
+        return 0
+    research = collect_keyword_research(
+        db,
+        _registered_domain(domain) or domain,
+        seed_keywords,
+    )
+    accepted = []
+    for item in research.keywords:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+            continue
+        if not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
+            continue
+        accepted.append({**item, "phrase": phrase})
+    if not accepted:
+        return 0
+
+    source_url = "https://dataforseo.com/"
+    source = db.execute(
+        select(Url).where(Url.project_id == project_id, Url.url == source_url)
+    ).scalar_one_or_none()
+    if not source:
+        source = Url(
+            project_id=project_id,
+            url=source_url,
+            source_type="ai",
+            source_domain="DataForSEO",
+            status="scraped",
+        )
+        db.add(source)
+        db.flush()
+
+    accumulator: dict[str, dict[str, Any]] = {}
+    for item in accepted:
+        accumulator[item["phrase"]] = {
+            "type": item.get("type") or "long-tail",
+            "count": 1,
+            "url_ids": {source.id},
+            "score": float(item.get("search_volume") or 1),
+            "source": "sitemap_ai",
+            "tier": "outlier",
+            "search_volume": item.get("search_volume"),
+            "difficulty": item.get("difficulty"),
+        }
+    _store_keywords(db, project_id, accumulator)
+    return len(accumulator)
 
 
 def _fallback_gap_recommendations(candidates: list[dict[str, Any]], max_keywords: int) -> list[dict[str, Any]]:
@@ -2287,12 +2358,18 @@ def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, d
                     phrase=phrase,
                     keyword_type=data["type"],
                     frequency=data["count"],
+                    search_volume=data.get("search_volume"),
+                    difficulty=data.get("difficulty"),
                 )
                 db.add(keyword)
                 db.flush()
             else:
                 keyword.frequency += data["count"]
                 keyword.updated_at = datetime.utcnow()
+                if data.get("search_volume") is not None:
+                    keyword.search_volume = data["search_volume"]
+                if data.get("difficulty") is not None:
+                    keyword.difficulty = data["difficulty"]
 
             # Persist 4-tier classification metadata if present
             if data.get("tier"):
