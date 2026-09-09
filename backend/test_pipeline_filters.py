@@ -18,6 +18,7 @@ from workers.pipeline import (
     _clean_seed_keywords,
     _keyword_matches_topic,
     _llm_filter_competitor_domains,
+    _order_seeds_by_emd,
     _search_result_urls,
     _with_source_url_ids,
 )
@@ -179,19 +180,50 @@ class PipelineFilterTests(TestCase):
         )
 
     def test_keyword_relevance_allows_semantic_support_but_rejects_drift(self):
-        topic_terms = {"circuit", "schematic", "electrical", "wiring"}
+        topic_terms = {
+            "circuit", "schematic", "electrical", "wiring",
+            "__anchor__electrical", "__scope__board", "__scope__wiring",
+        }
         self.assertTrue(_keyword_matches_topic("circuit board tutorial", ["circuit diagram"], topic_terms, set()))
         self.assertTrue(_keyword_matches_topic("electrical wiring guide", ["circuit diagram"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("fishbone diagram template", ["circuit diagram"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("electrical fitness guide", ["circuit diagram"], topic_terms, set()))
 
     def test_generic_age_overlap_cannot_redefine_lunar_age_topic(self):
-        topic_terms = {"lunar", "calendar", "age", "chinese", "korean", "solar"}
+        topic_terms = {
+            "lunar", "calendar", "age", "chinese", "korean", "solar",
+            "__anchor__moon", "__scope__age", "__scope__calendar",
+            "__scope__conversion",
+        }
         self.assertTrue(_keyword_matches_topic("lunar age in korea", ["lunar age calculator"], topic_terms, set()))
-        self.assertTrue(_keyword_matches_topic("moon calendar conversion", ["lunar age calculator"], {"moon", "calendar", "conversion"}, set()))
+        self.assertTrue(_keyword_matches_topic("moon calendar conversion", ["lunar age calculator"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("korean age calculator", ["lunar age calculator"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("dog age in human years", ["lunar age calculator"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("age milliseconds calculator", ["lunar age calculator"], topic_terms, set()))
+        for phrase in (
+            "age of planets in the solar system",
+            "age of planets in our solar system",
+            "birth of the solar system video",
+            "solar system 100 planets",
+            "mars after 100 years",
+            "solar system size calculator australia",
+            "solar system planet position calculator",
+            "100 facts about solar system",
+            "lunar eclipse calendar",
+        ):
+            self.assertFalse(_keyword_matches_topic(
+                phrase, ["lunar age calculator"], topic_terms,
+                {"planet", "planets", "mars", "eclipse", "astronomy", "orbit"},
+            ), phrase)
+
+    def test_emd_seed_is_promoted_to_primary_topic_boundary(self):
+        self.assertEqual(
+            _order_seeds_by_emd(
+                ["moon calendar guide", "lunar age calculator", "chinese age systems"],
+                "https://lunaragecalculator.com",
+            )[0],
+            "lunar age calculator",
+        )
 
     def test_search_result_urls_stops_after_google_has_enough_results(self):
         with (

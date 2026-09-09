@@ -69,6 +69,11 @@ BROAD_TOPIC_TERMS = {
     "age", "calendar", "date", "day", "month", "year", "system",
 }
 
+GENERIC_TOOL_TERMS = {
+    "app", "apps", "calculator", "calculators", "creator", "generator",
+    "maker", "software", "tool", "tools",
+}
+
 
 def clean_phrase(phrase: str) -> str:
     """Clean and normalize a keyword phrase."""
@@ -145,6 +150,29 @@ def seed_keyword_terms(raw_keywords: Iterable[str] | None) -> set[str]:
     return terms
 
 
+def site_scope_terms(primary_seed: str, audit_data: dict | None = None) -> set[str]:
+    """Extract function/subject terms from the EMD seed and positive audit fields."""
+    primary_words = set(clean_phrase(primary_seed).split())
+    primary_anchors = seed_keyword_terms([primary_seed]) - BROAD_TOPIC_TERMS
+    scope = primary_words - primary_anchors - STOPWORDS - GENERIC_TOOL_TERMS
+    if not isinstance(audit_data, dict):
+        return scope
+    for field in ("industry_niche", "core_action", "capabilities", "content_opportunities"):
+        raw = audit_data.get(field)
+        values = raw if isinstance(raw, list) else [raw]
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            scope.update(
+                word for word in clean_phrase(value).split()
+                if len(word) > 2
+                and word not in primary_anchors
+                and word not in STOPWORDS
+                and word not in GENERIC_TOOL_TERMS
+            )
+    return scope
+
+
 def is_publishable_keyword(
     phrase: str,
     min_words: int = 2,
@@ -192,9 +220,10 @@ def is_topic_relevant_keyword(
     topic_terms: set[str] | None,
     negative_terms: set[str] | None = None,
 ) -> bool:
-    """Require a seed anchor or multiple semantic signals from the site context."""
+    """Keep candidates inside the primary entity and functional site scope."""
     cleaned = clean_phrase(phrase)
     phrase_terms = keyword_terms(cleaned, min_len=2)
+    raw_terms = set(cleaned.split()) - STOPWORDS
     if not phrase_terms or (negative_terms and phrase_terms & negative_terms):
         # Generic seed words are intentionally removed from keyword_terms, but
         # an exact seed-anchored phrase is still relevant by definition.
@@ -206,15 +235,31 @@ def is_topic_relevant_keyword(
     normalized_seeds = normalize_seed_keywords(seed_keywords)
     if any(re.search(rf"\b{re.escape(seed)}\b", cleaned) for seed in normalized_seeds):
         return True
+
+    primary_seed = normalized_seeds[:1]
+    primary_anchors = seed_keyword_terms(primary_seed) - BROAD_TOPIC_TERMS
+    primary_scope = site_scope_terms(primary_seed[0]) if primary_seed else set()
+    semantic_anchors = {
+        term.removeprefix("__anchor__")
+        for term in (topic_terms or set())
+        if term.startswith("__anchor__")
+    }
+    scope_terms = {
+        term.removeprefix("__scope__")
+        for term in (topic_terms or set())
+        if term.startswith("__scope__")
+    } | primary_scope
+    candidate_anchors = raw_terms & (primary_anchors | semantic_anchors)
+    candidate_scope = raw_terms & scope_terms
+
+    # A distinctive EMD/primary entity by itself is not enough: "lunar
+    # eclipse" and "circuit court" are different subjects. Requiring a site
+    # function as the second edge keeps results within two semantic hops.
+    if primary_anchors or semantic_anchors:
+        return bool(candidate_anchors and candidate_scope)
+
     anchors = seed_keyword_terms(normalized_seeds)
-    distinctive_anchors = anchors - BROAD_TOPIC_TERMS
-    if phrase_terms & distinctive_anchors:
-        return True
-    # A generic head-term-only match is a common source of topic drift (for
-    # example, pet age or Korean legal age for a lunar age calculator).
-    if distinctive_anchors and phrase_terms & (anchors & BROAD_TOPIC_TERMS):
-        return False
-    if not distinctive_anchors and phrase_terms & anchors:
+    if phrase_terms & anchors:
         return True
     return len(phrase_terms & (topic_terms or set())) >= 2
 

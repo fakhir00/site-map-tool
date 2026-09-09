@@ -19,6 +19,63 @@ BASE_URL = "https://api.dataforseo.com/v3"
 ESTIMATED_REQUEST_COST = 0.015
 
 
+def _positive_audit_phrases(audit_summary: str | None) -> list[str]:
+    """Read only positive structured audit fields; hard boundaries never seed research."""
+    if not audit_summary:
+        return []
+    try:
+        value = json.loads(audit_summary)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(value, dict):
+        return []
+    allowed_fields = (
+        "primary_keyword", "industry_niche", "core_action", "capabilities",
+        "content_opportunities",
+    )
+    phrases: list[str] = []
+    for field in allowed_fields:
+        raw = value.get(field)
+        values = raw if isinstance(raw, list) else [raw]
+        for item in values:
+            if isinstance(item, str) and item.strip():
+                phrases.append(item)
+    return phrases
+
+
+def _research_seeds(seed_keywords: list[str], audit_summary: str | None) -> list[str]:
+    """Expand provider inputs with audit concepts while retaining the primary entity."""
+    from nlp.keywords import (
+        BROAD_TOPIC_TERMS, STOPWORDS, clean_phrase, keyword_terms,
+        normalize_seed_keywords,
+    )
+
+    seeds = normalize_seed_keywords(seed_keywords)
+    if not seeds:
+        return []
+    primary = seeds[0]
+    anchors = keyword_terms(primary) - BROAD_TOPIC_TERMS
+    expanded = list(seeds)
+    for raw in _positive_audit_phrases(audit_summary):
+        phrase = clean_phrase(raw)
+        words = phrase.split()
+        if len(words) < 2:
+            continue
+        # DataForSEO accepts up to 200 inputs, but shorter focused inputs return
+        # more useful ideas than entire audit sentences.
+        if anchors and not (set(words) & anchors):
+            available = max(2, 8 - len(primary.split()))
+            context_words = [word for word in words if word not in STOPWORDS]
+            phrase = f"{primary} {' '.join(context_words[:available])}"
+        else:
+            phrase = " ".join(words[:8])
+        if phrase not in expanded:
+            expanded.append(phrase)
+        if len(expanded) >= 40:
+            break
+    return expanded
+
+
 @dataclass
 class KeywordResearchResult:
     keywords: list[dict[str, Any]]
@@ -146,6 +203,7 @@ def collect_keyword_research(
     db: Session,
     domain: str,
     seed_keywords: list[str],
+    audit_summary: str | None = None,
 ) -> KeywordResearchResult:
     """Collect all seed ideas in one call, then domain keywords if budget remains."""
     if not is_dataforseo_configured():
@@ -165,10 +223,11 @@ def collect_keyword_research(
     else:
         base["language_name"] = settings.DATAFORSEO_DEFAULT_LANGUAGE
     requests_to_make: list[tuple[str, dict[str, Any]]] = []
-    if seed_keywords:
+    research_seeds = _research_seeds(seed_keywords, audit_summary)
+    if research_seeds:
         requests_to_make.append((
             "dataforseo_labs/google/keyword_ideas/live",
-            {**base, "keywords": seed_keywords[:200], "closely_variants": False},
+            {**base, "keywords": research_seeds[:200], "closely_variants": False},
         ))
     if domain:
         requests_to_make.append((

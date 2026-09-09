@@ -107,7 +107,10 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         scan_started = time.monotonic()
         _mark_running(db, project, job)
         logger.info("[%s] Starting concurrent scan for %s", project_id, project.domain)
-        seed_keywords = _clean_seed_keywords(project.target_keywords)
+        seed_keywords = _order_seeds_by_emd(
+            _clean_seed_keywords(project.target_keywords),
+            project.own_domain or project.domain,
+        )
         audit_summary = project.audit_summary
         
         # Fix 0: Auto-generate audit context from homepage if missing
@@ -374,6 +377,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             seed_keywords,
             topic_terms,
             negative_terms,
+            audit_summary,
         )
         logger.info("[%s] DataForSEO pass stored %s keywords", project_id, dataforseo_count)
         competitor_gap_count = _process_competitor_keyword_gaps(
@@ -700,6 +704,7 @@ def _process_dataforseo_keywords(
     seed_keywords: list[str],
     topic_terms: set[str] | None,
     negative_terms: set[str] | None,
+    audit_summary: str | None = None,
 ) -> int:
     """Store paid-provider keywords only after deterministic relevance checks."""
     from app.models import Url
@@ -712,6 +717,7 @@ def _process_dataforseo_keywords(
         db,
         _registered_domain(domain) or domain,
         seed_keywords,
+        audit_summary,
     )
     accepted = []
     for item in research.keywords:
@@ -1692,10 +1698,23 @@ def _keyword_phrases(keyword_result: Any, min_words: int) -> set[str]:
 
 def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) -> tuple[set[str], set[str]]:
     from nlp.openrouter import generate_core_domain_terms
-    from nlp.keywords import seed_keyword_terms
+    from nlp.keywords import (
+        seed_keyword_terms,
+        site_scope_terms,
+    )
     import asyncio
+    import json
 
     fallback_topic_terms = seed_keyword_terms(seed_keywords)
+    try:
+        audit_data = json.loads(audit_summary) if audit_summary else {}
+    except (TypeError, json.JSONDecodeError):
+        audit_data = {}
+    mechanical_scope = site_scope_terms(
+        seed_keywords[0] if seed_keywords else "",
+        audit_data if isinstance(audit_data, dict) else None,
+    )
+    fallback_topic_terms |= {f"__scope__{term}" for term in mechanical_scope}
     
     try:
         loop = asyncio.get_event_loop()
@@ -1710,14 +1729,40 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
     try:
         result = loop.run_until_complete(generate_core_domain_terms(seed_keywords, audit_summary))
         core_terms = set(result.get("core_terms", []))
+        anchor_terms = set(result.get("anchor_terms", []))
+        scope_terms = set(result.get("scope_terms", []))
         negative_terms = set(result.get("negative_terms", []))
-        if core_terms:
-            return core_terms, negative_terms
+        if core_terms or anchor_terms or scope_terms:
+            marked = (
+                core_terms
+                | {f"__anchor__{term}" for term in anchor_terms}
+                | {f"__scope__{term}" for term in (scope_terms | mechanical_scope)}
+            )
+            return marked, negative_terms
     except Exception as e:
         logger.error(f"Failed to generate dynamic semantic terms: {e}")
 
     # Fallback if LLM fails
     return fallback_topic_terms, set()
+
+
+def _order_seeds_by_emd(seed_keywords: list[str], domain: str | None) -> list[str]:
+    """Put the seed represented by the exact-match domain first."""
+    if len(seed_keywords) < 2 or not domain:
+        return seed_keywords
+    registered = _registered_domain(domain) or domain
+    host = urlparse(registered if "://" in registered else f"https://{registered}").hostname or ""
+    label = host.lower().removeprefix("www.").split(".")[0]
+    emd = re.sub(r"[^a-z0-9]", "", label)
+    if not emd:
+        return seed_keywords
+
+    def affinity(seed: str) -> tuple[int, int]:
+        compact = re.sub(r"[^a-z0-9]", "", seed.lower())
+        exact = int(bool(compact) and (compact in emd or emd in compact))
+        return exact, len(compact) if exact else 0
+
+    return sorted(seed_keywords, key=affinity, reverse=True)
 
 
 def _own_sitemap_keyword_phrases(

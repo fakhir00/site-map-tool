@@ -38,8 +38,8 @@ function keywordSources(keyword: Keyword) {
 function sourceDomains(keyword: Keyword) {
   const byLabel = new Map<string, { href: string; label: string; sourceType: 'own' | 'competitor' | 'ai' }>()
   keywordSources(keyword).forEach((source) => {
-    const href = source.source_domain || source.url
-    const label = displayHost(href)
+    const href = source.url
+    const label = source.source_domain || displayHost(href)
     if (!byLabel.has(label)) {
       byLabel.set(label, { href, label, sourceType: source.source_type })
     }

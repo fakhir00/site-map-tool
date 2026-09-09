@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import Keyword, Project, User
-from nlp.dataforseo import KeywordResearchResult, _normalize_items, collect_keyword_research
+from nlp.dataforseo import KeywordResearchResult, _normalize_items, _research_seeds, collect_keyword_research
 from workers.pipeline import _process_dataforseo_keywords
 
 
@@ -47,6 +47,21 @@ def wrapped_response_for(keyword):
 
 
 class DataForSeoTests(TestCase):
+    def test_audit_opportunities_expand_one_anchored_provider_request(self):
+        audit = '''{
+          "primary_keyword": "lunar age calculator",
+          "content_opportunities": [
+            "impact of leap months on age calculation",
+            "lunar calendar vs solar calendar differences"
+          ],
+          "hard_boundaries": ["moon phase tracking"]
+        }'''
+        seeds = _research_seeds(["lunar age calculator"], audit)
+
+        self.assertIn("lunar age calculator impact leap months age calculation", seeds)
+        self.assertIn("lunar calendar vs solar calendar differences", seeds)
+        self.assertFalse(any("phase" in seed for seed in seeds))
+
     def test_normalizes_real_metrics_from_nested_response(self):
         self.assertEqual(_normalize_items(response_for("Lunar Age Calculator")), [{
             "phrase": "lunar age calculator",

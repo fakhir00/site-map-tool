@@ -260,7 +260,10 @@ async def generate_core_domain_terms(target_keywords: list[str], audit_summary: 
     import json
     
     if not is_ai_configured() or not target_keywords:
-        return {"core_terms": [], "generic_terms": [], "negative_terms": []}
+        return {
+            "anchor_terms": [], "scope_terms": [], "core_terms": [],
+            "generic_terms": [], "negative_terms": [],
+        }
 
     cache_key = json.dumps([target_keywords, audit_summary])
     if cache_key in _semantic_cache:
@@ -274,13 +277,17 @@ And this Context/Audit Summary:
 
 Your task is to analyze the semantic core of this website and break it down into three distinct JSON arrays to be used as a Python stopword/gate filter.
 
-1. "core_terms": A comprehensive array of the core domain entities, including synonyms, closely related niches, and semantic variations. (e.g., if the seed is "circuit diagram maker", the core terms are "circuit", "wiring", "electronics", "electric", "schematic", "pcb"). Limit to max 30 terms.
-2. "generic_terms": An array of generic modifiers that often appear in keywords but DO NOT define the niche (e.g., "diagram", "software", "maker", "tool", "app", "system", "calculator"). Limit to max 30 terms.
-3. "negative_terms": An array of terms representing 3rd-party drift (e.g. "jira", "sharepoint", "trello") or distinctly unrelated niches that might mistakenly overlap (e.g. "volcano", "muscular", "urinary"). Limit to max 20 terms.
+1. "anchor_terms": Exact names, synonyms, or very close first-hop names for the PRIMARY entity in the first seed/EMD. These must keep the same topical niche, not merely be words mentioned for comparison. Example: lunar -> moon is valid; solar is not. Circuit -> electrical or electronic can be valid. Limit to 8 terms.
+2. "scope_terms": Functions or subject qualifiers that must accompany an anchor to describe this exact site. Example for lunar age calculator: age, calendar, birth, date, conversion, calculate. Example for circuit diagram maker: diagram, schematic, wiring, electronics, design. Limit to 30 terms.
+3. "core_terms": Other close entities that are useful for ranking but are not sufficient relevance proof by themselves. Limit to 30 terms.
+4. "generic_terms": Generic modifiers that DO NOT define the niche (for example tool, app, system, calculator). Limit to 30 terms.
+5. "negative_terms": Terms from common alternate meanings of the primary words and unrelated niches. For lunar age, include astronomy drift such as planet, mars, eclipse, orbit, astronomy, and space while retaining legitimate lunar-calendar comparisons. Never put an anchor synonym itself (such as moon) in negative_terms. Limit to 30 terms.
 
 Ensure all terms are lowercase strings.
 Do not output anything except valid JSON matching this schema:
 {{
+  "anchor_terms": ["..."],
+  "scope_terms": ["..."],
   "core_terms": ["..."],
   "generic_terms": ["..."],
   "negative_terms": ["..."]
@@ -305,6 +312,8 @@ Do not output anything except valid JSON matching this schema:
                 return list(words)
                 
             res = {
+                "anchor_terms": _extract_words(payload.get("anchor_terms", [])),
+                "scope_terms": _extract_words(payload.get("scope_terms", [])),
                 "core_terms": _extract_words(payload.get("core_terms", [])),
                 "generic_terms": _extract_words(payload.get("generic_terms", [])),
                 "negative_terms": _extract_words(payload.get("negative_terms", []))
@@ -316,7 +325,7 @@ Do not output anything except valid JSON matching this schema:
         logger = logging.getLogger(__name__)
         logger.warning("generate_core_domain_terms failed: %s", exc)
         
-    return {"core_terms": [], "generic_terms": []}
+    return {"anchor_terms": [], "scope_terms": [], "core_terms": [], "generic_terms": [], "negative_terms": []}
 
 
 def verify_cluster_intent(cluster: list[dict]) -> dict:

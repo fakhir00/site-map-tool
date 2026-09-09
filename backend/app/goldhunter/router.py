@@ -61,7 +61,10 @@ async def scan_gold_hunter(
         import json
         audit_summary = json.dumps(audit_summary, indent=2)
 
-    from nlp.keywords import is_topic_relevant_keyword, normalize_seed_keywords, seed_keyword_terms
+    from nlp.keywords import (
+        is_topic_relevant_keyword, normalize_seed_keywords, seed_keyword_terms,
+        site_scope_terms,
+    )
     normalized_seeds = []
     for item in result.get("seeds", []) or []:
         if not isinstance(item, dict):
@@ -79,7 +82,12 @@ async def scan_gold_hunter(
         primary_values = normalize_seed_keywords([str(audit_data.get("primary_keyword") or "")])
         audit_primary = primary_values[0] if primary_values else ""
     if audit_primary:
-        primary_terms = seed_keyword_terms([audit_primary])
+        primary_terms = seed_keyword_terms([audit_primary]) | {
+            f"__scope__{term}" for term in site_scope_terms(
+                audit_primary,
+                audit_data if isinstance(audit_data, dict) else None,
+            )
+        }
         normalized_seeds = [
             seed for seed in normalized_seeds
             if is_topic_relevant_keyword(seed["keyword"], [audit_primary], primary_terms)
