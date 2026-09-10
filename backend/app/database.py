@@ -14,6 +14,8 @@ if "sqlite" not in settings.DATABASE_URL:
         "max_overflow": 5,
         "pool_pre_ping": True,
         "pool_recycle": 300,
+        "pool_timeout": 10,
+        "connect_args": {"timeout": 10, "command_timeout": 30},
     })
 else:
     kwargs["connect_args"] = {"timeout": 15}

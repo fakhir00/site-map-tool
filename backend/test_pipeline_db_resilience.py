@@ -2,11 +2,12 @@ import unittest
 import uuid
 from contextlib import nullcontext
 from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from sqlalchemy.exc import OperationalError
 
 from workers.pipeline import ACTIVE_SCANS, _scan_is_active
+from app.main import app, health, lifespan
 
 
 class _StatusSession:
@@ -66,6 +67,16 @@ class PipelineDatabaseResilienceTests(unittest.TestCase):
             self.assertTrue(_scan_is_active(Mock(), project_id, job_id))
 
         self.assertTrue(all(session.closed for session in sessions))
+
+
+class ApiStartupResilienceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_database_outage_does_not_block_api_startup_or_health(self):
+        with patch("app.main._initialize_database", new=AsyncMock(side_effect=RuntimeError("database locked"))):
+            async with lifespan(app):
+                result = await health()
+
+        self.assertEqual(result["status"], "degraded")
+        self.assertEqual(result["database"], "reconnecting")
 
 
 if __name__ == "__main__":

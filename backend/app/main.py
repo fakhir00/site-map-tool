@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
+from contextlib import suppress
+import asyncio
 from app.config import settings
 from app.database import engine, Base
 from sqlalchemy import text
@@ -17,10 +19,14 @@ frontend_origins = [
 ]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _initialize_database() -> None:
     # Auto-create tables on startup if they don't exist
     async with engine.begin() as conn:
+        if conn.dialect.name != "sqlite":
+            # A previous scan can briefly retain row/schema locks while Render
+            # replaces an instance. Never let those locks block app startup.
+            await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            await conn.execute(text("SET LOCAL statement_timeout = '25s'"))
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_runtime_schema(conn)
         if not settings.USE_CELERY:
@@ -30,8 +36,40 @@ async def lifespan(app: FastAPI):
             await conn.execute(
                 text("UPDATE scan_jobs SET status = 'paused', error_message = 'Interrupted by server restart. Click Resume to continue.' WHERE status IN ('queued', 'running')")
             )
-    logger.info("Database tables ready and interrupted scans marked for resume")
+
+
+async def _retry_database_initialization(app: FastAPI) -> None:
+    while not app.state.database_ready:
+        await asyncio.sleep(10)
+        try:
+            await asyncio.wait_for(_initialize_database(), timeout=30)
+            app.state.database_ready = True
+            logger.info("Database connection recovered and runtime state initialized")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Database initialization retry failed: %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.database_ready = False
+    retry_task: asyncio.Task | None = None
+    try:
+        await asyncio.wait_for(_initialize_database(), timeout=30)
+        app.state.database_ready = True
+    except Exception as exc:
+        # Keep the API process alive so Render health checks and diagnostics
+        # remain reachable while hosted Postgres recovers.
+        logger.error("Database unavailable during startup; API will retry in background: %s", exc)
+        retry_task = asyncio.create_task(_retry_database_initialization(app))
+    if app.state.database_ready:
+        logger.info("Database tables ready and interrupted scans marked for resume")
     yield
+    if retry_task:
+        retry_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await retry_task
     await engine.dispose()
 
 
@@ -205,4 +243,9 @@ app.include_router(hub_spoke_workspace_router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "SiteMapSEO API"}
+    database_ready = bool(getattr(app.state, "database_ready", False))
+    return {
+        "status": "ok" if database_ready else "degraded",
+        "service": "SiteMapSEO API",
+        "database": "connected" if database_ready else "reconnecting",
+    }

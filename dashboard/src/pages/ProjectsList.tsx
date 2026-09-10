@@ -1,7 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { api, type Project } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -63,9 +63,12 @@ export function ProjectsList() {
   const [search, setSearch] = useState('')
   const [form, setForm] = useState<ProjectForm>(() => ({ ...initialProject, primary_keyword: searchParams.get('new_keyword') || '', site_url: searchParams.get('site_url') || '' }))
 
-  const { data: projects = [], isLoading } = useQuery({
+  const { data: projects = [], isLoading, isFetching, error: projectsError, refetch: refetchProjects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.get<Project[]>('/projects'),
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    refetchInterval: (query) => query.state.error ? 15_000 : false,
   })
 
   const filteredProjects = useMemo(() => {
@@ -172,7 +175,26 @@ export function ProjectsList() {
         </Button>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      {projectsError && (
+        <Card className="border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+              <div>
+                <h3 className="font-bold text-amber-950 dark:text-amber-100">Backend is reconnecting</h3>
+                <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">{projectsError instanceof Error ? projectsError.message : 'The API is temporarily unavailable.'}</p>
+                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">This page retries automatically every 15 seconds.</p>
+              </div>
+            </div>
+            <Button variant="secondary" disabled={isFetching} onClick={() => refetchProjects()}>
+              {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Retry now
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {!projectsError && <section className="grid gap-4 md:grid-cols-3">
         <Card>
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard</p>
@@ -194,9 +216,9 @@ export function ProjectsList() {
           </div>
           <p className="mt-3 text-3xl font-bold">{totals.keywords.toLocaleString()}</p>
         </Card>
-      </section>
+      </section>}
 
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {!projectsError && <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
           <Input className="pl-9" onChange={(event) => { setSearch(event.target.value); setSelectedIds(new Set()) }} placeholder="Search projects" value={search} />
@@ -239,9 +261,9 @@ export function ProjectsList() {
           )}
           {totals.running > 0 && <Badge variant="indigo">{totals.running} running</Badge>}
         </div>
-      </section>
+      </section>}
 
-      {isLoading ? (
+      {!projectsError && (isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((item) => (
             <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" key={item} />
@@ -352,7 +374,7 @@ export function ProjectsList() {
             )
           })}
         </div>
-      )}
+      ))}
 
       {showNewModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/40 dark:bg-slate-950/80 p-4">
