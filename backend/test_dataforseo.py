@@ -47,7 +47,7 @@ def wrapped_response_for(keyword):
 
 
 class DataForSeoTests(TestCase):
-    def test_audit_opportunities_expand_one_anchored_provider_request(self):
+    def test_only_exact_gold_hunter_seeds_reach_the_provider(self):
         audit = '''{
           "primary_keyword": "lunar age calculator",
           "content_opportunities": [
@@ -58,9 +58,7 @@ class DataForSeoTests(TestCase):
         }'''
         seeds = _research_seeds(["lunar age calculator"], audit)
 
-        self.assertIn("lunar age calculator impact leap months age calculation", seeds)
-        self.assertIn("lunar calendar vs solar calendar differences", seeds)
-        self.assertFalse(any("phase" in seed for seed in seeds))
+        self.assertEqual(seeds, ["lunar age calculator"])
 
     def test_normalizes_real_metrics_from_nested_response(self):
         self.assertEqual(_normalize_items(response_for("Lunar Age Calculator")), [{
@@ -82,28 +80,24 @@ class DataForSeoTests(TestCase):
             "source": "dataforseo",
         }])
 
-    def test_batches_all_seeds_then_collects_domain_with_cache_accounting(self):
-        responses = [
-            (response_for("lunar age calculator"), 0.01, False),
-            (response_for("lunar calendar age"), 0.0, True),
-        ]
+    def test_batches_all_seeds_without_importing_domain_ranking_junk(self):
         with (
             patch("nlp.dataforseo.is_dataforseo_configured", return_value=True),
             patch("nlp.dataforseo._cached_response", return_value=None),
-            patch("nlp.dataforseo._request", side_effect=responses) as request,
+            patch("nlp.dataforseo._request", return_value=(response_for("lunar age calculator"), 0.01, False)) as request,
             patch("nlp.dataforseo.settings.DATAFORSEO_MAX_COST_PER_SCAN", 0.08),
         ):
             result = collect_keyword_research(
                 object(), "example.com", ["lunar age calculator", "calculate lunar age"],
             )
 
-        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_count, 1)
         first_payload = request.call_args_list[0].args[2]
         self.assertEqual(first_payload["keywords"], ["lunar age calculator", "calculate lunar age"])
         self.assertEqual(result.requests, 1)
-        self.assertEqual(result.cache_hits, 1)
+        self.assertEqual(result.cache_hits, 0)
         self.assertAlmostEqual(result.spent, 0.01)
-        self.assertEqual(len(result.keywords), 2)
+        self.assertEqual(len(result.keywords), 1)
 
     def test_pipeline_stores_only_relevant_provider_keywords_and_metrics(self):
         engine = create_engine("sqlite:///:memory:")
@@ -134,6 +128,18 @@ class DataForSeoTests(TestCase):
                     "type": "long-tail",
                     "search_volume": 50000,
                     "difficulty": 60.0,
+                },
+                {
+                    "phrase": "age of planets in the solar system",
+                    "type": "long-tail",
+                    "search_volume": 30,
+                    "difficulty": 26.0,
+                },
+                {
+                    "phrase": "solar system planet position calculator",
+                    "type": "long-tail",
+                    "search_volume": 10,
+                    "difficulty": 12.0,
                 },
             ], 0.01, 1, 0)
             with (

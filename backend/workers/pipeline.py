@@ -927,9 +927,16 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
     
     from scraping.apify_client_module import search_google_via_apify, is_apify_configured
 
-    def add_domain(url: str | None, require_relevance: bool = True, query: str | None = None, source: str = "search") -> None:
+    def add_domain(
+        url: str | None,
+        query: str,
+        source: str,
+        rank: int,
+        title: str | None = None,
+        snippet: str | None = None,
+    ) -> None:
         unwrapped_url = _unwrap_result_url(url)
-        if require_relevance and not _is_relevant_result_url(unwrapped_url, required_terms, negative_terms):
+        if not _is_relevant_result_url(unwrapped_url, required_terms, negative_terms):
             return
         domain = _origin(unwrapped_url)
         root = _registered_domain(domain)
@@ -941,12 +948,22 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
             "domain": domain,
             "sample_urls": [],
             "queries": [],
-            "source": source,
+            "sources": [],
+            "best_rank": rank,
+            "titles": [],
+            "snippets": [],
         })
         if unwrapped_url and unwrapped_url not in signal["sample_urls"]:
             signal["sample_urls"].append(unwrapped_url)
-        if query and query not in signal["queries"]:
+        if query not in signal["queries"]:
             signal["queries"].append(query)
+        if source not in signal["sources"]:
+            signal["sources"].append(source)
+        signal["best_rank"] = min(int(signal.get("best_rank") or rank), rank)
+        if title and title not in signal["titles"]:
+            signal["titles"].append(title[:250])
+        if snippet and snippet not in signal["snippets"]:
+            signal["snippets"].append(snippet[:500])
         if root not in competitor_roots:
             competitor_domains.append(domain)
             competitor_roots.add(root)
@@ -962,51 +979,24 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
         primary_results_added = False
         if is_apify_configured():
             apify_results = search_google_via_apify(kw, max_results=serp_limit, country_code=search_locale)
-            for res in apify_results:
-                add_domain(res["url"], require_relevance=False, query=kw, source="apify_page_1")
+            for rank, res in enumerate(apify_results, start=1):
+                add_domain(
+                    res.get("url"), kw, "apify_page_1", rank,
+                    res.get("title"), res.get("snippet"),
+                )
                 primary_results_added = True
                 if len(competitor_domains) - start_count >= per_kw_limit:
                     break
                     
         if not primary_results_added and len(competitor_domains) - start_count < per_kw_limit:
             remaining = per_kw_limit - (len(competitor_domains) - start_count)
-            for href in _search_result_urls(kw, include_google=True, locale=search_locale, max_results=remaining):
-                add_domain(href, require_relevance=False, query=kw, source="google_page_1")
+            for rank, href in enumerate(
+                _search_result_urls(kw, include_google=True, locale=search_locale, max_results=remaining),
+                start=1,
+            ):
+                add_domain(href, kw, "google_page_1", rank)
                 if len(competitor_domains) - start_count >= per_kw_limit:
                     break
-
-        if len(competitor_domains) - start_count >= per_kw_limit:
-            continue
-            
-        # 2. Secondary variant searches for this keyword
-        searched_queries = {kw}
-        for query in _competitor_search_queries([kw]):
-            if query in searched_queries:
-                continue
-            searched_queries.add(query)
-            query_results_added = False
-            if is_apify_configured():
-                apify_results = search_google_via_apify(query, max_results=serp_limit, country_code=search_locale)
-                for res in apify_results:
-                    add_domain(res["url"], query=query)
-                    query_results_added = True
-                    if len(competitor_domains) - start_count >= per_kw_limit:
-                        break
-                        
-            if not query_results_added and len(competitor_domains) - start_count < per_kw_limit:
-                remaining = per_kw_limit - (len(competitor_domains) - start_count)
-                for href in _search_result_urls(query, include_google=True, locale=search_locale, max_results=remaining):
-                    add_domain(href, query=query)
-                    if len(competitor_domains) - start_count >= per_kw_limit:
-                        break
-                        
-            if len(competitor_domains) - start_count >= per_kw_limit:
-                break
-
-    for domain in _fallback_competitor_domains(seed_keywords):
-        add_domain(domain, require_relevance=False, source="fallback")
-        if len(competitor_domains) >= candidate_limit:
-            break
 
     balanced_domains = _balanced_competitor_domains(
         competitor_domains, candidate_signals, seed_keywords, candidate_limit,
@@ -1641,31 +1631,28 @@ def _llm_filter_competitor_domains(
         logger.warning("Competitor LLM judge failed before request: %s", exc)
         return None
 
+    candidate_by_root = {
+        _registered_domain(item.get("domain")): item.get("domain")
+        for item in candidates
+        if _registered_domain(item.get("domain"))
+    }
     accepted: list[str] = []
     for item in judged:
         domain = _origin(item.get("domain"))
-        if domain and domain not in accepted:
-            accepted.append(domain)
+        # The model may reject observed results, but it cannot discover or add
+        # a domain that did not rank for an exact seed during this scan.
+        candidate_domain = candidate_by_root.get(_registered_domain(domain))
+        if candidate_domain and candidate_domain not in accepted:
+            accepted.append(candidate_domain)
     if accepted:
         logger.info("Competitor LLM judge accepted %s domains", len(accepted))
     else:
-        logger.info("Competitor LLM judge rejected all candidates; using balanced direct search results")
-        return None
+        # An empty list is a successful strict judgment. Falling back here used
+        # to reintroduce every domain the judge had explicitly rejected.
+        logger.info("Competitor LLM judge rejected all direct-search candidates")
+        return []
 
     signals = {item["domain"]: item for item in candidates if item.get("domain")}
-    for seed in seed_keywords:
-        if any(seed in signals.get(domain, {}).get("queries", []) for domain in accepted):
-            continue
-        direct_match = next(
-            (
-                item["domain"] for item in candidates
-                if seed in item.get("queries", [])
-                and item.get("source") in {"apify_page_1", "google_page_1"}
-            ),
-            None,
-        )
-        if direct_match and direct_match not in accepted:
-            accepted.append(direct_match)
     return _balanced_competitor_domains(
         accepted,
         signals,
@@ -1700,6 +1687,7 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
     from nlp.openrouter import generate_core_domain_terms
     from nlp.keywords import (
         seed_keyword_terms,
+        keyword_terms,
         site_scope_terms,
     )
     import asyncio
@@ -1715,6 +1703,21 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
         audit_data if isinstance(audit_data, dict) else None,
     )
     fallback_topic_terms |= {f"__scope__{term}" for term in mechanical_scope}
+    mechanical_negative_terms: set[str] = set()
+    if isinstance(audit_data, dict):
+        positive_terms = set(fallback_topic_terms) | mechanical_scope
+        for field in ("primary_keyword", "industry_niche", "core_action", "capabilities", "content_opportunities"):
+            raw = audit_data.get(field)
+            values = raw if isinstance(raw, list) else [raw]
+            for value in values:
+                if isinstance(value, str):
+                    positive_terms |= keyword_terms(value, min_len=3)
+        boundaries = audit_data.get("hard_boundaries") or []
+        if not isinstance(boundaries, list):
+            boundaries = [boundaries]
+        for boundary in boundaries:
+            if isinstance(boundary, str):
+                mechanical_negative_terms |= keyword_terms(boundary, min_len=3) - positive_terms
     
     try:
         loop = asyncio.get_event_loop()
@@ -1724,14 +1727,14 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
         
     if loop.is_running():
         # In case we are already in an event loop, fallback to simple extraction
-        return fallback_topic_terms, set()
+        return fallback_topic_terms, mechanical_negative_terms
         
     try:
         result = loop.run_until_complete(generate_core_domain_terms(seed_keywords, audit_summary))
         core_terms = set(result.get("core_terms", []))
         anchor_terms = set(result.get("anchor_terms", []))
         scope_terms = set(result.get("scope_terms", []))
-        negative_terms = set(result.get("negative_terms", []))
+        negative_terms = set(result.get("negative_terms", [])) | mechanical_negative_terms
         if core_terms or anchor_terms or scope_terms:
             marked = (
                 core_terms
@@ -1743,7 +1746,7 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
         logger.error(f"Failed to generate dynamic semantic terms: {e}")
 
     # Fallback if LLM fails
-    return fallback_topic_terms, set()
+    return fallback_topic_terms, mechanical_negative_terms
 
 
 def _order_seeds_by_emd(seed_keywords: list[str], domain: str | None) -> list[str]:

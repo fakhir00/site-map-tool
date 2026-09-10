@@ -236,6 +236,16 @@ def is_topic_relevant_keyword(
     if any(re.search(rf"\b{re.escape(seed)}\b", cleaned) for seed in normalized_seeds):
         return True
 
+    # Every Gold Hunter seed is an explicit site-scope signal. Allow a close
+    # variation of any seed when it retains both that seed's distinctive entity
+    # and its function/subject. This expands useful volume across all 3-5 seeds
+    # without letting a generic shared word redefine the EMD topic.
+    for seed in normalized_seeds:
+        seed_anchors = seed_keyword_terms([seed]) - BROAD_TOPIC_TERMS
+        seed_scope = site_scope_terms(seed)
+        if seed_anchors and (raw_terms & seed_anchors) and (raw_terms & seed_scope):
+            return True
+
     primary_seed = normalized_seeds[:1]
     primary_anchors = seed_keyword_terms(primary_seed) - BROAD_TOPIC_TERMS
     primary_scope = site_scope_terms(primary_seed[0]) if primary_seed else set()

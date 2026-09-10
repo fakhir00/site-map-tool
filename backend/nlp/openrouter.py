@@ -1056,12 +1056,16 @@ Primary keyword set:
 Candidate competitors:
 {json.dumps(candidates, ensure_ascii=True)}
 
-Choose only domains that are true business/search competitors for the target site. 
-Maintain coverage across every seed keyword: when relevant candidates exist for a seed, accept at least two for that seed before adding extra domains for another seed. The candidate `queries` field shows which seed/search discovered it.
+Choose only domains that are true business/search competitors for the target site.
+Every candidate came from an organic result for an exact seed. The `queries`
+field names those seeds, `best_rank` is its highest position, and
+`titles`/`snippets` provide SERP evidence.
+Maintain coverage across every seed keyword: when relevant candidates exist for a seed, accept at least two for that seed before adding extra domains for another seed.
 Reject dictionaries, marketplaces, social networks, forums, docs portals, and generic informational sites.
 STRICT TOPICAL NICHE MATCH: You must aggressively reject any domain that belongs to a broader industry or different topical niche. 
 - If the target site is a dedicated micro-tool, localized business, or specialized service (like a specific calculator or trading strategy site), you MUST completely REJECT broad software tutorial blogs (e.g., Excel/Google Sheets blogs), generic IT/tech support sites, and generic directories.
 - Only accept domains that are DIRECT, dedicated competitors offering the same specific service/niche.
+- Never return a domain absent from Candidate competitors.
 
 Return ONLY a JSON array with up to {max_domains} objects.
 Each object must include:

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 import uuid
 import json
 
@@ -21,6 +21,7 @@ from workers.pipeline import (
     _llm_filter_competitor_domains,
     _order_seeds_by_emd,
     _search_result_urls,
+    _semantic_terms,
     _with_source_url_ids,
 )
 
@@ -176,6 +177,31 @@ class PipelineFilterTests(TestCase):
         self.assertTrue(any("beta" in domain for domain in domains))
         self.assertTrue(any("gamma" in domain for domain in domains))
 
+    def test_competitor_discovery_never_runs_broad_modifier_queries(self):
+        project = SimpleNamespace(
+            own_domain="https://own.example",
+            domain="https://own.example",
+            search_locale="us",
+            audit_summary="A focused lunar age calculator",
+        )
+        calls = []
+
+        def search(query, **kwargs):
+            calls.append(query)
+            return [f"https://direct-{len(calls)}.example/{query.replace(' ', '-')}"]
+
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=False),
+            patch("workers.pipeline._search_result_urls", side_effect=search),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=None),
+        ):
+            _discover_competitor_domains(
+                project,
+                ["lunar age calculator", "chinese lunar age"],
+            )
+
+        self.assertEqual(calls, ["lunar age calculator", "chinese lunar age"])
+
     def test_balancer_round_robins_seed_candidates(self):
         domains = ["a1", "a2", "b1", "b2", "c1", "c2"]
         signals = {
@@ -186,7 +212,7 @@ class PipelineFilterTests(TestCase):
             ["a1", "b1", "c1", "a2", "b2", "c2"],
         )
 
-    def test_competitor_judge_cannot_drop_an_entire_seed(self):
+    def test_competitor_judge_can_reject_junk_for_a_seed(self):
         candidates = [
             {"domain": "https://alpha.example", "queries": ["alpha seed"], "source": "apify_page_1"},
             {"domain": "https://beta.example", "queries": ["beta seed"], "source": "apify_page_1"},
@@ -198,7 +224,40 @@ class PipelineFilterTests(TestCase):
             result = _llm_filter_competitor_domains(
                 ["alpha seed", "beta seed"], "https://own.example", candidates, 10,
             )
-        self.assertEqual(result, ["https://alpha.example", "https://beta.example"])
+        self.assertEqual(result, ["https://alpha.example"])
+
+    def test_competitor_judge_rejecting_everything_does_not_restore_junk(self):
+        candidates = [{
+            "domain": "https://broad-portal.example",
+            "queries": ["lunar age calculator"],
+            "sources": ["apify_page_1"],
+        }]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter.judge_competitor_domains", return_value=[]),
+        ):
+            result = _llm_filter_competitor_domains(
+                ["lunar age calculator"], "https://own.example", candidates, 10,
+            )
+        self.assertEqual(result, [])
+
+    def test_competitor_judge_cannot_add_an_unobserved_domain(self):
+        candidates = [{
+            "domain": "https://observed.example",
+            "queries": ["lunar age calculator"],
+            "sources": ["apify_page_1"],
+        }]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter.judge_competitor_domains", return_value=[
+                {"domain": "https://invented.example"},
+                {"domain": "https://observed.example"},
+            ]),
+        ):
+            result = _llm_filter_competitor_domains(
+                ["lunar age calculator"], "https://own.example", candidates, 10,
+            )
+        self.assertEqual(result, ["https://observed.example"])
 
     def test_keyword_candidates_are_balanced_across_seeds(self):
         candidates = [
@@ -248,6 +307,42 @@ class PipelineFilterTests(TestCase):
                 phrase, ["lunar age calculator"], topic_terms,
                 {"planet", "planets", "mars", "eclipse", "astronomy", "orbit"},
             ), phrase)
+
+    def test_close_variations_of_every_verified_seed_are_kept(self):
+        seeds = ["lunar age calculator", "chinese lunar age", "korean lunar age"]
+        topic_terms = {"__anchor__lunar", "__scope__age", "__scope__calendar"}
+
+        self.assertTrue(_keyword_matches_topic(
+            "chinese age system explained", seeds, topic_terms, set(),
+        ))
+        self.assertTrue(_keyword_matches_topic(
+            "korean age counting method", seeds, topic_terms, set(),
+        ))
+        self.assertFalse(_keyword_matches_topic(
+            "dog age counting method", seeds, topic_terms, set(),
+        ))
+
+    def test_audit_hard_boundaries_survive_ai_term_failure(self):
+        audit = json.dumps({
+            "primary_keyword": "lunar age calculator",
+            "core_action": "convert a birth date into lunar age",
+            "capabilities": ["compare lunar and solar ages"],
+            "hard_boundaries": [
+                "does not provide astrological readings",
+                "does not track planets or moon phases",
+            ],
+        })
+        with patch(
+            "nlp.openrouter.generate_core_domain_terms",
+            new=AsyncMock(side_effect=RuntimeError("provider unavailable")),
+        ):
+            _topic_terms, negative_terms = _semantic_terms(
+                ["lunar age calculator"], audit,
+            )
+
+        self.assertTrue({"astrological", "reading", "planet", "phase"} & negative_terms)
+        self.assertNotIn("lunar", negative_terms)
+        self.assertNotIn("solar", negative_terms)
 
     def test_emd_seed_is_promoted_to_primary_topic_boundary(self):
         self.assertEqual(
