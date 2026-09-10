@@ -14,17 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import get_current_user
 from app.database import get_db
 from app.models import HubSpokeHistory, Keyword, Project, User
-from nlp.keywords import (
-    BROAD_TOPIC_TERMS,
-    STOPWORDS,
-    clean_phrase,
-    is_topic_relevant_keyword,
-    is_valid_keyword,
-    keyword_terms,
-    normalize_seed_keywords,
-    seed_keyword_terms,
-    site_scope_terms,
-)
+from nlp.keywords import clean_phrase, is_valid_keyword, normalize_seed_keywords
 from nlp.openrouter import _achat_json, cluster_hub_and_spoke, is_ai_configured
 
 router = APIRouter(prefix="/api/hub-spoke", tags=["hub-spoke-workspace"])
@@ -149,52 +139,10 @@ def _context_with_seed_keywords(context: str, seed_keywords: list[str]) -> str:
     return json.dumps(parsed, indent=2)
 
 
-def _structured_context(context: str) -> dict[str, Any]:
-    try:
-        value = json.loads(context) if context.strip() else {}
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def _term_family(term: str) -> str:
-    """Small deterministic stemmer used only for scope and boundary checks."""
-    aliases = {
-        "electrical": "electric", "electronic": "electric", "electronics": "electric",
-        "diagrams": "diagram", "drawing": "diagram", "drawings": "diagram", "symbols": "symbol",
-        "schematic": "diagram", "schematics": "diagram", "wiring": "wire",
-    }
-    value = aliases.get(term, term)
-    for suffix in ("ations", "ation", "ators", "ator", "ments", "ment", "ing", "ers", "er", "ed"):
-        if value.endswith(suffix) and len(value) - len(suffix) >= 4:
-            value = value[:-len(suffix)]
-            if len(value) > 3 and value[-1:] == value[-2:-1]:
-                value = value[:-1]
-            break
-    return value
-
-
-def _hard_boundary_families(context_data: dict[str, Any], protected_terms: set[str]) -> set[str]:
-    boilerplate = {
-        "does", "provide", "provides", "serve", "serves", "offer", "offers",
-        "other", "purpose", "purposes", "general", "personalized",
-    }
-    families: set[str] = set()
-    for boundary in context_data.get("hard_boundaries", []) or []:
-        for token in clean_phrase(str(boundary)).split():
-            if token in STOPWORDS or token in boilerplate or len(token) < 2:
-                continue
-            families.add(_term_family(token))
-    return families - {_term_family(term) for term in protected_terms}
-
-
-def _violates_hard_boundary(phrase: str, boundary_families: set[str]) -> bool:
-    phrase_families = {_term_family(token) for token in clean_phrase(phrase).split()}
-    return bool(phrase_families & boundary_families)
-
-
 def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]:
     """Reject isolated off-topic phrases without relying on the AI provider."""
+    from nlp.keywords import BROAD_TOPIC_TERMS, keyword_terms
+
     if not keywords:
         return []
     term_sets = {phrase: keyword_terms(phrase, min_len=2) for phrase in keywords}
@@ -204,46 +152,6 @@ def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]
     context_terms = keyword_terms(context, min_len=2) if context.strip() else set()
     positions = {phrase: index for index, phrase in enumerate(keywords)}
     seed_keywords = _seed_keywords_from_context(context)
-    context_data = _structured_context(context)
-    primary_keyword = _primary_keyword_from_context(context) or (seed_keywords[0] if seed_keywords else "")
-    scope_terms = site_scope_terms(primary_keyword, context_data)
-    topic_profile = context_terms | {f"__scope__{term}" for term in scope_terms}
-    protected_terms = set(clean_phrase(primary_keyword).split())
-    for field in ("industry_niche", "core_action"):
-        value = context_data.get(field)
-        if isinstance(value, str):
-            protected_terms.update(clean_phrase(value).split())
-    boundary_families = _hard_boundary_families(context_data, protected_terms)
-    content_intent_terms = {
-        "comparison", "definition", "example", "examples", "guide", "meaning",
-        "reference", "review", "symbol", "symbols", "tutorial", "types",
-    }
-
-    def inside_context(phrase: str) -> bool:
-        if _violates_hard_boundary(phrase, boundary_families):
-            return False
-        if re.search(
-            r"\b(pdf|answer key|solution manual|question bank|lab manual)\b",
-            clean_phrase(phrase),
-        ):
-            return False
-        if not primary_keyword:
-            return True
-        if is_topic_relevant_keyword(phrase, seed_keywords or [primary_keyword], topic_profile):
-            return True
-        raw = set(clean_phrase(phrase).split())
-        primary_anchors = seed_keyword_terms([primary_keyword]) - BROAD_TOPIC_TERMS
-        if raw & primary_anchors and raw & content_intent_terms:
-            return True
-        raw_families = {_term_family(term) for term in raw}
-        scope_families = {_term_family(term) for term in scope_terms}
-        # Two audited scope signals form the permitted two-hop route for close
-        # terms that do not repeat the EMD wording.
-        return len(raw_families & scope_families) >= 2
-
-    if primary_keyword:
-        return [phrase for phrase in keywords if inside_context(phrase)]
-
     seed_rules: list[tuple[set[str], int]] = []
     for seed in seed_keywords:
         seed_terms = keyword_terms(seed, min_len=2)
@@ -315,13 +223,12 @@ Website/product context:
 Candidate keywords:
 {json.dumps(chunk)}
 
-Treat the primary keyword/EMD as the central entity and allow at most two semantic hops from it.
-Keep a candidate only when the site context gives a concrete reason to satisfy that exact search
-intent. Enforce every hard boundary literally. Reject adjacent industries, unsupported product
-functions, courseware/file-download queries, answer keys, manuals, brand drift, navigation text,
-broken phrases, and extraction junk. Shared generic words such as circuit, age, system, maker,
-calculator, software, or diagram are never sufficient evidence by themselves. When uncertain,
-reject the candidate. Precision is more important than list size.
+Use a firm but balanced relevance threshold. Keep keywords that directly match the website and
+also strongly related educational, comparison, feature, entity, audience, and use-case terms that
+could support its topical authority. Reject clearly unrelated industries, impossible product
+claims, brand drift, navigation text, broken phrases, and extraction junk. Do not reject a useful
+keyword merely because it is adjacent to the core commercial phrase; keep it when the context
+gives the site a credible reason to answer that search intent.
 You may only return exact strings from Candidate keywords. Order the strongest primary topic first.
 Return JSON: {{"keywords": ["exact candidate", "exact candidate"]}}
 """

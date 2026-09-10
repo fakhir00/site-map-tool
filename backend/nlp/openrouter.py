@@ -1636,18 +1636,11 @@ def _hub_intent_tokens(phrase: str) -> set[str]:
     from nlp.keywords import STOPWORDS, clean_phrase
 
     synonyms = {
-        "builder": "tool", "builders": "tool", "creator": "tool",
-        "creators": "tool", "generator": "tool", "generators": "tool",
-        "maker": "tool", "makers": "tool", "software": "tool", "tools": "tool",
-        "app": "tool", "apps": "tool", "visualizer": "tool",
-        "drawing": "diagram", "drawings": "diagram", "schematic": "diagram",
-        "schematics": "diagram", "tutorial": "guide", "tutorials": "guide",
-        "meanings": "meaning", "companies": "agency", "services": "agency",
-        "electrical": "electric", "electronic": "electric", "electronics": "electric",
-    }
-    weak_qualifiers = {
-        "basic", "complete", "electric", "find", "free", "online", "out",
-        "overview", "simple", "tool",
+        "builder": "maker", "builders": "maker", "creator": "maker",
+        "creators": "maker", "generator": "maker", "generators": "maker",
+        "software": "tool", "tools": "tool", "tutorial": "guide",
+        "tutorials": "guide", "meanings": "meaning", "companies": "agency",
+        "services": "agency",
     }
     tokens: set[str] = set()
     for token in clean_phrase(phrase).replace("-", " ").split():
@@ -1655,9 +1648,7 @@ def _hub_intent_tokens(phrase: str) -> set[str]:
             continue
         if token.endswith("s") and not token.endswith("ss") and len(token) > 4:
             token = token[:-1]
-        token = synonyms.get(token, token)
-        if token not in weak_qualifiers:
-            tokens.add(token)
+        tokens.add(synonyms.get(token, token))
     return tokens
 
 
@@ -1665,61 +1656,7 @@ def _hub_intent_similarity(left: str, right: str) -> float:
     left_tokens = _hub_intent_tokens(left)
     right_tokens = _hub_intent_tokens(right)
     union = left_tokens | right_tokens
-    if not union:
-        return 0.0
-    intersection = len(left_tokens & right_tokens)
-    jaccard = intersection / len(union)
-    shorter = min(len(left_tokens), len(right_tokens))
-    containment = intersection / shorter if shorter else 0.0
-    return max(jaccard, containment)
-
-
-def _hub_same_page_intent(left: str, right: str) -> bool:
-    """Return true when two targets should resolve to one canonical URL."""
-    left_tokens = _hub_intent_tokens(left)
-    right_tokens = _hub_intent_tokens(right)
-    if not left_tokens or not right_tokens:
-        return False
-    if left_tokens == right_tokens:
-        return True
-    union = left_tokens | right_tokens
-    jaccard = len(left_tokens & right_tokens) / len(union)
-    if jaccard >= 0.82:
-        return True
-
-    def mode(value: str) -> str:
-        words = set(value.lower().replace("-", " ").split())
-        if words & {"symbol", "symbols", "abbreviation", "abbreviations"}:
-            return "symbols"
-        if words & {"example", "examples", "idea", "ideas"}:
-            return "examples"
-        if words & {"tutorial", "tutorials", "guide", "guides"} or "how" in words:
-            return "tutorial"
-        if words & {"definition", "definitions", "meaning", "meanings", "define"}:
-            return "definition"
-        if words & {"best", "comparison", "compare", "review", "reviews", "versus", "vs"}:
-            return "comparison"
-        if words & {
-            "app", "apps", "builder", "creator", "generator", "maker",
-            "software", "tool", "tools", "visualizer",
-        }:
-            return "tool"
-        return "topic"
-
-    left_mode, right_mode = mode(left), mode(right)
-    if left_mode != right_mode:
-        return False
-    protected_subtopics = {
-        "analog", "digital", "parallel", "series", "short", "logic", "nand",
-        "xor", "counter", "encoder", "decoder", "adder", "multiplexer",
-    }
-    if (left_tokens & protected_subtopics) != (right_tokens & protected_subtopics):
-        return False
-    if left_mode == "symbols" and "symbol" in left_tokens & right_tokens:
-        return True
-    shorter = min(len(left_tokens), len(right_tokens))
-    containment = len(left_tokens & right_tokens) / shorter if shorter else 0.0
-    return left_mode != "topic" and containment >= 0.75
+    return len(left_tokens & right_tokens) / len(union) if union else 0.0
 
 
 def _hub_slug(phrase: str) -> str:
@@ -1797,33 +1734,7 @@ def _prepare_hub_page_keywords(
             continue
         prepared.append(item)
         consumed.add(phrase)
-    # Consolidate synonymous, contained, and weak-modifier variants before the
-    # model chooses URLs. This lets the model select 10 genuinely distinct
-    # spokes instead of selecting duplicates that are removed only afterward.
-    canonical: list[dict[str, Any]] = []
-    main_item = next((dict(item) for item in prepared if item["phrase"] == main), {
-        "phrase": main,
-        "type": "primary",
-        "h_tags": [],
-    })
-    canonical.append(main_item)
-    for item in prepared:
-        phrase = item["phrase"]
-        if phrase == main:
-            continue
-        destination = next(
-            (kept for kept in canonical if _hub_same_page_intent(phrase, kept["phrase"])),
-            None,
-        )
-        if destination is None:
-            canonical.append(item)
-            continue
-        destination["h_tags"] = list(dict.fromkeys([
-            *(destination.get("h_tags") or []),
-            phrase,
-            *(item.get("h_tags") or []),
-        ]))
-    return canonical
+    return prepared
 
 
 def _append_h2s(spoke: str, extras: list[str]) -> str:
@@ -2187,14 +2098,14 @@ def _sanitize_detailed_hub_plan(
             or slug == _hub_slug(str(existing.get("target_keyword") or ""))
             or title_key == clean_phrase(str(existing.get("article_title") or ""))
             or fingerprint == tuple(sorted(_hub_intent_tokens(str(existing.get("target_keyword") or ""))))
-            or _hub_same_page_intent(target, str(existing.get("target_keyword") or ""))
+            or _hub_intent_similarity(target, str(existing.get("target_keyword") or "")) >= 0.78
         ), None)
         duplicates_master = (
             target == main
             or slug == _hub_slug(main)
             or title_key == clean_phrase(str(master.get("article_title") or main))
             or fingerprint == tuple(sorted(_hub_intent_tokens(main)))
-            or _hub_same_page_intent(target, main)
+            or _hub_intent_similarity(target, main) >= 0.85
         )
         if duplicates_master:
             merge_duplicate(master, article, target)
@@ -2511,7 +2422,7 @@ def _validate_hub_and_spoke(
                 if fingerprint in seen_fingerprints:
                     return f"Duplicate keyword intent: {target}."
                 duplicate_intent = next(
-                    (existing for existing in seen_intents if _hub_same_page_intent(target, existing)),
+                    (existing for existing in seen_intents if _hub_intent_similarity(target, existing) >= 0.78),
                     None,
                 )
                 if duplicate_intent:
@@ -2751,10 +2662,10 @@ Raw keyword list:
 {json.dumps(trimmed)}
 
 Execute these steps in sequence:
-1. FILTER: Treat the primary keyword/EMD as the central entity. Remove every keyword outside its two-hop topical neighborhood and every keyword that violates a hard boundary. Shared generic words do not prove relevance. Never keep an unrelated keyword to reach the article quota.
+1. FILTER: Remove obvious junk and keywords that violate the website context or its hard boundaries. Keep useful adjacent educational, commercial, comparison, feature, entity, and use-case terms.
 2. CLUSTER: Group every relevant keyword by search intent.
 3. STRUCTURE: Build exactly 1 Master Hub and 10 to 20 strategically connected Spoke articles. The total plan must contain 11 to 21 articles. Use a flat plan with no nested hubs or sub-silos.
-4. PREVENT CANNIBALIZATION: Each article must satisfy a distinct primary search intent. Tool synonyms such as maker, generator, software, app, builder, and visualizer share one page unless their required function is materially different. Electric/electronic/electrical, diagram/schematic/drawing, simple/basic, and tutorial/guide/overview variants share one page. Put overlapping and long-tail variants inside the strongest article as H2, H3, Entity, or FAQ placements.
+4. PREVENT CANNIBALIZATION: Each article must satisfy a distinct primary search intent. Put overlapping and long-tail variants inside the strongest article as H2, H3, Entity, or FAQ placements.
 5. STANDARDS: Never create individual articles for ANSI, IEC, DIN, JIS, UL, CE, FCC, IEEE, BS, or similar standards. Consolidate them under one relevant standards section or article.
 6. MAP: Explicitly place every relevant keyword in one article as its Title/H1 target, H2, H3, Entity, or FAQ. Cover all relevant keywords.
 7. INTERLINK: Create a useful authority loop between theory, tutorials, references, comparisons, and the Master Hub.

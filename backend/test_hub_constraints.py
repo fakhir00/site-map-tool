@@ -4,8 +4,6 @@ from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 
 from nlp.openrouter import (
-    _hub_same_page_intent,
-    _prepare_hub_page_keywords,
     _deepseek_plan_to_hub_schema,
     _sanitize_detailed_hub_plan,
     _validate_hub_and_spoke,
@@ -16,92 +14,14 @@ def spoke(keyword):
     return f"{keyword.title()} (Target Keyword: {keyword})"
 
 
-def circuit_keyword_fixture(count=20):
-    phrases = [
-        "circuit diagram symbols", "circuit diagram examples", "circuit diagram tutorial",
-        "analog circuit diagram", "digital circuit diagram", "series circuit diagram",
-        "parallel circuit diagram", "voltage divider circuit diagram",
-        "transistor circuit diagram", "op amp circuit diagram", "led circuit diagram",
-        "timer circuit diagram", "amplifier circuit diagram", "power supply circuit diagram",
-        "logic gate circuit diagram", "electrical wiring diagram",
-        "circuit diagram troubleshooting", "how to read circuit diagrams",
-        "circuit diagram standards", "circuit diagram software comparison",
+def circuit_keyword_fixture(count=100):
+    return [
+        {"phrase": f"circuit diagram maker topic {index}", "type": "long-tail"}
+        for index in range(1, count + 1)
     ]
-    return [{"phrase": phrase, "type": "long-tail"} for phrase in phrases[:count]]
 
 
 class HubConstraintTests(TestCase):
-    def test_semantic_page_duplicates_are_consolidated(self):
-        self.assertTrue(_hub_same_page_intent(
-            "circuit diagram maker", "electronic circuit diagram maker"
-        ))
-        self.assertTrue(_hub_same_page_intent(
-            "circuit diagram maker", "circuit schematic diagram maker"
-        ))
-        self.assertTrue(_hub_same_page_intent(
-            "simple electronic circuit diagram", "simple electrical circuit diagram"
-        ))
-        self.assertTrue(_hub_same_page_intent(
-            "circuit tutorial", "circuit tutorial overview"
-        ))
-        self.assertTrue(_hub_same_page_intent(
-            "circuit diagram symbols", "schematic symbols"
-        ))
-        self.assertTrue(_hub_same_page_intent(
-            "wiring symbols", "wiring symbols meanings"
-        ))
-        self.assertFalse(_hub_same_page_intent("digital circuit tutorial", "analog circuit tutorial"))
-        self.assertFalse(_hub_same_page_intent("circuit diagram symbols", "circuit diagram examples"))
-
-        prepared = _prepare_hub_page_keywords([
-            {"phrase": "electronic circuit diagram maker", "type": "long-tail"},
-            {"phrase": "circuit schematic diagram maker", "type": "long-tail"},
-            {"phrase": "circuit diagram symbols", "type": "long-tail"},
-        ], "circuit diagram maker")
-        self.assertEqual([item["phrase"] for item in prepared], [
-            "circuit diagram maker", "circuit diagram symbols",
-        ])
-        self.assertEqual(set(prepared[0]["h_tags"]), {
-            "electronic circuit diagram maker", "circuit schematic diagram maker",
-        })
-
-    def test_reported_circuit_architecture_has_no_competing_urls(self):
-        targets = [
-            "electronic circuit diagram maker", "circuit schematic diagram maker",
-            "circuit diagram simulator", "circuit diagram and symbols",
-            "schematic electronic circuit", "electronic circuit app", "circuit visualizer",
-            "circuitlab examples", "simple circuit diagram", "electric circuit diagram",
-            "simple electronic circuit diagram", "electrical circuit drawing",
-            "simple electrical circuit diagram", "circuit diagram", "circuit examples",
-            "circuit tutorial", "circuit tutorial overview", "digital circuit tutorial",
-            "analog circuit tutorial",
-        ]
-        raw = {
-            "master_hub": {
-                "article_title": "Circuit Diagram Maker",
-                "target_keyword": "circuit diagram maker",
-            },
-            "spokes": [
-                {"article_title": target.title(), "target_keyword": target}
-                for target in targets
-            ],
-        }
-        result = _sanitize_detailed_hub_plan(
-            raw,
-            [{"phrase": target, "type": "long-tail"} for target in targets],
-            "circuit diagram maker",
-        )
-        final_targets = [
-            "circuit diagram maker",
-            *(item["target_keyword"] for item in result["spokes"]),
-        ]
-        self.assertEqual(result["_deduplication_check"]["duplicates_removed"], 12)
-        self.assertFalse(any(
-            _hub_same_page_intent(left, right)
-            for index, left in enumerate(final_targets)
-            for right in final_targets[index + 1:]
-        ))
-
     def valid_payload(self):
         return {
             "hubs": [{
