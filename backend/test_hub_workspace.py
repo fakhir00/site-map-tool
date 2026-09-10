@@ -110,7 +110,27 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(_mechanical_relevance_filter([
             "circuit symbol reference", "pcb layout tutorial", "electrical schematic examples", "dog age calculator",
         ], context), [
-            "circuit symbol reference", "pcb layout tutorial", "electrical schematic examples",
+            "circuit symbol reference", "electrical schematic examples",
+        ])
+
+    def test_cleaner_enforces_hard_boundaries_and_rejects_courseware(self):
+        context = json.dumps({
+            "primary_keyword": "circuit diagram maker",
+            "industry_niche": "online electronics schematic design tools",
+            "core_action": "create and export electronic circuit diagrams in the browser",
+            "capabilities": ["schematic editor", "electronic symbols", "wire routing"],
+            "hard_boundaries": ["PCB physical layout", "simulation", "programming", "IT networking"],
+            "content_opportunities": ["circuit diagram examples", "educational resources"],
+            "seed_keywords": ["circuit diagram symbols", "how to draw circuit diagrams"],
+        })
+        candidates = [
+            "circuit diagram symbols", "electrical wiring symbols", "npn circuit diagram",
+            "circuit diagram simulator", "pcb layout tutorial", "how to program integrated circuits",
+            "network circuit diagram", "electronic circuits pdf notes",
+            "electronic circuits question bank", "circuits analysis answer key",
+        ]
+        self.assertEqual(_mechanical_relevance_filter(candidates, context), [
+            "circuit diagram symbols", "electrical wiring symbols", "npn circuit diagram",
         ])
 
 
