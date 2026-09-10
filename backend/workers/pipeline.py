@@ -2063,7 +2063,7 @@ def _ensure_minimum_keyword_count(
     evidence_phrases: list[str] | None = None,
 ) -> int:
     """Pursue the configured research goal without padding unsupported results."""
-    from app.models import Keyword, Url
+    from app.models import Keyword, KeywordUrl, Url
     from nlp.keywords import clean_phrase
 
     target = max(100, int(settings.MIN_KEYWORDS_PER_SCAN))
@@ -2073,9 +2073,6 @@ def _ensure_minimum_keyword_count(
     }
     own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     excluded = existing | own_phrases
-    if len(existing) >= target:
-        return len(existing)
-
     ai_url_str, ai_source_domain = ai_generated_source()
     ai_url = db.execute(
         select(Url).where(Url.project_id == project_id, Url.url == ai_url_str)
@@ -2091,8 +2088,15 @@ def _ensure_minimum_keyword_count(
         db.add(ai_url)
         db.flush()
 
+    ai_existing = set(db.execute(
+        select(Keyword.phrase)
+        .join(KeywordUrl, KeywordUrl.keyword_id == Keyword.id)
+        .where(Keyword.project_id == project_id, KeywordUrl.url_id == ai_url.id)
+    ).scalars().all())
+    minimum_ai_keywords = min(40, max(10, int(settings.AI_KEYWORD_GENERATION_BATCH_SIZE)))
+
     for batch_number in range(max(1, int(settings.AI_KEYWORD_GENERATION_MAX_BATCHES))):
-        missing = target - len(existing)
+        missing = max(target - len(existing), minimum_ai_keywords - len(ai_existing))
         if missing <= 0:
             break
         requested = min(max(5, int(settings.AI_KEYWORD_GENERATION_BATCH_SIZE)), max(missing + 10, 20))
@@ -2126,14 +2130,16 @@ def _ensure_minimum_keyword_count(
         if accumulator:
             _store_keywords(db, project_id, accumulator)
             existing.update(accumulator)
+            ai_existing.update(accumulator)
             excluded.update(accumulator)
             logger.info(
-                "[%s] Keyword expansion batch %s stored %s; total is now %s/%s",
+                "[%s] AI keyword expansion batch %s stored %s; total is %s/%s with %s AI recommendations",
                 project_id,
                 batch_number + 1,
                 len(accumulator),
                 len(existing),
                 target,
+                len(ai_existing),
             )
         else:
             logger.warning("[%s] Keyword expansion batch %s returned no new relevant phrases", project_id, batch_number + 1)

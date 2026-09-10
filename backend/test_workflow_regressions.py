@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select, text
@@ -16,7 +16,7 @@ from app.auth.jwt import create_access_token
 from app.database import get_db
 from app.main import app, _ensure_runtime_schema
 from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, Project, ScanJob, Url, User
-from workers.pipeline import _clear_previous_results, _scan_is_active
+from workers.pipeline import _clear_previous_results, _ensure_minimum_keyword_count, _scan_is_active
 
 PACKAGE = dict(status='passed', title='Test prompt', content_markdown='# CONTENT WRITING ASSIGNMENT\nTest prompt',
     audit={'score': 95, 'passed': True}, attempts=1, brief={}, competitor_pages=[], own_pages=[])
@@ -343,6 +343,40 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(imported_context['primary_keyword'], 'circuit diagram')
         self.assertEqual(imported_context['seed_keywords'], ['circuit diagram'])
         self.assertEqual(imported.json()['project_id'], pid)
+
+    def test_every_scan_adds_ai_keywords_even_when_other_sources_reach_target(self):
+        pid = uuid.UUID(self.project())
+        generated = [
+            {"phrase": f"circuit diagram easy win {index}", "type": "long-tail"}
+            for index in range(40)
+        ]
+        generator = Mock(return_value=generated)
+        with self.sessions() as db:
+            db.add_all([
+                Keyword(
+                    project_id=pid,
+                    phrase=f"circuit diagram existing {index}",
+                    keyword_type="long-tail",
+                    frequency=1,
+                )
+                for index in range(100)
+            ])
+            db.flush()
+            total = _ensure_minimum_keyword_count(
+                db=db,
+                project_id=pid,
+                seed_keywords=["circuit diagram"],
+                topic_terms={"circuit"},
+                negative_terms=set(),
+                audit_summary=json.dumps({"primary_keyword": "circuit diagram"}),
+                generate_keywords=generator,
+                ai_generated_source=lambda: ("https://ai.generated", "AI Recommendations"),
+            )
+            db.commit()
+
+        self.assertEqual(total, 140)
+        generator.assert_called_once()
+        self.assertIn("audit_summary", generator.call_args.kwargs)
 
     def test_bulk_keyword_delete_cannot_touch_another_project(self):
         first_project_id = uuid.UUID(self.project())

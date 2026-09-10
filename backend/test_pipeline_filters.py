@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 import uuid
+import json
 
 from nlp.openrouter import (
     _balanced_keyword_candidates,
@@ -113,6 +114,38 @@ class PipelineFilterTests(TestCase):
             )
 
         self.assertEqual(result, [{"phrase": "lunar age leap month", "type": "long-tail"}])
+
+    def test_ai_generation_uses_gold_summary_and_requests_easy_wins(self):
+        audit = json.dumps({
+            "primary_keyword": "lunar age calculator",
+            "industry_niche": "east asian lunar age conversion tools",
+            "core_action": "convert a birth date into lunar age",
+            "capabilities": ["compare lunar and solar ages"],
+            "content_opportunities": ["impact of leap months on lunar age"],
+            "hard_boundaries": ["planet age calculations"],
+        })
+        payload = [{
+            "phrase": "lunar age leap month guide",
+            "type": "long-tail",
+            "support_source": "audit",
+            "support_phrase": "impact of leap months on lunar age",
+        }]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._chat_json", return_value=payload) as chat,
+        ):
+            result = generate_ai_keywords_sync(
+                ["lunar age calculator", "chinese lunar age"],
+                topic_terms={"__anchor__lunar", "__scope__age", "__scope__month"},
+                audit_summary=audit,
+                apply_gap_filter=False,
+            )
+
+        self.assertEqual(result[0]["phrase"], "lunar age leap month guide")
+        prompt = chat.call_args.kwargs["user_prompt"]
+        self.assertIn("impact of leap months on lunar age", prompt)
+        self.assertIn("Prioritize easy-to-rank opportunities", prompt)
+        self.assertIn("no seed may be ignored", prompt)
 
     def test_competitor_discovery_runs_every_seed_and_balances_results(self):
         project = SimpleNamespace(

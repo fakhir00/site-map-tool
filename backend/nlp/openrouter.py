@@ -13,6 +13,36 @@ logger = logging.getLogger(__name__)
 ALLOWED_KEYWORD_TYPES = {"primary", "lsi", "long-tail", "entity", "heading"}
 
 
+def _audit_keyword_evidence(audit_summary: str | None) -> list[str]:
+    """Extract exact positive evidence units from a Gold Hunter audit."""
+    from nlp.keywords import clean_phrase
+
+    if not audit_summary:
+        return []
+    try:
+        parsed = json.loads(audit_summary)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        cleaned = clean_phrase(audit_summary)
+        return [cleaned] if cleaned else []
+    if not isinstance(parsed, dict):
+        return []
+    positive_fields = (
+        "primary_keyword", "industry_niche", "core_action", "target_audience",
+        "search_intents", "capabilities", "content_opportunities", "seed_keywords",
+    )
+    evidence: list[str] = []
+    for field in positive_fields:
+        raw = parsed.get(field)
+        values = raw if isinstance(raw, list) else [raw]
+        for value in values:
+            if isinstance(value, dict):
+                value = value.get("keyword") or value.get("phrase")
+            cleaned = clean_phrase(str(value or ""))
+            if cleaned and cleaned not in evidence:
+                evidence.append(cleaned)
+    return evidence
+
+
 def _keyword_generation_support_is_valid(
     item: dict[str, Any],
     seed_keywords: list[str],
@@ -42,8 +72,16 @@ def _keyword_generation_support_is_valid(
         evidence = {clean_phrase(value) for value in (evidence_phrases or []) if value}
         return support in evidence
     if source == "audit":
-        audit = clean_phrase(audit_summary or "")
-        return bool(audit and len(support.split()) >= 2 and support in audit)
+        audit_evidence = _audit_keyword_evidence(audit_summary)
+        if len(support.split()) < 2:
+            return False
+        if any(support == evidence or support in evidence or evidence in support for evidence in audit_evidence):
+            return True
+        support_terms = set(support.split())
+        return any(
+            len(support_terms & set(evidence.split())) >= 2
+            for evidence in audit_evidence
+        )
     return False
 
 
@@ -412,15 +450,19 @@ async def generate_ai_keywords(
     target_count = max(5, min(int(target_count), 60))
     excluded = sorted(exclude_phrases or set())[-400:]
     evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
+    audit_evidence = _audit_keyword_evidence(audit_summary)
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate up to {target_count} high-quality, distinct keyword opportunities. Return fewer when the supplied evidence and context do not support that many. Distribute valid results across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
+Generate up to {target_count} high-quality, distinct keyword opportunities and aim to fill the requested count when the Gold Hunter evidence supports it. At least 80% should be useful page-level primary or long-tail searches; use entity and heading types sparingly.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
 
 Website context:
 {audit_summary or "No additional context supplied."}
+
+Exact positive evidence extracted from the Gold Hunter Agent summary:
+{json.dumps(audit_evidence)}
 
 Already collected phrases (do not repeat or paraphrase with the same search intent):
 {json.dumps(excluded)}
@@ -430,7 +472,10 @@ Phrases observed on the selected competitor pages (use these as evidence and top
 
 Quality rules:
 - Allocate the output evenly across every seed keyword; no seed may be ignored.
-- Use the website context to match its competition, target audience, core action, capabilities, boundaries, and search intent.
+- Use the Gold Hunter Agent summary in every batch. Match its specific niche, target audience, core action, capabilities, content opportunities, boundaries, and search intents.
+- Prioritize easy-to-rank opportunities: specific long-tail queries, narrow problems, questions, comparisons, and use cases with clear intent and likely weaker competition than the head term.
+- Prefer keywords a focused EMD can realistically rank for before broad, high-authority head terms. Never invent search-volume or difficulty numbers.
+- For each seed, explore supported how-to, question, problem, audience, feature, comparison, and narrow use-case angles. Keep only angles that deserve a useful page and have a distinct real search intent.
 - Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
 - Each result must cite exactly one supplied seed, one exact competitor phrase, or a short exact phrase from the website context as its support. Never claim support that is absent from the inputs.
 - A phrase must represent a query a real member of the target audience would search. Do not create variants merely to reach the requested count.
@@ -441,7 +486,7 @@ Quality rules:
 - Reject bogus, random, generic, broad, off-topic, or awkward phrases.
 - Do not invent fake brands, fake products, fake people, or fake entities.
 - Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
-- Every phrase must include at least one meaningful seed keyword term exactly, so the app can safely reject unrelated junk.
+- Every phrase must either preserve a meaningful seed/anchor term or combine an anchor with a concrete capability, audience need, or content opportunity from the Gold Hunter evidence. Stay within two semantic hops of the EMD.
 - When competitor or audit support is unavailable, preserve one complete seed phrase unchanged inside the keyword and use that seed as the support.
 - For LSI keywords, include the seed term plus a semantic modifier instead of drifting to a broad synonym-only phrase.
 
@@ -457,7 +502,7 @@ Each object must have:
 - "phrase": the keyword phrase (string, lowercase)
 - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
 - "support_source": one of "seed", "competitor", or "audit"
-- "support_phrase": the exact seed, exact competitor phrase, or short exact phrase from the website context that supports this keyword
+- "support_phrase": the exact seed, exact competitor phrase, or one exact item from the Gold Hunter evidence list that supports this keyword
 """
     try:
         payload = await _achat_json(
@@ -543,15 +588,19 @@ def generate_ai_keywords_sync(
     target_count = max(5, min(int(target_count), 60))
     excluded = sorted(exclude_phrases or set())[-400:]
     evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
+    audit_evidence = _audit_keyword_evidence(audit_summary)
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate up to {target_count} high-quality, distinct keyword opportunities. Return fewer when the supplied evidence and context do not support that many. Distribute valid results across primary, LSI, long-tail, entity, and heading types, with most as useful page-level primary or long-tail searches.
+Generate up to {target_count} high-quality, distinct keyword opportunities and aim to fill the requested count when the Gold Hunter evidence supports it. At least 80% should be useful page-level primary or long-tail searches; use entity and heading types sparingly.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
 
 Website context:
 {audit_summary or "No additional context supplied."}
+
+Exact positive evidence extracted from the Gold Hunter Agent summary:
+{json.dumps(audit_evidence)}
 
 Already collected phrases (do not repeat or paraphrase with the same search intent):
 {json.dumps(excluded)}
@@ -561,7 +610,10 @@ Phrases observed on the selected competitor pages (use these as evidence and top
 
 Quality rules:
 - Allocate the output evenly across every seed keyword; no seed may be ignored.
-- Use the website context to match its competition, target audience, core action, capabilities, boundaries, and search intent.
+- Use the Gold Hunter Agent summary in every batch. Match its specific niche, target audience, core action, capabilities, content opportunities, boundaries, and search intents.
+- Prioritize easy-to-rank opportunities: specific long-tail queries, narrow problems, questions, comparisons, and use cases with clear intent and likely weaker competition than the head term.
+- Prefer keywords a focused EMD can realistically rank for before broad, high-authority head terms. Never invent search-volume or difficulty numbers.
+- For each seed, explore supported how-to, question, problem, audience, feature, comparison, and narrow use-case angles. Keep only angles that deserve a useful page and have a distinct real search intent.
 - Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
 - Each result must cite exactly one supplied seed, one exact competitor phrase, or a short exact phrase from the website context as its support. Never claim support that is absent from the inputs.
 - A phrase must represent a query a real member of the target audience would search. Do not create variants merely to reach the requested count.
@@ -572,7 +624,7 @@ Quality rules:
 - Reject bogus, random, generic, broad, off-topic, or awkward phrases.
 - Do not invent fake brands, fake products, fake people, or fake entities.
 - Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
-- Every phrase must include at least one meaningful seed keyword term exactly, so the app can safely reject unrelated junk.
+- Every phrase must either preserve a meaningful seed/anchor term or combine an anchor with a concrete capability, audience need, or content opportunity from the Gold Hunter evidence. Stay within two semantic hops of the EMD.
 - When competitor or audit support is unavailable, preserve one complete seed phrase unchanged inside the keyword and use that seed as the support.
 - For LSI keywords, include the seed term plus a semantic modifier instead of drifting to a broad synonym-only phrase.
 
@@ -588,7 +640,7 @@ Each object must have:
 - "phrase": the keyword phrase (string, lowercase)
 - "type": one of "primary", "lsi", "long-tail", "entity", or "heading"
 - "support_source": one of "seed", "competitor", or "audit"
-- "support_phrase": the exact seed, exact competitor phrase, or short exact phrase from the website context that supports this keyword
+- "support_phrase": the exact seed, exact competitor phrase, or one exact item from the Gold Hunter evidence list that supports this keyword
 """
     try:
         payload = _chat_json(
