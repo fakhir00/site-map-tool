@@ -11,13 +11,14 @@ type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[];
 type Hub = Silo & { sub_silos?: Silo[] }
 type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
 type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
-type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
+type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number }
+type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
-type Mapping = { hubs: Hub[]; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; writing_standards?: string[] }
+type Mapping = { hubs: Hub[]; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
 type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
-type ProjectImport = { project_id: string; project_name: string; keywords: string[]; context: string }
+type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
 const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
@@ -32,10 +33,46 @@ const parseSpoke = (spoke: string) => {
   return { title, target, included: includedText.split(',').map((item) => item.trim()).filter(Boolean) }
 }
 
+const parseCsvRow = (line: string) => {
+  const cells: string[] = []
+  let value = ''
+  let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"' && quoted && line[index + 1] === '"') { value += '"'; index += 1 }
+    else if (char === '"') quoted = !quoted
+    else if (char === ',' && !quoted) { cells.push(value.trim()); value = '' }
+    else value += char
+  }
+  cells.push(value.trim())
+  return cells
+}
+
 const parseFile = (text: string) => {
-  const values = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  if (values[0]?.toLowerCase().replaceAll('"', '').startsWith('keyword')) values.shift()
-  return values.map((line) => line.split(',')[0].replaceAll('"', '').trim()).filter(Boolean)
+  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map(parseCsvRow)
+  if (!rows.length) return { keywords: [], keywordData: [] }
+  const header = rows[0].map((cell) => cell.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())
+  const keywordIndex = header.findIndex((cell) => cell === 'keyword' || cell === 'keyword gap' || cell === 'phrase')
+  const volumeIndex = header.findIndex((cell) => cell === 'search volume' || cell === 'volume')
+  const difficultyIndex = header.findIndex((cell) => cell === 'difficulty' || cell === 'keyword difficulty' || cell === 'kd')
+  const typeIndex = header.findIndex((cell) => cell === 'type' || cell === 'keyword type')
+  const hasHeader = keywordIndex >= 0
+  const dataRows = hasHeader ? rows.slice(1) : rows
+  const seen = new Set<string>()
+  const keywordData = dataRows.flatMap((row) => {
+    const phrase = (row[hasHeader ? keywordIndex : 0] || '').trim().toLowerCase()
+    if (!phrase || seen.has(phrase)) return []
+    seen.add(phrase)
+    const volume = volumeIndex >= 0 && row[volumeIndex] !== '' ? Number(row[volumeIndex]) : null
+    const difficulty = difficultyIndex >= 0 && row[difficultyIndex] !== '' ? Number(row[difficultyIndex]) : null
+    return [{
+      phrase,
+      keyword_type: typeIndex >= 0 ? row[typeIndex] || 'long-tail' : 'long-tail',
+      search_volume: Number.isFinite(volume) ? volume : null,
+      difficulty: Number.isFinite(difficulty) ? difficulty : null,
+    }]
+  })
+  return { keywords: keywordData.map((item) => item.phrase), keywordData }
 }
 
 const downloadText = (name: string, content: string) => {
@@ -57,7 +94,7 @@ const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
 
   const addPage = (label: string, page: PageDetail) => {
     const target = page.target_keyword || ''
-    lines.push(`## ${label}: ${page.article_title || target}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- Target keyword: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
+    lines.push(`## ${label}: ${page.article_title || target}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- Target keyword: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
     if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
     if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
     if (page.h2_sections?.length) { lines.push('- H2 plan:'); page.h2_sections.forEach((section) => lines.push(`  - ${section.h2_heading}: ${section.section_definition || 'Cover this section directly.'}${section.targeted_keywords_placed_here?.length ? ` Keywords: ${section.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
@@ -83,6 +120,7 @@ export function HubSpokeWorkspace() {
   const inputRef = useRef<HTMLInputElement>(null)
   const importedKeyRef = useRef('')
   const [keywords, setKeywords] = useState<string[]>([])
+  const [keywordData, setKeywordData] = useState<KeywordMetric[]>([])
   const [cleaned, setCleaned] = useState<string[]>([])
   const [contextOpen, setContextOpen] = useState(false)
   const [context, setContext] = useState('')
@@ -142,6 +180,7 @@ export function HubSpokeWorkspace() {
     if (importedKeyRef.current === importKey) return
     importedKeyRef.current = importKey
     setKeywords(projectImport.data.keywords)
+    setKeywordData(projectImport.data.keyword_data || [])
     setCleaned([])
     setContext(projectImport.data.context)
     setContextOpen(true)
@@ -157,7 +196,9 @@ export function HubSpokeWorkspace() {
       setError('Use a CSV or TXT file smaller than 5 MB.')
       return
     }
-    setKeywords(parseFile(await file.text()))
+    const parsed = parseFile(await file.text())
+    setKeywords(parsed.keywords)
+    setKeywordData(parsed.keywordData)
     setCleaned([])
     setMapping(null)
     setSourceProjectId(null)
@@ -168,8 +209,9 @@ export function HubSpokeWorkspace() {
   const removeNoise = async () => {
     setBusy('clean'); setError('')
     try {
-      const result = await api.postAI<{ keywords: string[] }>('/hub-spoke/clean', { keywords, context })
+      const result = await api.postAI<{ keywords: string[]; keyword_data?: KeywordMetric[] }>('/hub-spoke/clean', { keywords, keyword_data: keywordData, context })
       setCleaned(result.keywords)
+      setKeywordData(result.keyword_data || keywordData.filter((item) => result.keywords.includes(item.phrase)))
       setMapping(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Keyword cleaning failed')
@@ -181,6 +223,7 @@ export function HubSpokeWorkspace() {
     try {
       const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
         keywords: cleaned.length ? cleaned : keywords,
+        keyword_data: keywordData,
         context,
         project_id: sourceProjectId,
       })
@@ -199,6 +242,7 @@ export function HubSpokeWorkspace() {
     try {
       const saved = await api.get<HistoryDetail>(`/hub-spoke/history/${id}`)
       setKeywords(saved.keywords)
+      setKeywordData(saved.clusters?._keyword_metrics || [])
       setCleaned(saved.cleaned_keywords)
       setContext(saved.context)
       setContextOpen(Boolean(saved.context))
@@ -230,6 +274,7 @@ export function HubSpokeWorkspace() {
             <span className="block font-semibold text-slate-900 dark:text-slate-100">{page.title}</span>
             <span className="mt-0.5 block text-xs text-slate-500">Target: {page.target}</span>
             <span className="mt-0.5 block font-mono text-xs text-emerald-700 dark:text-emerald-400">Slug: {pageSlug(page.target, detail?.slug)}</span>
+            {(detail?.search_volume != null || detail?.difficulty != null) && <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold"><span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Volume {detail.search_volume?.toLocaleString() ?? '—'}</span><span className="rounded-full bg-violet-100 px-2 py-1 text-violet-800 dark:bg-violet-950 dark:text-violet-300">KD {detail.difficulty != null ? Math.round(detail.difficulty) : '—'}</span>{detail.ranking_role === 'easy_win_spoke' && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Easy-win spoke</span>}</span>}
             {detail?.content_brief && <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{detail.content_brief}</span>}
             {(detail?.word_count_suggestion || detail?.h2_sections?.length) && <span className="mt-2 block text-xs text-slate-400">{detail.word_count_suggestion?.toLocaleString()} words{detail.h2_sections?.length ? ` • ${detail.h2_sections.length} planned sections` : ''}</span>}
             {page.included.length > 0 && <span className="mt-3 block rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><strong>Includes:</strong> {page.included.join(' • ')}</span>}
@@ -346,14 +391,14 @@ export function HubSpokeWorkspace() {
       {mapping && (
         <section className="space-y-4">
           <div className="flex items-center justify-between gap-4">
-            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Related keywords appear under Includes and belong on that same page.</p>{mapping._deduplication_check && <p className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">Cannibalization check passed{mapping._deduplication_check.duplicates_removed ? ` • ${mapping._deduplication_check.duplicates_removed} duplicates merged` : ''}</p>}{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
+            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Includes are reserved for true same-intent variants; valuable easy wins stay as separate spokes.</p>{mapping._deduplication_check && <p className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">Cannibalization check passed{mapping._deduplication_check.duplicates_removed ? ` • ${mapping._deduplication_check.duplicates_removed} duplicates merged` : ''}</p>}{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
             <Button onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, context))}><Download className="h-4 w-4" />Download architecture prompt</Button>
           </div>
           {mapping.hubs.map((hub) => (
             <Card key={hub.target_keyword} className="overflow-hidden p-0">
               <button type="button" onClick={() => openTarget(hub.target_keyword, hub.h2_keywords, mapping.master_hub?.page_type)} className="group flex w-full items-start gap-4 bg-gradient-to-r from-cyan-700 to-blue-700 p-6 text-left text-white">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15"><Network className="h-5 w-5" /></span>
-                <span className="min-w-0 flex-1"><span className="text-xs font-bold uppercase tracking-widest text-cyan-100">Master hub</span><span className="mt-1 block text-xl font-bold">{hub.hub_title}</span><span className="mt-1 block text-sm text-cyan-100">Target: {hub.target_keyword}</span><span className="mt-0.5 block font-mono text-xs text-cyan-100">Slug: {pageSlug(hub.target_keyword, mapping.master_hub?.slug)}</span></span>
+                <span className="min-w-0 flex-1"><span className="text-xs font-bold uppercase tracking-widest text-cyan-100">Master hub • authority target</span><span className="mt-1 block text-xl font-bold">{hub.hub_title}</span><span className="mt-1 block text-sm text-cyan-100">Target: {hub.target_keyword}</span><span className="mt-0.5 block font-mono text-xs text-cyan-100">Slug: {pageSlug(hub.target_keyword, mapping.master_hub?.slug)}</span>{(mapping.master_hub?.search_volume != null || mapping.master_hub?.difficulty != null) && <span className="mt-2 block text-xs font-semibold text-cyan-50">Volume {mapping.master_hub.search_volume?.toLocaleString() ?? '—'} • KD {mapping.master_hub.difficulty != null ? Math.round(mapping.master_hub.difficulty) : '—'}</span>}</span>
                 <span className="mt-2 flex items-center gap-1 text-xs font-semibold">Open page <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
               </button>
               <div className="space-y-7 p-6">

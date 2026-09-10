@@ -5,10 +5,13 @@ from unittest.mock import AsyncMock, patch
 
 from nlp.openrouter import (
     _deepseek_plan_to_hub_schema,
+    _enforce_easy_win_spokes,
     _sanitize_detailed_hub_plan,
+    _select_master_keyword,
     _validate_hub_and_spoke,
     build_hub_spoke_fallback,
     cluster_hub_and_spoke,
+    generate_gold_hunter_seeds,
 )
 def spoke(keyword):
     return f"{keyword.title()} (Target Keyword: {keyword})"
@@ -22,6 +25,98 @@ def circuit_keyword_fixture(count=100):
 
 
 class HubConstraintTests(TestCase):
+    def test_gold_hunter_repairs_niche_intents_and_capability_coverage(self):
+        draft = {
+            "audit_summary": {
+                "primary_keyword": "diagram maker",
+                "industry_niche": "software",
+                "search_intents": ["commercial"],
+                "capabilities": ["make diagrams"],
+                "competitor_profile": "large software sites",
+            },
+            "seeds": [{"keyword": f"diagram maker {index}", "justification": "relevant"} for index in range(3)],
+        }
+        verified = {
+            "audit_summary": {
+                "primary_keyword": "circuit diagram maker",
+                "industry_niche": "browser-based electronic circuit diagram creation tools",
+                "search_intents": ["commercial", "tool use", "informational"],
+                "capabilities": [
+                    "drag and drop circuit components",
+                    "export circuit diagrams as png",
+                    "open the linked circuit symbol tool",
+                ],
+                "competitor_profile": "must be removed",
+            },
+            "seeds": [{"keyword": f"circuit diagram {index}", "justification": "relevant"} for index in range(3)],
+        }
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._achat_json", new=AsyncMock(side_effect=[draft, verified])) as chat,
+        ):
+            result = asyncio.run(generate_gold_hunter_seeds(
+                "https://circuitdiagrammaker.com",
+                "Feature: drag and drop. Export PNG. Linked tool: circuit symbols.",
+            ))
+
+        audit = result["audit_summary"]
+        self.assertEqual(chat.await_count, 2)
+        self.assertEqual(audit["industry_niche"], "browser-based electronic circuit diagram creation tools")
+        self.assertEqual(audit["search_intents"], ["commercial-investigation", "tool-use", "informational"])
+        self.assertNotIn("competitor_profile", audit)
+        self.assertEqual(len(audit["capabilities"]), 3)
+
+    def test_master_uses_relevant_high_volume_hard_head_term(self):
+        keywords = [
+            {"phrase": "lunar age calculator", "search_volume": 900, "difficulty": 58},
+            {"phrase": "lunar age", "search_volume": 12000, "difficulty": 76},
+            {"phrase": "lunar age calculator by birthday", "search_volume": 2000, "difficulty": 18},
+            {"phrase": "age of planets", "search_volume": 50000, "difficulty": 90},
+        ]
+        self.assertEqual(_select_master_keyword(keywords, "lunar age calculator"), "lunar age")
+
+    def test_fallback_preserves_easy_wins_as_spokes(self):
+        keywords = [
+            {"phrase": "lunar age", "type": "primary", "search_volume": 12000, "difficulty": 76},
+            {"phrase": "lunar age calculator", "type": "long-tail", "search_volume": 900, "difficulty": 18},
+            {"phrase": "calculate lunar age by birthday", "type": "long-tail", "search_volume": 300, "difficulty": 12},
+            *[
+                {"phrase": f"lunar calendar guide {index}", "type": "long-tail", "search_volume": 50, "difficulty": 25}
+                for index in range(1, 10)
+            ],
+        ]
+        payload = build_hub_spoke_fallback(keywords, "lunar age calculator")
+        targets = {item["target_keyword"] for item in payload["spokes"]}
+
+        self.assertEqual(payload["master_hub"]["target_keyword"], "lunar age")
+        self.assertIn("lunar age calculator", targets)
+        self.assertIn("calculate lunar age by birthday", targets)
+        easy_win = next(item for item in payload["spokes"] if item["target_keyword"] == "calculate lunar age by birthday")
+        self.assertEqual(easy_win["ranking_role"], "easy_win_spoke")
+        self.assertEqual(easy_win["difficulty"], 12)
+
+    def test_ai_cannot_demote_a_distinct_easy_win_to_an_h2(self):
+        keywords = [
+            {"phrase": "lunar age", "type": "primary", "search_volume": 12000, "difficulty": 76},
+            {"phrase": "calculate lunar age by birthday", "type": "long-tail", "search_volume": 300, "difficulty": 12},
+        ]
+        payload = {
+            "master_hub": {
+                "target_keyword": "lunar age",
+                "h2_sections": [{
+                    "h2_heading": "Calculator",
+                    "targeted_keywords_placed_here": ["calculate lunar age by birthday"],
+                }],
+            },
+            "spokes": [],
+        }
+
+        result = _enforce_easy_win_spokes(payload, keywords, "lunar age")
+
+        self.assertEqual(result["spokes"][0]["target_keyword"], "calculate lunar age by birthday")
+        self.assertEqual(result["spokes"][0]["ranking_role"], "easy_win_spoke")
+        self.assertEqual(result["master_hub"]["h2_sections"][0]["targeted_keywords_placed_here"], [])
+
     def valid_payload(self):
         return {
             "hubs": [{

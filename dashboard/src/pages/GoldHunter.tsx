@@ -26,7 +26,7 @@ const renderAuditSummary = (summary: string) => {
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return (
         <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700 dark:text-slate-300">
-          {Object.entries(parsed).map(([key, value]) => (
+          {Object.entries(parsed).filter(([key]) => key !== 'competitor_profile').map(([key, value]) => (
             <div key={key} className="flex flex-col">
               <span className="font-semibold text-slate-900 dark:text-slate-50">{key}</span>
               <span>{String(value)}</span>
@@ -40,6 +40,19 @@ const renderAuditSummary = (summary: string) => {
   }
 
   return <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{summary}</p>
+}
+
+const withoutCompetitorProfile = (summary: string) => {
+  try {
+    const parsed = JSON.parse(summary)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      delete parsed.competitor_profile
+      return JSON.stringify(parsed, null, 2)
+    }
+  } catch {
+    // Preserve historical plain-text summaries.
+  }
+  return summary
 }
 
 export function GoldHunter() {
@@ -169,7 +182,7 @@ export function GoldHunter() {
                         own_domain: siteUrl,
                         scan_frequency: 'once',
                         target_keywords: allKeywords,
-                        audit_summary: scan.audit_summary,
+                        audit_summary: withoutCompetitorProfile(scan.audit_summary),
                         search_locale: 'us',
                       })
                     }}

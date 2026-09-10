@@ -323,8 +323,8 @@ class WorkflowTests(unittest.TestCase):
         with self.sessions() as db:
             project_id = uuid.UUID(pid)
             db.add_all([
-                Keyword(project_id=project_id, phrase='circuit symbols', frequency=8),
-                Keyword(project_id=project_id, phrase='circuit diagram examples', frequency=4),
+                Keyword(project_id=project_id, phrase='circuit symbols', frequency=8, search_volume=3200, difficulty=61),
+                Keyword(project_id=project_id, phrase='circuit diagram examples', frequency=4, search_volume=900, difficulty=22),
             ])
             db.commit()
 
@@ -335,6 +335,9 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(imported.status_code, 200, imported.text)
         self.assertEqual(imported.json()['keywords'][0], 'circuit diagram examples')
+        self.assertEqual(imported.json()['keyword_data'][0]['phrase'], 'circuit diagram examples')
+        self.assertEqual(imported.json()['keyword_data'][0]['search_volume'], 900)
+        self.assertEqual(imported.json()['keyword_data'][0]['difficulty'], 22)
         imported_context = json.loads(imported.json()['context'])
         self.assertEqual(imported_context['audit_summary'], 'Electronics tool')
         self.assertEqual(imported_context['primary_keyword'], 'circuit diagram')

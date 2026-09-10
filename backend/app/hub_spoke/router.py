@@ -14,14 +14,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import get_current_user
 from app.database import get_db
 from app.models import HubSpokeHistory, Keyword, Project, User
-from nlp.keywords import clean_phrase, is_valid_keyword, normalize_seed_keywords
+from nlp.keywords import (
+    BROAD_TOPIC_TERMS,
+    STOPWORDS,
+    clean_phrase,
+    is_topic_relevant_keyword,
+    is_valid_keyword,
+    keyword_terms,
+    normalize_seed_keywords,
+    seed_keyword_terms,
+    site_scope_terms,
+)
 from nlp.openrouter import _achat_json, cluster_hub_and_spoke, is_ai_configured
 
 router = APIRouter(prefix="/api/hub-spoke", tags=["hub-spoke-workspace"])
 
 
+class KeywordMetricInput(BaseModel):
+    phrase: str
+    keyword_type: str = "long-tail"
+    search_volume: int | None = None
+    difficulty: float | None = None
+    frequency: int = 1
+
+
 class KeywordWorkspaceRequest(BaseModel):
     keywords: list[str] = Field(min_length=1, max_length=5000)
+    keyword_data: list[KeywordMetricInput] = Field(default_factory=list, max_length=5000)
     context: str = Field(default="", max_length=12000)
     project_id: uuid.UUID | None = None
 
@@ -39,7 +58,7 @@ def _history_payload(record: HubSpokeHistory) -> dict[str, Any]:
         "id": record.id,
         "project_id": record.project_id,
         "title": record.title,
-        "context": record.context or "",
+        "context": _hub_spoke_context(record.context or ""),
         "keywords": record.keywords or [],
         "cleaned_keywords": record.cleaned_keywords or [],
         "clusters": record.mapping_data,
@@ -57,6 +76,22 @@ def _basic_clean(values: list[str]) -> list[str]:
                 continue
             result.append(phrase)
     return result
+
+
+def _keyword_records(body: KeywordWorkspaceRequest, cleaned: list[str]) -> list[dict[str, Any]]:
+    """Keep SEO metrics attached to their phrase through cleaning and planning."""
+    metrics = {
+        clean_phrase(item.phrase): item
+        for item in body.keyword_data
+        if clean_phrase(item.phrase)
+    }
+    return [{
+        "phrase": phrase,
+        "type": metrics[phrase].keyword_type if phrase in metrics else "long-tail",
+        "search_volume": metrics[phrase].search_volume if phrase in metrics else None,
+        "difficulty": metrics[phrase].difficulty if phrase in metrics else None,
+        "frequency": metrics[phrase].frequency if phrase in metrics else 1,
+    } for phrase in cleaned]
 
 
 def _context_anchor_terms(context: str) -> set[str]:
@@ -133,16 +168,74 @@ def _context_with_seed_keywords(context: str, seed_keywords: list[str]) -> str:
         parsed = {"audit_summary": context.strip()} if context.strip() else {}
     if not isinstance(parsed, dict):
         parsed = {"audit_summary": context.strip()}
+    parsed.pop("competitor_profile", None)
     parsed["seed_keywords"] = seeds
     if seeds and not parsed.get("primary_keyword"):
         parsed["primary_keyword"] = seeds[0]
     return json.dumps(parsed, indent=2)
 
 
+def _hub_spoke_context(context: str) -> str:
+    """Remove competitor framing so the site's own EMD and seeds define scope."""
+    try:
+        parsed = json.loads(context) if context.strip() else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return context
+    if not isinstance(parsed, dict):
+        return context
+    parsed.pop("competitor_profile", None)
+    audit = parsed.get("audit_summary")
+    if isinstance(audit, dict):
+        audit.pop("competitor_profile", None)
+    return json.dumps(parsed, indent=2)
+
+
+def _structured_context(context: str) -> dict[str, Any]:
+    try:
+        value = json.loads(context) if context.strip() else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _term_family(term: str) -> str:
+    """Small deterministic stemmer used only for scope and boundary checks."""
+    aliases = {
+        "electrical": "electric", "electronic": "electric", "electronics": "electric",
+        "diagrams": "diagram", "drawings": "drawing", "symbols": "symbol",
+        "wiring": "wire",
+    }
+    value = aliases.get(term, term)
+    for suffix in ("ations", "ation", "ators", "ator", "ments", "ment", "ing", "ers", "er", "ed"):
+        if value.endswith(suffix) and len(value) - len(suffix) >= 4:
+            value = value[:-len(suffix)]
+            if len(value) > 3 and value[-1:] == value[-2:-1]:
+                value = value[:-1]
+            break
+    return value
+
+
+def _hard_boundary_families(context_data: dict[str, Any], protected_terms: set[str]) -> set[str]:
+    boilerplate = {
+        "does", "provide", "provides", "serve", "serves", "offer", "offers",
+        "other", "purpose", "purposes", "general", "personalized",
+    }
+    families: set[str] = set()
+    for boundary in context_data.get("hard_boundaries", []) or []:
+        for token in clean_phrase(str(boundary)).split():
+            if token in STOPWORDS or token in boilerplate or len(token) < 2:
+                continue
+            families.add(_term_family(token))
+    return families - {_term_family(term) for term in protected_terms}
+
+
+def _violates_hard_boundary(phrase: str, boundary_families: set[str]) -> bool:
+    phrase_families = {_term_family(token) for token in clean_phrase(phrase).split()}
+    return bool(phrase_families & boundary_families)
+
+
 def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]:
     """Reject isolated off-topic phrases without relying on the AI provider."""
-    from nlp.keywords import BROAD_TOPIC_TERMS, keyword_terms
-
     if not keywords:
         return []
     term_sets = {phrase: keyword_terms(phrase, min_len=2) for phrase in keywords}
@@ -152,6 +245,42 @@ def _mechanical_relevance_filter(keywords: list[str], context: str) -> list[str]
     context_terms = keyword_terms(context, min_len=2) if context.strip() else set()
     positions = {phrase: index for index, phrase in enumerate(keywords)}
     seed_keywords = _seed_keywords_from_context(context)
+    context_data = _structured_context(context)
+    primary_keyword = _primary_keyword_from_context(context) or (seed_keywords[0] if seed_keywords else "")
+    scope_terms = site_scope_terms(primary_keyword, context_data)
+    topic_profile = context_terms | {f"__scope__{term}" for term in scope_terms}
+    protected_terms = set(clean_phrase(primary_keyword).split()) | scope_terms
+    boundary_families = _hard_boundary_families(context_data, protected_terms)
+    content_intent_terms = {
+        "comparison", "definition", "example", "examples", "guide", "meaning",
+        "reference", "review", "symbol", "symbols", "tutorial", "types",
+    }
+
+    def inside_context(phrase: str) -> bool:
+        if _violates_hard_boundary(phrase, boundary_families):
+            return False
+        if not primary_keyword:
+            return True
+        if is_topic_relevant_keyword(phrase, seed_keywords or [primary_keyword], topic_profile):
+            return True
+        phrase_terms = keyword_terms(phrase, min_len=2)
+        for seed in seed_keywords[1:]:
+            seed_terms = keyword_terms(seed, min_len=2) - BROAD_TOPIC_TERMS
+            if seed_terms and phrase_terms & seed_terms:
+                return True
+        raw = set(clean_phrase(phrase).split())
+        primary_anchors = seed_keyword_terms([primary_keyword]) - BROAD_TOPIC_TERMS
+        if raw & primary_anchors and raw & content_intent_terms:
+            return True
+        raw_families = {_term_family(term) for term in raw}
+        scope_families = {_term_family(term) for term in scope_terms}
+        # Two audited scope signals form the permitted two-hop route for close
+        # terms that do not repeat the EMD wording.
+        return len(raw_families & scope_families) >= 2
+
+    if primary_keyword:
+        return [phrase for phrase in keywords if inside_context(phrase)]
+
     seed_rules: list[tuple[set[str], int]] = []
     for seed in seed_keywords:
         seed_terms = keyword_terms(seed, min_len=2)
@@ -223,12 +352,13 @@ Website/product context:
 Candidate keywords:
 {json.dumps(chunk)}
 
-Use a firm but balanced relevance threshold. Keep keywords that directly match the website and
-also strongly related educational, comparison, feature, entity, audience, and use-case terms that
-could support its topical authority. Reject clearly unrelated industries, impossible product
-claims, brand drift, navigation text, broken phrases, and extraction junk. Do not reject a useful
-keyword merely because it is adjacent to the core commercial phrase; keep it when the context
-gives the site a credible reason to answer that search intent.
+Treat the primary keyword/EMD as the central entity and allow at most two semantic hops from it.
+Keep a candidate only when the site context gives a concrete reason to satisfy that exact search
+intent. Enforce every hard boundary literally. Reject adjacent industries, unsupported product
+functions, courseware/file-download queries, answer keys, manuals, brand drift, navigation text,
+broken phrases, and extraction junk. Shared generic words such as circuit, age, system, maker,
+calculator, software, or diagram are never sufficient evidence by themselves. When uncertain,
+reject the candidate. Precision is more important than list size.
 You may only return exact strings from Candidate keywords. Order the strongest primary topic first.
 Return JSON: {{"keywords": ["exact candidate", "exact candidate"]}}
 """
@@ -258,16 +388,17 @@ async def clean_uploaded_keywords(
     body: KeywordWorkspaceRequest,
     _current_user: User = Depends(get_current_user),
 ):
-    keywords = await _clean_with_context(body.keywords, body.context)
+    context = _hub_spoke_context(body.context)
+    keywords = await _clean_with_context(body.keywords, context)
     if not keywords:
-        primary_keyword = _primary_keyword_from_context(body.context)
+        primary_keyword = _primary_keyword_from_context(context)
         detail = (
             f"No keywords matching the primary topic '{primary_keyword}' remained after cleaning. "
             "The source list must contain that topic or a verified semantic equivalent."
             if primary_keyword else "No relevant keywords remained after cleaning."
         )
         raise HTTPException(status_code=422, detail=detail)
-    return {"keywords": keywords, "count": len(keywords)}
+    return {"keywords": keywords, "keyword_data": _keyword_records(body, keywords), "count": len(keywords)}
 
 
 @router.post("/build")
@@ -284,24 +415,25 @@ async def build_uploaded_hub_spoke(
         ))
         if project_result.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="Project not found")
-    keywords = await _clean_with_context(body.keywords, body.context)
+    context = _hub_spoke_context(body.context)
+    keywords = await _clean_with_context(body.keywords, context)
     if not keywords:
-        primary_keyword = _primary_keyword_from_context(body.context)
+        primary_keyword = _primary_keyword_from_context(context)
         detail = (
             f"The keyword list does not contain usable keywords for the primary topic '{primary_keyword}'."
             if primary_keyword else "Upload a keyword list with at least one usable keyword."
         )
         raise HTTPException(status_code=422, detail=detail)
     rejected_keywords = [phrase for phrase in _basic_clean(body.keywords) if phrase not in set(keywords)]
-    typed = [{"phrase": phrase, "type": "long-tail"} for phrase in keywords]
-    main_keyword = _primary_keyword_from_context(body.context)
+    typed = _keyword_records(body, keywords)
+    main_keyword = _primary_keyword_from_context(context)
     if not main_keyword:
-        context_seeds = _seed_keywords_from_context(body.context)
+        context_seeds = _seed_keywords_from_context(context)
         main_keyword = context_seeds[0] if context_seeds else keywords[0]
     mapping = await cluster_hub_and_spoke(
         typed,
         main_keyword=main_keyword,
-        audit_summary=body.context or "Uploaded keyword research list",
+        audit_summary=context or "Uploaded keyword research list",
     )
     if not mapping:
         raise HTTPException(status_code=502, detail="Could not build a constraint-safe hub-spoke map from this list.")
@@ -310,13 +442,15 @@ async def build_uploaded_hub_spoke(
             *(mapping.get("filtered_irrelevant_keywords") or []),
             *rejected_keywords,
         ]))
+    if isinstance(mapping, dict):
+        mapping["_keyword_metrics"] = typed
     master = mapping.get("master_hub") if isinstance(mapping, dict) else None
     title = str((master or {}).get("article_title") or keywords[0].title())[:255]
     history = HubSpokeHistory(
         user_id=current_user.id,
         project_id=project_id,
         title=title,
-        context=body.context,
+        context=context,
         keywords=body.keywords,
         cleaned_keywords=keywords,
         mapping_data=mapping,
@@ -326,6 +460,7 @@ async def build_uploaded_hub_spoke(
     await db.refresh(history)
     return {
         "keywords": keywords,
+        "keyword_data": typed,
         "count": len(keywords),
         "clusters": mapping,
         "history_id": history.id,
@@ -347,22 +482,44 @@ async def import_project_keywords(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     result = await db.execute(
-        select(Keyword.phrase)
+        select(
+            Keyword.phrase,
+            Keyword.keyword_type,
+            Keyword.search_volume,
+            Keyword.difficulty,
+            Keyword.frequency,
+        )
         .where(Keyword.project_id == project.id)
         .order_by(Keyword.frequency.desc(), Keyword.created_at.asc())
         .limit(5000)
     )
-    keywords = list(dict.fromkeys(str(value).strip() for value in result.scalars().all() if str(value).strip()))
+    keyword_data: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for phrase, keyword_type, search_volume, difficulty, frequency in result.all():
+        normalized = clean_phrase(str(phrase or ""))
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        keyword_data.append({
+            "phrase": normalized,
+            "keyword_type": keyword_type or "long-tail",
+            "search_volume": search_volume,
+            "difficulty": difficulty,
+            "frequency": frequency or 1,
+        })
+    keywords = [item["phrase"] for item in keyword_data]
     selected = clean_phrase(primary_keyword)
     selected_keyword = next((keyword for keyword in keywords if clean_phrase(keyword) == selected), None)
     if selected_keyword:
         keywords = [selected_keyword, *(keyword for keyword in keywords if keyword != selected_keyword)]
+        keyword_data.sort(key=lambda item: item["phrase"] != selected_keyword)
     if not keywords:
         raise HTTPException(status_code=404, detail="This Gap Hunter scan has no keywords to import yet.")
     return {
         "project_id": project.id,
         "project_name": project.name,
         "keywords": keywords,
+        "keyword_data": keyword_data,
         "context": _context_with_seed_keywords(project.audit_summary or "", project.target_keywords or []),
     }
 

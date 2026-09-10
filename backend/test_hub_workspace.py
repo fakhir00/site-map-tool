@@ -10,13 +10,39 @@ from app.hub_spoke.router import (
     _basic_clean,
     _clean_with_context,
     _context_with_seed_keywords,
+    _keyword_records,
+    _hub_spoke_context,
     _mechanical_relevance_filter,
+    KeywordMetricInput,
+    KeywordWorkspaceRequest,
     delete_hub_spoke_history,
 )
 from nlp.openrouter import _validate_hub_and_spoke
 
 
 class HubWorkspaceTests(unittest.TestCase):
+    def test_keyword_metrics_survive_cleaning(self):
+        body = KeywordWorkspaceRequest(
+            keywords=["lunar age", "lunar age calculator"],
+            keyword_data=[
+                KeywordMetricInput(phrase="lunar age", search_volume=12000, difficulty=76),
+                KeywordMetricInput(phrase="lunar age calculator", search_volume=900, difficulty=18),
+            ],
+        )
+        records = _keyword_records(body, ["lunar age calculator"])
+        self.assertEqual(records[0]["search_volume"], 900)
+        self.assertEqual(records[0]["difficulty"], 18)
+
+    def test_competitor_profile_is_removed_from_hub_context(self):
+        context = _hub_spoke_context(json.dumps({
+            "primary_keyword": "lunar age calculator",
+            "competitor_profile": "broad astronomy sites",
+            "hard_boundaries": ["moon phase tracking"],
+        }))
+        parsed = json.loads(context)
+        self.assertNotIn("competitor_profile", parsed)
+        self.assertEqual(parsed["primary_keyword"], "lunar age calculator")
+
     def test_basic_clean_handles_csv_text_and_duplicates(self):
         self.assertEqual(
             _basic_clean(['Keyword,Volume', '"circuit diagram",100', 'circuit diagram', '###']),

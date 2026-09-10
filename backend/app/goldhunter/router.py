@@ -56,6 +56,9 @@ async def scan_gold_hunter(
         raise HTTPException(status_code=500, detail="AI generation failed.")
         
     audit_data = result.get("audit_summary", "")
+    if isinstance(audit_data, dict):
+        audit_data = dict(audit_data)
+        audit_data.pop("competitor_profile", None)
     audit_summary = audit_data
     if isinstance(audit_summary, dict):
         import json

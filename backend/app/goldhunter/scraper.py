@@ -2,6 +2,7 @@ import httpx
 from bs4 import BeautifulSoup
 import logging
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,28 @@ async def fetch_url_content(url: str) -> Optional[str]:
             
             soup = BeautifulSoup(response.text, "html.parser")
             
-            # Remove scripts and styles
+            base_host = (urlparse(str(response.url)).hostname or "").removeprefix("www.")
+            linked_pages = []
+            seen_links = set()
+            for anchor in soup.find_all("a", href=True):
+                anchor_text = anchor.get_text(" ", strip=True)
+                absolute_url = urljoin(str(response.url), str(anchor.get("href") or ""))
+                parsed_link = urlparse(absolute_url)
+                link_host = (parsed_link.hostname or "").removeprefix("www.")
+                absolute_url = parsed_link._replace(fragment="").geturl()
+                if (
+                    not anchor_text
+                    or parsed_link.scheme not in {"http", "https"}
+                    or link_host != base_host
+                    or absolute_url in seen_links
+                ):
+                    continue
+                seen_links.add(absolute_url)
+                linked_pages.append(f"- {anchor_text}: {absolute_url}")
+                if len(linked_pages) >= 150:
+                    break
+
+            # Remove scripts and styles after collecting same-site tool links.
             for script in soup(["script", "style", "noscript", "header", "footer", "nav"]):
                 script.extract()
                 
@@ -38,7 +60,12 @@ async def fetch_url_content(url: str) -> Optional[str]:
             
             body_text = soup.get_text(separator=" ", strip=True)
             
-            content = f"Title: {title}\nMeta Description: {meta_desc}\nH1: {h1_text}\nBody:\n{body_text[:10000]}"
+            links_text = "\n".join(linked_pages)
+            content = (
+                f"Title: {title}\nMeta Description: {meta_desc}\nH1: {h1_text}\n"
+                f"SAME-SITE LINKED PAGES AND TOOLS:\n{links_text[:6000]}\n"
+                f"VISIBLE BODY CONTENT:\n{body_text[:12000]}"
+            )
             return content
             
     except Exception as e:

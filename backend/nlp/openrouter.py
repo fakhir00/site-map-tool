@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -1556,16 +1557,23 @@ You are the Gold Nugget Agent. Your purpose is to mine 3 to 5 high-value seed ke
 
 INPUT URL: {url}
 URL CONTENT:
-{url_content[:10000]}
+{url_content[:18000]}
 
 PHASE 1: SITE AUDIT
 Audit the URL's visible content (Title, H1, Meta, Features, Copy). Extract:
 - Primary Keyword
-- Industry / Niche
+- Industry / Niche: make this highly specific to this exact site and EMD. Name the precise subject, audience, and/or site model supported by the page. Reject broad labels such as "technology", "software", "education", "finance", "health", "calculators", or "review site" by themselves.
 - Core Action (the exact transformation the tool performs)
 - Target Audience
-- Capabilities (DOES)
+- Search Intents: identify the intents this exact site serves. Use precise labels such as informational, commercial-investigation, transactional, navigational, comparison, or tool-use. A review/affiliate site normally needs commercial-investigation when its content supports product evaluation.
+- Capabilities (DOES): create an exhaustive evidence inventory from URL CONTENT. Every visible tool feature must appear. Every related tool named in SAME-SITE LINKED PAGES AND TOOLS must appear. Every stated input, result, export, download, or output format must appear. Preserve concrete formats such as CSV, PDF, PNG, SVG, JSON, copy, print, or share when present.
 - Hard Boundaries (DOES NOT)
+
+CAPABILITY EVIDENCE RULES (MANDATORY)
+- Add capabilities only when directly supported by URL CONTENT. Never infer or invent a feature.
+- Review Title, H1, Meta, Features, Copy, buttons, output descriptions, and same-site linked tool names before finalizing capabilities.
+- Phrase each capability specifically enough that another agent can verify it against the source.
+- Before returning JSON, perform a coverage check against URL CONTENT and add every omitted supported feature, linked tool, and output/export format.
 
 PHASE 2: DOMAIN FENCING
 Ban umbrella terms (general, basic, professional, engineering). Block adjacent misaligned domains (e.g., IT for an electronics site). If the Primary Keyword is vague, force-inject the strongest specific anchor discovered during the audit to kill ambiguity.
@@ -1593,13 +1601,12 @@ Return ONLY a JSON object in this exact format:
 {{
   "audit_summary": {{
     "primary_keyword": "exact primary topic",
-    "industry_niche": "specific niche",
+    "industry_niche": "narrow EMD-specific niche and site model",
     "core_action": "what the site helps users accomplish",
     "target_audience": ["specific audience segments"],
-    "search_intents": ["informational, commercial, transactional, or tool-use intents that apply"],
-    "capabilities": ["what the product/site does"],
+    "search_intents": ["individual precise intent labels that apply to this exact site"],
+    "capabilities": ["exhaustive, source-supported features, linked tools, and export/output formats"],
     "hard_boundaries": ["adjacent topics it does not serve"],
-    "competitor_profile": "the kinds of domains that are true search competitors",
     "content_opportunities": ["evidence-based topic families to investigate"]
   }},
   "seeds": [
@@ -1625,7 +1632,52 @@ Return ONLY a JSON object in this exact format:
             temperature=0.3,
             max_tokens=2500,
         )
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        verification_prompt = f"""
+Audit and repair this Gold Hunter result against the source page. Return the complete corrected JSON object using the exact same schema.
+
+SOURCE URL: {url}
+SITE_CONTENT:
+{url_content[:18000]}
+
+DRAFT RESULT:
+{json.dumps(payload)}
+
+Mandatory corrections:
+1. Make industry_niche narrow and specific to this exact EMD/site, its subject, and its site model. Never use a broad industry label alone.
+2. Make search_intents an array of precise applicable labels. Use commercial-investigation for review, comparison, affiliate, "best", or product-evaluation sites when supported.
+3. Rebuild capabilities as an exhaustive source evidence inventory. Include every tool feature stated in SITE_CONTENT, every related tool named in SAME-SITE LINKED PAGES AND TOOLS, and every stated export/output format.
+4. Add nothing that SITE_CONTENT does not support. Do not invent functionality.
+5. Remove competitor_profile if present. Keep 3 to 5 distinct, tightly relevant seeds.
+"""
+        try:
+            verified = await _achat_json(
+                system_prompt="You are a source-grounded website auditor. Return only valid JSON and never invent a capability.",
+                user_prompt=verification_prompt,
+                temperature=0.0,
+                max_tokens=3000,
+            )
+            if isinstance(verified, dict) and isinstance(verified.get("audit_summary"), dict):
+                payload = verified
+        except Exception as exc:
+            logger.warning("Gold hunter audit verification failed; using first grounded result: %s", exc)
+        audit = payload.get("audit_summary")
+        if isinstance(audit, dict):
+            audit.pop("competitor_profile", None)
+            aliases = {
+                "commercial": "commercial-investigation",
+                "commercial investigation": "commercial-investigation",
+                "tool use": "tool-use",
+            }
+            intents = []
+            for value in audit.get("search_intents", []) or []:
+                intent = str(value).strip().lower().replace("_", "-")
+                intent = aliases.get(intent, intent)
+                if intent and intent not in intents:
+                    intents.append(intent)
+            audit["search_intents"] = intents
+        return payload
     except Exception as exc:
         logger.warning("Gold hunter failed: %s", exc)
         return None
@@ -1636,11 +1688,17 @@ def _hub_intent_tokens(phrase: str) -> set[str]:
     from nlp.keywords import STOPWORDS, clean_phrase
 
     synonyms = {
-        "builder": "maker", "builders": "maker", "creator": "maker",
-        "creators": "maker", "generator": "maker", "generators": "maker",
-        "software": "tool", "tools": "tool", "tutorial": "guide",
-        "tutorials": "guide", "meanings": "meaning", "companies": "agency",
-        "services": "agency",
+        "builder": "tool", "builders": "tool", "creator": "tool",
+        "creators": "tool", "generator": "tool", "generators": "tool",
+        "maker": "tool", "makers": "tool", "software": "tool", "tools": "tool",
+        "app": "tool", "apps": "tool", "visualizer": "tool",
+        "drawing": "diagram", "drawings": "diagram", "schematic": "diagram",
+        "schematics": "diagram", "tutorial": "guide", "tutorials": "guide",
+        "meanings": "meaning", "companies": "agency", "services": "agency",
+        "electrical": "electric", "electronic": "electric", "electronics": "electric",
+    }
+    weak_qualifiers = {
+        "basic", "electric", "free", "online", "overview", "simple", "tool",
     }
     tokens: set[str] = set()
     for token in clean_phrase(phrase).replace("-", " ").split():
@@ -1648,7 +1706,9 @@ def _hub_intent_tokens(phrase: str) -> set[str]:
             continue
         if token.endswith("s") and not token.endswith("ss") and len(token) > 4:
             token = token[:-1]
-        tokens.add(synonyms.get(token, token))
+        token = synonyms.get(token, token)
+        if token not in weak_qualifiers:
+            tokens.add(token)
     return tokens
 
 
@@ -1656,7 +1716,95 @@ def _hub_intent_similarity(left: str, right: str) -> float:
     left_tokens = _hub_intent_tokens(left)
     right_tokens = _hub_intent_tokens(right)
     union = left_tokens | right_tokens
-    return len(left_tokens & right_tokens) / len(union) if union else 0.0
+    if not union:
+        return 0.0
+    intersection = len(left_tokens & right_tokens)
+    jaccard = intersection / len(union)
+    shorter = min(len(left_tokens), len(right_tokens))
+    containment = intersection / shorter if shorter else 0.0
+    return max(jaccard, containment)
+
+
+def _hub_same_page_intent(left: str, right: str) -> bool:
+    """Return true only for mechanical variants that should share one URL."""
+    from nlp.keywords import clean_phrase
+
+    left_clean = clean_phrase(left)
+    right_clean = clean_phrase(right)
+    if not left_clean or not right_clean:
+        return False
+    return left_clean == right_clean or _hub_intent_tokens(left_clean) == _hub_intent_tokens(right_clean)
+
+
+def _keyword_volume(item: dict[str, Any]) -> int:
+    try:
+        return max(0, int(item.get("search_volume") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _keyword_difficulty(item: dict[str, Any]) -> float | None:
+    try:
+        value = item.get("difficulty")
+        return max(0.0, min(100.0, float(value))) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_easy_win(item: dict[str, Any]) -> bool:
+    difficulty = _keyword_difficulty(item)
+    return _keyword_volume(item) > 0 and difficulty is not None and difficulty <= 40
+
+
+def _select_master_keyword(keywords: list[dict[str, Any]], requested_main: str) -> str:
+    """Choose a broad, relevant, high-volume and difficult authority target."""
+    from nlp.keywords import clean_phrase
+
+    requested = clean_phrase(requested_main)
+    candidates = [item for item in keywords if clean_phrase(str(item.get("phrase") or ""))]
+    if not candidates:
+        return requested or "core topic"
+    if not any(_keyword_volume(item) or _keyword_difficulty(item) is not None for item in candidates):
+        return requested or clean_phrase(str(candidates[0]["phrase"]))
+
+    requested_tokens = _hub_intent_tokens(requested)
+    eligible: list[dict[str, Any]] = []
+    for item in candidates:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        tokens = _hub_intent_tokens(phrase)
+        if not requested_tokens or phrase == requested or _hub_intent_similarity(phrase, requested) >= 0.5:
+            eligible.append(item)
+    if not eligible:
+        return requested or clean_phrase(str(candidates[0]["phrase"]))
+    hard_candidates = [
+        item for item in eligible
+        if _keyword_difficulty(item) is not None and (_keyword_difficulty(item) or 0) > 40
+    ]
+    if hard_candidates:
+        eligible = hard_candidates
+
+    def score(item: dict[str, Any]) -> tuple[float, int, float, int]:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        relevance = 1.0 if phrase == requested else _hub_intent_similarity(phrase, requested)
+        volume = _keyword_volume(item)
+        difficulty = _keyword_difficulty(item) or 0.0
+        # Relevance fences the topic. Within that fence, head-term breadth,
+        # search demand, and ranking difficulty identify the authority hub.
+        composite = relevance * 50 + math.log10(volume + 1) * 20 + difficulty * 0.45 - len(phrase.split()) * 1.5
+        return composite, volume, difficulty, -len(phrase.split())
+
+    return clean_phrase(str(max(eligible, key=score).get("phrase") or requested))
+
+
+def _spoke_opportunity_score(item: dict[str, Any], main_keyword: str) -> tuple[int, float, int, float]:
+    difficulty = _keyword_difficulty(item)
+    volume = _keyword_volume(item)
+    return (
+        1 if _is_easy_win(item) else 0,
+        _hub_intent_similarity(str(item.get("phrase") or ""), main_keyword),
+        volume,
+        -(difficulty if difficulty is not None else 101.0),
+    )
 
 
 def _hub_slug(phrase: str) -> str:
@@ -1664,22 +1812,11 @@ def _hub_slug(phrase: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", clean_phrase(phrase)).strip("-")
 
 
-def _hub_page_family(phrase: str) -> str | None:
-    """Return the broader page intent for modifier variants such as `X for Y`."""
-    from nlp.keywords import clean_phrase
-
-    words = clean_phrase(phrase).split()
-    for index, word in enumerate(words):
-        if word in {"for", "with", "in", "on", "by", "using"} and index >= 2 and index < len(words) - 1:
-            return " ".join(words[:index])
-    return None
-
-
 def _prepare_hub_page_keywords(
     keywords: list[dict[str, Any]],
     main_keyword: str,
 ) -> list[dict[str, Any]]:
-    """Collapse keywords that belong on one URL before architecture generation."""
+    """Collapse exact intent duplicates while preserving page-worthy easy wins."""
     from nlp.keywords import clean_phrase
 
     normalized: list[dict[str, Any]] = []
@@ -1699,42 +1836,61 @@ def _prepare_hub_page_keywords(
         normalized.append(copied)
         by_phrase[phrase] = copied
 
-    families: dict[str, list[dict[str, Any]]] = {}
-    for item in normalized:
-        family = _hub_page_family(item["phrase"])
-        if family:
-            families.setdefault(family, []).append(item)
-
     consumed: set[str] = set()
     prepared: list[dict[str, Any]] = []
     main = clean_phrase(main_keyword)
-    for item in normalized:
+    ordered = sorted(
+        normalized,
+        key=lambda item: (
+            clean_phrase(str(item.get("phrase") or "")) == main,
+            *_spoke_opportunity_score(item, main_keyword),
+        ),
+        reverse=True,
+    )
+    for item in ordered:
         phrase = item["phrase"]
         if phrase in consumed:
             continue
-        family = phrase if phrase in families and len(families[phrase]) >= 2 else _hub_page_family(phrase)
-        members = families.get(family or "", [])
-        if family and len(members) >= 2:
-            existing_parent = by_phrase.get(family)
-            parent = dict(existing_parent or item)
-            parent["phrase"] = family
-            parent["type"] = "primary" if parent.get("type") == "entity" else parent.get("type", "long-tail")
-            h2s = list(parent.get("h_tags") or [])
-            for member in members:
-                consumed.add(member["phrase"])
-                if member["phrase"] != family:
-                    h2s.append(member["phrase"])
-                h2s.extend(member.get("h_tags") or [])
-            parent["h_tags"] = list(dict.fromkeys(value for value in h2s if value and value != family))
-            if family == main:
-                parent["phrase"] = main
-            prepared.append(parent)
-            if existing_parent:
-                consumed.add(family)
-            continue
-        prepared.append(item)
+        canonical = dict(item)
+        h2s = list(canonical.get("h_tags") or [])
+        for other in ordered:
+            other_phrase = other["phrase"]
+            if other_phrase == phrase or other_phrase in consumed:
+                continue
+            if _hub_same_page_intent(phrase, other_phrase):
+                consumed.add(other_phrase)
+                h2s.append(other_phrase)
+                h2s.extend(other.get("h_tags") or [])
+        canonical["h_tags"] = list(dict.fromkeys(value for value in h2s if value and value != phrase))
+        prepared.append(canonical)
         consumed.add(phrase)
-    return prepared
+    # Consolidate synonymous, contained, and weak-modifier variants before the
+    # model chooses URLs. This lets the model select 10 genuinely distinct
+    # spokes instead of selecting duplicates that are removed only afterward.
+    canonical: list[dict[str, Any]] = []
+    main_item = next((dict(item) for item in prepared if item["phrase"] == main), {
+        "phrase": main,
+        "type": "primary",
+        "h_tags": [],
+    })
+    canonical.append(main_item)
+    for item in prepared:
+        phrase = item["phrase"]
+        if phrase == main:
+            continue
+        destination = next(
+            (kept for kept in canonical if _hub_same_page_intent(phrase, kept["phrase"])),
+            None,
+        )
+        if destination is None:
+            canonical.append(item)
+            continue
+        destination["h_tags"] = list(dict.fromkeys([
+            *(destination.get("h_tags") or []),
+            phrase,
+            *(item.get("h_tags") or []),
+        ]))
+    return canonical
 
 
 def _append_h2s(spoke: str, extras: list[str]) -> str:
@@ -2011,6 +2167,11 @@ def _sanitize_detailed_hub_plan(
         clean_phrase(str(item.get("phrase") or "")) for item in keywords
         if clean_phrase(str(item.get("phrase") or ""))
     }
+    keyword_metrics = {
+        clean_phrase(str(item.get("phrase") or "")): item
+        for item in keywords
+        if clean_phrase(str(item.get("phrase") or ""))
+    }
     main = clean_phrase(main_keyword) or "core topic"
     allowed.add(main)
     all_topic_terms = set().union(*(keyword_terms(value, min_len=2) for value in allowed)) if allowed else set()
@@ -2056,6 +2217,9 @@ def _sanitize_detailed_hub_plan(
         ):
             title = target.title()
         article["article_title"] = title or target.title()
+        metric = keyword_metrics.get(target, {})
+        article["search_volume"] = metric.get("search_volume")
+        article["difficulty"] = metric.get("difficulty")
 
     master = payload["master_hub"]
     master["target_keyword"] = main
@@ -2098,14 +2262,14 @@ def _sanitize_detailed_hub_plan(
             or slug == _hub_slug(str(existing.get("target_keyword") or ""))
             or title_key == clean_phrase(str(existing.get("article_title") or ""))
             or fingerprint == tuple(sorted(_hub_intent_tokens(str(existing.get("target_keyword") or ""))))
-            or _hub_intent_similarity(target, str(existing.get("target_keyword") or "")) >= 0.78
+            or _hub_same_page_intent(target, str(existing.get("target_keyword") or ""))
         ), None)
         duplicates_master = (
             target == main
             or slug == _hub_slug(main)
             or title_key == clean_phrase(str(master.get("article_title") or main))
             or fingerprint == tuple(sorted(_hub_intent_tokens(main)))
-            or _hub_intent_similarity(target, main) >= 0.85
+            or _hub_same_page_intent(target, main)
         )
         if duplicates_master:
             merge_duplicate(master, article, target)
@@ -2141,6 +2305,94 @@ def _sanitize_detailed_hub_plan(
         "semantic_intents": "Checked",
         "duplicates_removed": len(duplicate_redirects),
     }
+    return payload
+
+
+def _enforce_easy_win_spokes(
+    payload: dict[str, Any],
+    keywords: list[dict[str, Any]],
+    main_keyword: str,
+) -> dict[str, Any]:
+    """Keep the strongest low-difficulty opportunities as indexable pages."""
+    from nlp.keywords import clean_phrase
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("master_hub"), dict):
+        return payload
+    main = clean_phrase(main_keyword)
+    metrics = {
+        clean_phrase(str(item.get("phrase") or "")): item
+        for item in keywords
+        if clean_phrase(str(item.get("phrase") or ""))
+    }
+    easy_wins = sorted(
+        (
+            item for item in keywords
+            if item.get("type") != "entity"
+            and clean_phrase(str(item.get("phrase") or "")) != main
+            and _is_easy_win(item)
+        ),
+        key=lambda item: _spoke_opportunity_score(item, main),
+        reverse=True,
+    )[:20]
+    spokes = [item for item in (payload.get("spokes") or []) if isinstance(item, dict)]
+
+    def remove_placement(article: dict[str, Any], phrase: str) -> None:
+        article["targeted_keywords"] = [value for value in (article.get("targeted_keywords") or []) if clean_phrase(str(value)) != phrase]
+        article["entity_terms"] = [value for value in (article.get("entity_terms") or []) if clean_phrase(str(value)) != phrase]
+        for section in article.get("h2_sections", []) or []:
+            if isinstance(section, dict):
+                section["targeted_keywords_placed_here"] = [value for value in (section.get("targeted_keywords_placed_here") or []) if clean_phrase(str(value)) != phrase]
+        for faq in article.get("faq_schema_questions", []) or []:
+            if isinstance(faq, dict):
+                faq["targeted_keywords_placed_here"] = [value for value in (faq.get("targeted_keywords_placed_here") or []) if clean_phrase(str(value)) != phrase]
+
+    for item in easy_wins:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        if any(_hub_same_page_intent(phrase, str(spoke.get("target_keyword") or "")) for spoke in spokes):
+            continue
+        for article in [payload["master_hub"], *spokes]:
+            remove_placement(article, phrase)
+        if len(spokes) >= 20:
+            replace_index = next((
+                index for index in range(len(spokes) - 1, -1, -1)
+                if not _is_easy_win(metrics.get(clean_phrase(str(spokes[index].get("target_keyword") or "")), {}))
+            ), None)
+            if replace_index is None:
+                continue
+            spokes.pop(replace_index)
+        is_tool = any(word in phrase.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder"))
+        spokes.append({
+            "spoke_category": _hub_spoke_category(phrase),
+            "article_title": phrase.title(),
+            "target_keyword": phrase,
+            "slug": f"/{_hub_slug(phrase)}/",
+            "page_type": "tool" if is_tool else "article",
+            "ranking_role": "easy_win_spoke",
+            "search_volume": item.get("search_volume"),
+            "difficulty": item.get("difficulty"),
+            "word_count_suggestion": 2000,
+            "content_brief": f"Win the distinct search intent for {phrase}, then pass contextual authority to the {main} Master Hub.",
+            "tool_functions": _default_architecture_tool_functions(phrase) if is_tool else [],
+            "h2_sections": [],
+            "faq_schema_questions": [],
+            "entity_terms": [],
+            "internal_links": [main],
+            "writing_instructions": "Satisfy this distinct intent completely, link naturally to the Master Hub, and avoid repeating another page's primary intent.",
+        })
+
+    for spoke in spokes:
+        target = clean_phrase(str(spoke.get("target_keyword") or ""))
+        metric = metrics.get(target, {})
+        spoke["ranking_role"] = "easy_win_spoke" if _is_easy_win(metric) else "supporting_spoke"
+        spoke["search_volume"] = metric.get("search_volume")
+        spoke["difficulty"] = metric.get("difficulty")
+        spoke["internal_links"] = list(dict.fromkeys([main, *(spoke.get("internal_links") or [])]))
+    payload["spokes"] = spokes
+    payload["master_hub"]["ranking_role"] = "master_hub"
+    payload["master_hub"]["internal_links"] = list(dict.fromkeys([
+        *(payload["master_hub"].get("internal_links") or []),
+        *(clean_phrase(str(spoke.get("target_keyword") or "")) for spoke in spokes),
+    ]))
     return payload
 
 
@@ -2246,16 +2498,23 @@ def build_hub_spoke_fallback(
     """Build one Master Hub and 10-20 flat spokes if the provider is unavailable."""
     from nlp.keywords import clean_phrase
 
-    keywords = _prepare_hub_page_keywords(keywords, main_keyword)
-    main = clean_phrase(main_keyword) or "core topic"
+    main = _select_master_keyword(keywords, main_keyword)
+    keywords = _prepare_hub_page_keywords(keywords, main)
+    item_by_phrase = {
+        clean_phrase(str(item.get("phrase") or "")): item
+        for item in keywords
+        if clean_phrase(str(item.get("phrase") or ""))
+    }
     entities = list(dict.fromkeys(
         clean_phrase(str(item.get("phrase") or "")) for item in keywords
         if item.get("type") == "entity" and clean_phrase(str(item.get("phrase") or ""))
     ))
-    phrases = list(dict.fromkeys(
-        clean_phrase(str(item.get("phrase") or "")) for item in keywords
+    candidate_items = [
+        item for item in keywords
         if item.get("type") != "entity" and clean_phrase(str(item.get("phrase") or "")) != main
-    ))
+    ]
+    candidate_items.sort(key=lambda item: _spoke_opportunity_score(item, main), reverse=True)
+    phrases = list(dict.fromkeys(clean_phrase(str(item.get("phrase") or "")) for item in candidate_items))
     if len(phrases) < 10:
         phrases.extend(
             phrase for phrase in (
@@ -2264,12 +2523,15 @@ def build_hub_spoke_fallback(
                 f"{main} use cases", f"{main} troubleshooting",
             ) if phrase not in phrases
         )
-    spoke_count = min(20, max(10, (len(phrases) + 3) // 4))
+    spoke_count = min(20, max(10, len(phrases)))
     centers = phrases[:spoke_count]
-    assignments: dict[str, list[str]] = {center: [] for center in centers}
-    for phrase in phrases[spoke_count:]:
-        center = max(centers, key=lambda candidate: _hub_intent_similarity(phrase, candidate))
-        assignments[center].append(phrase)
+    assignments: dict[str, list[str]] = {
+        center: list(item_by_phrase.get(center, {}).get("h_tags") or [])
+        for center in centers
+    }
+    # Distinct opportunities beyond the 20-page launch limit remain a future
+    # spoke backlog. They must not be hidden under another page as H2s.
+    deferred_spokes = phrases[spoke_count:]
     entity_assignments: dict[str, list[str]] = {center: [] for center in centers}
     for entity in entities:
         center = max(centers, key=lambda candidate: _hub_intent_similarity(entity, candidate))
@@ -2285,6 +2547,9 @@ def build_hub_spoke_fallback(
             "spoke_category": _hub_spoke_category(center),
             "article_title": center.title(),
             "target_keyword": center,
+            "ranking_role": "easy_win_spoke" if _is_easy_win(item_by_phrase.get(center, {})) else "supporting_spoke",
+            "search_volume": item_by_phrase.get(center, {}).get("search_volume"),
+            "difficulty": item_by_phrase.get(center, {}).get("difficulty"),
             "slug": f"/{_hub_slug(center)}/",
             "page_type": "tool" if is_tool else "article",
             "word_count_suggestion": 2000,
@@ -2305,10 +2570,14 @@ def build_hub_spoke_fallback(
         })
     plan = {
         "filtered_irrelevant_keywords": [],
+        "deferred_spoke_keywords": deferred_spokes,
         "total_relevant_keywords_covered": len(phrases) + len(entities) + 1,
         "master_hub": {
             "article_title": main.title(),
             "target_keyword": main,
+            "ranking_role": "master_hub",
+            "search_volume": item_by_phrase.get(main, {}).get("search_volume"),
+            "difficulty": item_by_phrase.get(main, {}).get("difficulty"),
             "slug": f"/{_hub_slug(main)}/",
             "page_type": "tool" if any(word in main.split() for word in ("tool", "software", "calculator", "generator", "maker", "builder")) else "article",
             "word_count_suggestion": 3500,
@@ -2326,7 +2595,7 @@ def build_hub_spoke_fallback(
             "writing_instructions": "Answer the main intent immediately, use a precise H1 and descriptive H2s, write in active voice, remove filler, use entities naturally, and make every section useful to the target reader.",
         },
         "spokes": spokes,
-        "interlinking_strategy": "Every spoke links to the Master Hub. Related spokes link to one another where the next article answers the reader's natural follow-up question.",
+        "interlinking_strategy": "Every easy-win spoke links contextually to the Master Hub to pass relevance and link equity upward. The Master Hub links back to every spoke, and related spokes cross-link only where the next page answers a distinct follow-up intent.",
         "writing_standards": ARCHITECTURE_WRITING_STANDARDS,
     }
     plan = _sanitize_detailed_hub_plan(plan, keywords, main)
@@ -2422,7 +2691,7 @@ def _validate_hub_and_spoke(
                 if fingerprint in seen_fingerprints:
                     return f"Duplicate keyword intent: {target}."
                 duplicate_intent = next(
-                    (existing for existing in seen_intents if _hub_intent_similarity(target, existing) >= 0.78),
+                    (existing for existing in seen_intents if _hub_same_page_intent(target, existing)),
                     None,
                 )
                 if duplicate_intent:
@@ -2647,6 +2916,7 @@ async def cluster_hub_and_spoke(
     if not keywords:
         return None
 
+    main_keyword = _select_master_keyword(keywords[:500], main_keyword)
     trimmed = _prepare_hub_page_keywords(keywords[:500], main_keyword)
     if not is_ai_configured():
         return build_hub_spoke_fallback(trimmed, main_keyword)
@@ -2657,18 +2927,19 @@ You are an elite SEO Architect and Content Strategist specializing in Hub-Spoke 
 Website context:
 {audit_summary or "Infer the business context conservatively from the primary keyword and keyword list."}
 
-Primary keyword: {main_keyword}
-Raw keyword list:
+Selected Master Hub keyword: {main_keyword}
+Keyword list with real search_volume and difficulty metrics when available:
 {json.dumps(trimmed)}
 
 Execute these steps in sequence:
 1. FILTER: Remove obvious junk and keywords that violate the website context or its hard boundaries. Keep useful adjacent educational, commercial, comparison, feature, entity, and use-case terms.
 2. CLUSTER: Group every relevant keyword by search intent.
-3. STRUCTURE: Build exactly 1 Master Hub and 10 to 20 strategically connected Spoke articles. The total plan must contain 11 to 21 articles. Use a flat plan with no nested hubs or sub-silos.
-4. PREVENT CANNIBALIZATION: Each article must satisfy a distinct primary search intent. Put overlapping and long-tail variants inside the strongest article as H2, H3, Entity, or FAQ placements.
-5. STANDARDS: Never create individual articles for ANSI, IEC, DIN, JIS, UL, CE, FCC, IEEE, BS, or similar standards. Consolidate them under one relevant standards section or article.
-6. MAP: Explicitly place every relevant keyword in one article as its Title/H1 target, H2, H3, Entity, or FAQ. Cover all relevant keywords.
-7. INTERLINK: Create a useful authority loop between theory, tutorials, references, comparisons, and the Master Hub.
+3. MASTER HUB: Use the selected Master Hub keyword exactly. It is the broad, highly relevant, high-volume, harder target that accumulates authority from the cluster.
+4. SPOKE OPPORTUNITIES: Build 10 to 20 standalone spokes from highly related, easier-to-rank keywords. A keyword with search_volume > 0 and difficulty <= 40 is an easy win and MUST remain a standalone spoke when it has a distinct intent. Never demote an easy win to an H2 merely because its wording resembles another keyword.
+5. PREVENT CANNIBALIZATION: Each URL must satisfy a distinct search intent. Merge only true same-SERP variants: exact synonyms, spelling/plural variants, or word-order variants. Put those variants in H2, Entity, or FAQ placements. Shared topic words alone do not make two keywords duplicates.
+6. STANDARDS: Never create individual articles for ANSI, IEC, DIN, JIS, UL, CE, FCC, IEEE, BS, or similar standards. Consolidate them under one relevant standards section or article.
+7. MAP: Explicitly place every relevant keyword in one article as its Title/H1 target, H2, H3, Entity, or FAQ. Cover all relevant keywords.
+8. INTERLINK: Every spoke must link contextually to the Master Hub so its relevance and link equity strengthen the hard target. The Master Hub links back to every spoke. Add lateral spoke links only for distinct natural next steps.
 
 Return only this JSON object:
 {{
@@ -2677,6 +2948,9 @@ Return only this JSON object:
   "master_hub": {{
     "article_title": "Compelling home-page hub title",
     "target_keyword": "{main_keyword}",
+    "ranking_role": "master_hub",
+    "search_volume": 0,
+    "difficulty": 0,
     "slug": "/exact-clean-slug/",
     "page_type": "tool or article",
     "word_count_suggestion": 3500,
@@ -2698,6 +2972,9 @@ Return only this JSON object:
       "spoke_category": "Comparisons, Tutorials, References, Theory, or Use Cases",
       "article_title": "Compelling article title",
       "target_keyword": "one distinct primary keyword",
+      "ranking_role": "easy_win_spoke or supporting_spoke",
+      "search_volume": 0,
+      "difficulty": 0,
       "slug": "/exact-clean-slug/",
       "page_type": "article or tool",
       "word_count_suggestion": 2000,
@@ -2714,11 +2991,11 @@ Return only this JSON object:
       "writing_instructions": "Page-specific instructions derived from the writing standards"
     }}
   ],
-  "interlinking_strategy": "A concrete authority-loop linking strategy",
+  "interlinking_strategy": "A concrete link-equity strategy in which every spoke strengthens the Master Hub",
   "writing_standards": {json.dumps(ARCHITECTURE_WRITING_STANDARDS)}
 }}
 
-Final checks: return 10-20 spokes, exactly one Master Hub, no duplicate target keywords, no nested silos, and no relevant keyword left unmapped.
+Final checks: return 10-20 spokes, exactly one Master Hub, preserve page-worthy easy wins as spokes, no duplicate target keywords, no nested silos, and no relevant keyword left unmapped.
 """
     tagged_allowed = {
         ("entity:" if kw.get("type") == "entity" else "") + str(kw.get("phrase") or "")
@@ -2735,6 +3012,7 @@ Final checks: return 10-20 spokes, exactly one Master Hub, no duplicate target k
             if not isinstance(raw_payload, dict):
                 raise ValueError("Provider returned a non-object plan")
             raw_payload = _sanitize_detailed_hub_plan(raw_payload, trimmed, main_keyword)
+            raw_payload = _enforce_easy_win_spokes(raw_payload, trimmed, main_keyword)
             payload = _deepseek_plan_to_hub_schema(raw_payload, main_keyword)
             error = _validate_hub_and_spoke(
                 payload,
