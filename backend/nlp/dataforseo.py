@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
@@ -41,10 +42,23 @@ class KeywordResearchResult:
 
 
 def _credentials() -> tuple[str, str]:
-    return (
-        settings.DATAFORSEO_LOGIN or settings.DATAFORSEO_API_LOGIN,
-        settings.DATAFORSEO_PASSWORD or settings.DATAFORSEO_API_PASSWORD,
-    )
+    """Select one complete credential pair; never mix fields across accounts."""
+    primary = (settings.DATAFORSEO_LOGIN.strip(), settings.DATAFORSEO_PASSWORD.strip())
+    alias = (settings.DATAFORSEO_API_LOGIN.strip(), settings.DATAFORSEO_API_PASSWORD.strip())
+    if all(primary):
+        return primary
+    if all(alias):
+        return alias
+    return "", ""
+
+
+def _credential_source() -> str | None:
+    login, password = _credentials()
+    if not login or not password:
+        return None
+    if login == settings.DATAFORSEO_LOGIN.strip() and password == settings.DATAFORSEO_PASSWORD.strip():
+        return "DATAFORSEO_LOGIN"
+    return "DATAFORSEO_API_LOGIN"
 
 
 def is_dataforseo_configured() -> bool:
@@ -52,8 +66,69 @@ def is_dataforseo_configured() -> bool:
 
 
 def _cache_key(endpoint: str, payload: dict[str, Any]) -> str:
-    encoded = json.dumps([endpoint, payload], sort_keys=True, separators=(",", ":")).encode()
+    # Account changes must not reuse another account's cached provider response.
+    login, _password = _credentials()
+    account_key = hashlib.sha256(login.lower().encode()).hexdigest()[:16] if login else "unconfigured"
+    encoded = json.dumps([account_key, endpoint, payload], sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+_STATUS_CACHE: tuple[float, dict[str, Any]] | None = None
+
+
+def dataforseo_account_status(force: bool = False) -> dict[str, Any]:
+    """Verify account authentication using the non-task account endpoint."""
+    global _STATUS_CACHE
+    now = time.monotonic()
+    if not force and _STATUS_CACHE and now - _STATUS_CACHE[0] < 300:
+        return dict(_STATUS_CACHE[1])
+
+    login, password = _credentials()
+    source = _credential_source()
+    if not login or not password:
+        result = {
+            "configured": False,
+            "authenticated": False,
+            "credential_source": None,
+            "message": "Add one complete DataForSEO login and password pair in Render.",
+        }
+        _STATUS_CACHE = (now, result)
+        return dict(result)
+
+    try:
+        response = requests.get(
+            f"{BASE_URL}/appendix/user_data",
+            auth=(login, password),
+            timeout=10,
+        )
+        if response.status_code == 401:
+            result = {
+                "configured": True,
+                "authenticated": False,
+                "credential_source": source,
+                "message": "DataForSEO rejected the selected login or password.",
+            }
+        else:
+            response.raise_for_status()
+            payload = response.json()
+            authenticated = int(payload.get("status_code") or 0) == 20000
+            result = {
+                "configured": True,
+                "authenticated": authenticated,
+                "credential_source": source,
+                "message": "Connected to DataForSEO." if authenticated else str(
+                    payload.get("status_message") or "DataForSEO account check failed."
+                )[:200],
+            }
+    except Exception as exc:
+        result = {
+            "configured": True,
+            "authenticated": False,
+            "credential_source": source,
+            "message": f"Could not reach DataForSEO: {type(exc).__name__}",
+        }
+    _STATUS_CACHE = (now, result)
+    return dict(result)
 
 
 def _cached_response(db: Session, key: str) -> dict[str, Any] | None:

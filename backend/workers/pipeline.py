@@ -720,6 +720,7 @@ def _process_dataforseo_keywords(
     from nlp.keywords import clean_phrase, is_publishable_keyword
 
     if not is_dataforseo_configured():
+        logger.error("DataForSEO skipped: no complete credential pair is configured")
         return 0
     research = collect_keyword_research(
         db,
@@ -736,6 +737,10 @@ def _process_dataforseo_keywords(
             continue
         accepted.append({**item, "phrase": phrase})
     if not accepted:
+        logger.warning(
+            "DataForSEO returned %s candidates but none passed the site relevance boundary",
+            len(research.keywords),
+        )
         return 0
 
     source_url = "https://dataforseo.com/"

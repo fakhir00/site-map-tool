@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { CreditCard } from 'lucide-react'
-import { api, type User } from '../lib/api'
+import { CreditCard, Database } from 'lucide-react'
+import { api, type ProviderStatus, type User } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 
@@ -8,6 +8,11 @@ export function Settings() {
   const { data: user } = useQuery({
     queryKey: ['user'],
     queryFn: () => api.get<User>('/auth/me'),
+  })
+  const { data: dataForSeo, isLoading: isLoadingDataForSeo } = useQuery({
+    queryKey: ['provider-status', 'dataforseo'],
+    queryFn: () => api.get<ProviderStatus>('/providers/dataforseo/status'),
+    retry: false,
   })
 
   return (
@@ -55,6 +60,26 @@ export function Settings() {
           </div>
         </Card>
       </section>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Database className="mt-0.5 h-5 w-5 text-cyan-700 dark:text-cyan-400" />
+            <div>
+              <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">DataForSEO</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {isLoadingDataForSeo ? 'Checking the Render credentials…' : dataForSeo?.message || 'Provider status unavailable.'}
+              </p>
+              {dataForSeo?.credential_source && (
+                <p className="mt-1 text-xs text-slate-400">Using {dataForSeo.credential_source} and its matching password.</p>
+              )}
+            </div>
+          </div>
+          <Badge variant={dataForSeo?.authenticated ? 'teal' : 'amber'}>
+            {isLoadingDataForSeo ? 'Checking' : dataForSeo?.authenticated ? 'Connected' : dataForSeo?.configured ? 'Authentication failed' : 'Not configured'}
+          </Badge>
+        </div>
+      </Card>
 
     </div>
   )

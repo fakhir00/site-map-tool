@@ -229,6 +229,7 @@ from app.content.router import router as content_router
 from app.website_prompts.router import router as website_prompts_router
 from app.goldhunter.router import router as goldhunter_router
 from app.hub_spoke.router import router as hub_spoke_workspace_router
+from app.providers.router import router as providers_router
 
 app.include_router(auth_router)
 app.include_router(projects_router)
@@ -239,6 +240,7 @@ app.include_router(content_router)
 app.include_router(website_prompts_router)
 app.include_router(goldhunter_router, prefix="/api")
 app.include_router(hub_spoke_workspace_router)
+app.include_router(providers_router)
 
 
 @app.get("/api/health")

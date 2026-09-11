@@ -6,7 +6,15 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import Keyword, Project, User
-from nlp.dataforseo import KeywordResearchResult, _normalize_items, _research_seeds, collect_keyword_research
+from nlp.dataforseo import (
+    KeywordResearchResult,
+    _cache_key,
+    _credentials,
+    _normalize_items,
+    _research_seeds,
+    dataforseo_account_status,
+    collect_keyword_research,
+)
 from workers.pipeline import _process_dataforseo_keywords
 
 
@@ -47,6 +55,44 @@ def wrapped_response_for(keyword):
 
 
 class DataForSeoTests(TestCase):
+    def test_credentials_never_mix_two_render_account_pairs(self):
+        with (
+            patch("nlp.dataforseo.settings.DATAFORSEO_LOGIN", "old-login"),
+            patch("nlp.dataforseo.settings.DATAFORSEO_PASSWORD", ""),
+            patch("nlp.dataforseo.settings.DATAFORSEO_API_LOGIN", "new-login"),
+            patch("nlp.dataforseo.settings.DATAFORSEO_API_PASSWORD", "new-password"),
+        ):
+            self.assertEqual(_credentials(), ("new-login", "new-password"))
+
+    def test_cache_is_isolated_when_dataforseo_account_changes(self):
+        with (
+            patch("nlp.dataforseo.settings.DATAFORSEO_LOGIN", "first@example.com"),
+            patch("nlp.dataforseo.settings.DATAFORSEO_PASSWORD", "password"),
+        ):
+            first = _cache_key("endpoint", {"keywords": ["lunar age"]})
+        with (
+            patch("nlp.dataforseo.settings.DATAFORSEO_LOGIN", "second@example.com"),
+            patch("nlp.dataforseo.settings.DATAFORSEO_PASSWORD", "password"),
+        ):
+            second = _cache_key("endpoint", {"keywords": ["lunar age"]})
+
+        self.assertNotEqual(first, second)
+
+    def test_account_status_reports_rejected_credentials_without_exposing_them(self):
+        with (
+            patch("nlp.dataforseo.requests.get") as request,
+            patch("nlp.dataforseo.settings.DATAFORSEO_LOGIN", "account@example.com"),
+            patch("nlp.dataforseo.settings.DATAFORSEO_PASSWORD", "secret"),
+            patch("nlp.dataforseo._STATUS_CACHE", None),
+        ):
+            request.return_value.status_code = 401
+            status = dataforseo_account_status(force=True)
+
+        self.assertTrue(status["configured"])
+        self.assertFalse(status["authenticated"])
+        self.assertNotIn("account@example.com", str(status))
+        self.assertNotIn("secret", str(status))
+
     def test_only_exact_gold_hunter_seeds_reach_the_provider(self):
         audit = '''{
           "primary_keyword": "lunar age calculator",

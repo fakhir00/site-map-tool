@@ -25,6 +25,13 @@ export type User = {
   created_at: string
 }
 
+export type ProviderStatus = {
+  configured: boolean
+  authenticated: boolean
+  credential_source: string | null
+  message: string
+}
+
 export type Project = {
   id: string
   name: string
