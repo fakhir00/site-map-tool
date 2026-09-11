@@ -371,6 +371,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
         gap_started = time.monotonic()
         competitor_evidence: list[str] = []
+        provider_diagnostics: list[str] = []
         dataforseo_count = _process_dataforseo_keywords(
             db,
             project_uuid,
@@ -379,6 +380,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             topic_terms,
             negative_terms,
             audit_summary,
+            diagnostics=provider_diagnostics,
         )
         logger.info("[%s] DataForSEO pass stored %s keywords", project_id, dataforseo_count)
         competitor_gap_count = _process_competitor_keyword_gaps(
@@ -430,7 +432,11 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             raise RuntimeError("No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry.")
         warnings: list[str] = []
         if dataforseo_count == 0:
-            warnings.append("DataForSEO stored no matching keywords")
+            warnings.append(
+                "DataForSEO: " + provider_diagnostics[0]
+                if provider_diagnostics
+                else "DataForSEO stored no matching keywords"
+            )
         if competitor_gap_count == 0:
             warnings.append(
                 "no direct competitor pages were discovered"
@@ -729,6 +735,7 @@ def _process_dataforseo_keywords(
     topic_terms: set[str] | None,
     negative_terms: set[str] | None,
     audit_summary: str | None = None,
+    diagnostics: list[str] | None = None,
 ) -> int:
     """Store paid-provider keywords only after deterministic relevance checks."""
     from app.models import Url
@@ -737,6 +744,8 @@ def _process_dataforseo_keywords(
 
     if not is_dataforseo_configured():
         logger.error("DataForSEO skipped: no complete credential pair is configured")
+        if diagnostics is not None:
+            diagnostics.append("no complete credential pair is configured")
         return 0
     research = collect_keyword_research(
         db,
@@ -744,6 +753,8 @@ def _process_dataforseo_keywords(
         seed_keywords,
         audit_summary,
     )
+    if diagnostics is not None:
+        diagnostics.extend(research.errors)
     accepted = []
     for item in research.keywords:
         phrase = clean_phrase(str(item.get("phrase") or ""))
@@ -757,6 +768,10 @@ def _process_dataforseo_keywords(
             "DataForSEO returned %s candidates but none passed the site relevance boundary",
             len(research.keywords),
         )
+        if diagnostics is not None and not research.errors:
+            diagnostics.append(
+                f"returned {len(research.keywords)} candidates but none passed the site relevance boundary"
+            )
         return 0
 
     source_url = "https://dataforseo.com/"

@@ -231,3 +231,15 @@ class DataForSeoTests(TestCase):
             "title": "Moon Nodes Calculator",
             "snippet": "Calculate moon nodes",
         }])
+
+    def test_provider_task_error_is_returned_for_scan_diagnostics(self):
+        with (
+            patch("nlp.dataforseo.is_dataforseo_configured", return_value=True),
+            patch("nlp.dataforseo._cached_response", return_value=None),
+            patch("nlp.dataforseo._request", side_effect=RuntimeError("Please verify your account before using the API.")),
+            patch("nlp.dataforseo.settings.DATAFORSEO_MAX_COST_PER_SCAN", 0.08),
+        ):
+            result = collect_keyword_research(object(), "example.com", ["moon nodes calculator"])
+
+        self.assertEqual(result.keywords, [])
+        self.assertEqual(result.errors, ["Please verify your account before using the API."])

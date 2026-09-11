@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
@@ -39,6 +39,7 @@ class KeywordResearchResult:
     spent: float
     requests: int
     cache_hits: int
+    errors: list[str] = field(default_factory=list)
 
 
 def _credentials() -> tuple[str, str]:
@@ -272,6 +273,7 @@ def collect_keyword_research(
     request_count = 0
     cache_hits = 0
     collected: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
     cap = max(0.01, float(settings.DATAFORSEO_MAX_COST_PER_SCAN))
 
     for endpoint, payload in requests_to_make:
@@ -297,13 +299,15 @@ def collect_keyword_research(
             if spent >= cap:
                 break
         except Exception as exc:
-            logger.warning("DataForSEO %s failed: %s", endpoint.rsplit("/", 2)[-2], exc)
+            message = str(exc)[:300]
+            errors.append(message)
+            logger.warning("DataForSEO %s failed: %s", endpoint.rsplit("/", 2)[-2], message)
 
     logger.info(
         "DataForSEO collected %s keywords using %s paid requests, %s cache hits, $%.4f",
         len(collected), request_count, cache_hits, spent,
     )
-    return KeywordResearchResult(list(collected.values()), spent, request_count, cache_hits)
+    return KeywordResearchResult(list(collected.values()), spent, request_count, cache_hits, errors)
 
 
 def search_competitors(

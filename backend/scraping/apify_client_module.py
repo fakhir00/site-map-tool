@@ -1,5 +1,4 @@
 import logging
-from datetime import timedelta
 from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
 from app.config import settings
@@ -35,8 +34,8 @@ def search_google_via_apify(query: str, max_results: int = 10, country_code: str
         logger.info(f"Running Apify google-search-scraper for query: {query}")
         run = client.actor("apify/google-search-scraper").call(
             run_input=run_input,
-            run_timeout=timedelta(seconds=90),
-            wait_duration=timedelta(seconds=100),
+            timeout_secs=90,
+            wait_secs=100,
         )
         if not run or run.get("status") != "SUCCEEDED":
             return []
@@ -79,10 +78,10 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
     
     try:
         logger.info(f"Running Apify website-content-crawler for: {domain_or_url}")
-        run = client.actor("alizarin_refrigerator-owner/website-crawler").call(
+        run = client.actor("apify/website-content-crawler").call(
             run_input=run_input,
-            run_timeout=timedelta(seconds=90),
-            wait_duration=timedelta(seconds=100),
+            timeout_secs=90,
+            wait_secs=100,
         )
         if not run:
             return []
@@ -116,8 +115,8 @@ def extract_apify_page_content(url: str) -> Optional[ScrapedPage]:
     try:
         run = client.actor("apify/cheerio-scraper").call(
             run_input=run_input,
-            run_timeout=timedelta(seconds=60),
-            wait_duration=timedelta(seconds=70),
+            timeout_secs=60,
+            wait_secs=70,
         )
         if not run:
             return None
