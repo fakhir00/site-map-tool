@@ -272,6 +272,31 @@ class PipelineFilterTests(TestCase):
 
         self.assertEqual(domains, ["https://astrotool.example"])
 
+    def test_competitor_discovery_preserves_exact_ranking_urls(self):
+        project = SimpleNamespace(
+            own_domain="https://own.example",
+            domain="https://own.example",
+            search_locale="us",
+            audit_summary="A focused circuit calculator",
+        )
+        ranking_urls = {}
+        result_url = "https://competitor.example/calculator"
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=[{
+                "url": result_url,
+                "title": "Circuit Calculator",
+                "snippet": "Calculate a circuit",
+            }]),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=["https://competitor.example"]),
+        ):
+            domains = _discover_competitor_domains(
+                project, ["circuit calculator"], ranking_urls_out=ranking_urls,
+            )
+
+        self.assertEqual(domains, ["https://competitor.example"])
+        self.assertEqual(ranking_urls, {"https://competitor.example": [result_url]})
+
     def test_competitor_judge_cannot_add_an_unobserved_domain(self):
         candidates = [{
             "domain": "https://observed.example",
@@ -440,6 +465,23 @@ class PipelineFilterTests(TestCase):
                 "https://example.com/blog/circuit-board-basics",
             ],
         )
+
+    def test_discover_content_urls_keeps_exact_serp_page_without_blog_path(self):
+        ranking_url = "https://example.com/calculator"
+        urls = _discover_content_urls(
+            "https://example.com",
+            patterns=[r"/blog/"],
+            extract_all_urls_from_domain=lambda *args, **kwargs: ["https://example.com/"],
+            filter_blog_urls=lambda urls, **kwargs: [],
+            limit=2,
+            required_terms={"calculator"},
+            ranking_terms={"calculator"},
+            negative_terms=set(),
+            source_type="competitor",
+            ranking_urls=[ranking_url],
+        )
+
+        self.assertEqual(urls, [ranking_url])
 
     def test_with_source_url_ids_keeps_evidence_after_normalization(self):
         source_id = str(uuid.uuid4())

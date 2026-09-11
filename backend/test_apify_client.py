@@ -1,10 +1,19 @@
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
+from app.config import Settings
 from scraping.apify_client_module import search_google_via_apify
 
 
 class ApifyClientTests(TestCase):
+    def test_common_apify_environment_aliases_are_accepted(self):
+        configured = Settings(
+            _env_file=None,
+            APIFY_API_TOKEN="",
+            APIFY_API_KEY="alternate-token",
+        )
+        self.assertEqual(configured.APIFY_API_TOKEN, "alternate-token")
+
     def test_search_uses_current_apify_client_timeout_arguments(self):
         actor = MagicMock()
         actor.call.return_value = {

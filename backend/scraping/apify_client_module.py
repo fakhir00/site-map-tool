@@ -37,7 +37,16 @@ def search_google_via_apify(query: str, max_results: int = 10, country_code: str
             timeout_secs=90,
             wait_secs=100,
         )
-        if not run or run.get("status") != "SUCCEEDED":
+        if not run:
+            logger.error("Apify search returned no run metadata for %r", query)
+            return []
+        if run.get("status") != "SUCCEEDED":
+            logger.error(
+                "Apify search run did not succeed for %r: status=%s message=%s",
+                query,
+                run.get("status"),
+                run.get("statusMessage") or run.get("status_message") or "none",
+            )
             return []
         
         results = []
@@ -51,6 +60,10 @@ def search_google_via_apify(query: str, max_results: int = 10, country_code: str
                         "title": res.get("title"),
                         "snippet": res.get("description") or res.get("snippet")
                     })
+        if not results:
+            logger.warning("Apify search succeeded but returned no organic results for %r", query)
+        else:
+            logger.info("Apify search returned %s organic results for %r", len(results), query)
         return results[:max_results]
     except Exception as exc:
         logger.error(f"Apify search failed for {query}: {exc}")
@@ -84,6 +97,15 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
             wait_secs=100,
         )
         if not run:
+            logger.error("Apify content crawl returned no run metadata for %s", domain_or_url)
+            return []
+        if run.get("status") != "SUCCEEDED":
+            logger.error(
+                "Apify content crawl did not succeed for %s: status=%s message=%s",
+                domain_or_url,
+                run.get("status"),
+                run.get("statusMessage") or run.get("status_message") or "none",
+            )
             return []
         
         urls = []
@@ -91,6 +113,7 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
             url = item.get("url")
             if url:
                 urls.append(url)
+        logger.info("Apify content crawl returned %s URLs for %s", len(urls), domain_or_url)
         return urls
     except Exception as exc:
         logger.error(f"Apify crawler failed for {domain_or_url}: {exc}")

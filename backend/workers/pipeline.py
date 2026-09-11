@@ -179,7 +179,13 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         db.close()
         db = None
         own_domain = _origin(project.own_domain or project.domain) or project.domain
-        competitor_domains = _discover_competitor_domains(project, seed_keywords, negative_terms=negative_terms)
+        competitor_ranking_urls: dict[str, list[str]] = {}
+        competitor_domains = _discover_competitor_domains(
+            project,
+            seed_keywords,
+            negative_terms=negative_terms,
+            ranking_urls_out=competitor_ranking_urls,
+        )
         logger.info("[%s] Competitor discovery selected %s domains: %s", project_id, len(competitor_domains), competitor_domains)
         required_terms = _search_required_terms(seed_keywords)
         ranking_terms = _search_ranking_terms(seed_keywords)
@@ -243,6 +249,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                         negative_terms,
                         include_homepage=(source_type == "own"),
                         source_type=source_type,
+                        ranking_urls=competitor_ranking_urls.get(domain),
                     )
 
                     saved_urls = []
@@ -487,6 +494,7 @@ def _discover_content_urls(
     negative_terms: set[str] | None = None,
     include_homepage: bool = False,
     source_type: str = "competitor",
+    ranking_urls: list[str] | None = None,
 ) -> list[str]:
     max_raw_urls = min(1000, max(limit * 10, limit + 25))
     
@@ -495,6 +503,8 @@ def _discover_content_urls(
         timeout=settings.REQUEST_TIMEOUT,
         max_urls=max_raw_urls,
     )
+    verified_ranking_urls = list(dict.fromkeys(ranking_urls or []))
+    all_urls = list(dict.fromkeys([*verified_ranking_urls, *all_urls]))
     if source_type == "competitor" and len(all_urls) <= 1:
         try:
             from scraping.apify_client_module import crawl_competitor_content_via_apify, is_apify_configured
@@ -516,12 +526,22 @@ def _discover_content_urls(
             patterns=patterns,
             domain=domain,
         )
+        # These exact pages ranked in Google for a supplied seed. Keep them even
+        # when a site's URL structure does not resemble /blog/ or /article/.
+        content_urls = list(dict.fromkeys([*verified_ranking_urls, *content_urls]))
     content_urls = [url for url in content_urls if _is_relevant_content_url(url, required_terms or set(), negative_terms)]
     if required_terms:
         topical_urls = [url for url in content_urls if _url_has_any_terms(url, required_terms)]
         if len(topical_urls) >= limit:
-            content_urls = topical_urls
-    content_urls.sort(key=lambda url: _url_relevance_score(url, ranking_terms or set()), reverse=True)
+            content_urls = list(dict.fromkeys([*verified_ranking_urls, *topical_urls]))
+    verified_ranking_set = set(verified_ranking_urls)
+    content_urls.sort(
+        key=lambda url: (
+            url in verified_ranking_set,
+            _url_relevance_score(url, ranking_terms or set()),
+        ),
+        reverse=True,
+    )
     if include_homepage:
         homepage = _origin(domain)
         if homepage:
@@ -951,7 +971,14 @@ def _apply_scrape_result(url_record: Any, scrape_result: Any) -> bool:
     return True
 
 
-def _discover_competitor_domains(project: Any, seed_keywords: list[str], negative_terms: set[str] | None = None) -> list[str]:
+def _discover_competitor_domains(
+    project: Any,
+    seed_keywords: list[str],
+    negative_terms: set[str] | None = None,
+    ranking_urls_out: dict[str, list[str]] | None = None,
+) -> list[str]:
+    if ranking_urls_out is not None:
+        ranking_urls_out.clear()
     if not seed_keywords:
         logger.warning("No primary keyword provided, competitor discovery skipped")
         return []
@@ -973,6 +1000,13 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
     candidate_signals: dict[str, dict[str, Any]] = {}
     
     from scraping.apify_client_module import search_google_via_apify, is_apify_configured
+
+    def selected(domains: list[str]) -> list[str]:
+        if ranking_urls_out is not None:
+            for domain in domains:
+                sample_urls = (candidate_signals.get(domain) or {}).get("sample_urls") or []
+                ranking_urls_out[domain] = list(dict.fromkeys(sample_urls))[:3]
+        return domains
 
     def add_domain(
         url: str | None,
@@ -1080,7 +1114,7 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
     )
     if llm_domains is not None:
         if llm_domains:
-            return llm_domains
+            return selected(llm_domains)
         evidence_fallback = _high_confidence_competitor_fallback(
             balanced_domains, candidate_signals, seed_keywords, competitor_limit,
         )
@@ -1089,10 +1123,10 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
                 "Competitor judge rejected every candidate; retained %s exact-seed SERP matches with explicit topical evidence",
                 len(evidence_fallback),
             )
-            return evidence_fallback
+            return selected(evidence_fallback)
         return []
 
-    return balanced_domains[:competitor_limit]
+    return selected(balanced_domains[:competitor_limit])
 
 
 def _high_confidence_competitor_fallback(

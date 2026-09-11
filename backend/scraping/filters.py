@@ -73,8 +73,9 @@ def is_blog_url(url: str, patterns: List[str] = None) -> bool:
         if re.search(exc, url, re.IGNORECASE):
             return False
 
-    # Use provided patterns or defaults
-    check_patterns = patterns or DEFAULT_BLOG_PATTERNS
+    # Project patterns extend the safe defaults. Treating them as a replacement
+    # silently dropped guides, tutorials, learn pages, and support articles.
+    check_patterns = list(dict.fromkeys([*(patterns or []), *DEFAULT_BLOG_PATTERNS]))
     for pat in check_patterns:
         if re.search(pat, path, re.IGNORECASE):
             return True

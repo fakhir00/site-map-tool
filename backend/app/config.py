@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-chat"
     APIFY_API_TOKEN: str = ""
+    APIFY_API_KEY: str = ""
+    APIFY_TOKEN: str = ""
     DATAFORSEO_LOGIN: str = ""
     DATAFORSEO_PASSWORD: str = ""
     DATAFORSEO_API_LOGIN: str = ""
@@ -66,6 +68,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def normalize_database_urls(self):
+        # Accept the common Render variable names while keeping one canonical
+        # setting inside the application.
+        self.APIFY_API_TOKEN = (
+            self.APIFY_API_TOKEN.strip()
+            or self.APIFY_API_KEY.strip()
+            or self.APIFY_TOKEN.strip()
+        )
         database_url = self.DATABASE_URL.strip()
         sync_database_url = self.SYNC_DATABASE_URL.strip()
 
