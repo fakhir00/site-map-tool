@@ -49,6 +49,7 @@ class WorkflowTests(unittest.TestCase):
         self.stack.enter_context(patch('app.main.engine', self.async_engine))
         self.stack.enter_context(patch('workers.pipeline.SyncSession', self.sessions))
         self.stack.enter_context(patch('app.scan.router.settings.USE_CELERY', False))
+        self.stack.enter_context(patch('app.scan.router.settings.DATABASE_URL', f'sqlite+aiosqlite:///{path}'))
         self.client = self.stack.enter_context(TestClient(app))
         with self.sessions() as db:
             user = User(email='test@example.com')

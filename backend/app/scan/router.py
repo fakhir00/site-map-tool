@@ -1,5 +1,7 @@
 import uuid
 import logging
+import concurrent.futures
+import threading
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,11 @@ from app.config import settings
 
 router = APIRouter(prefix="/api/projects", tags=["scan"])
 logger = logging.getLogger(__name__)
+_LOCAL_SCAN_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="bounded-scan",
+)
+_LOCAL_SCAN_SLOTS = threading.BoundedSemaphore(8)
 
 
 @router.post("/{project_id}/scan/start", response_model=ScanJobOut)
@@ -215,6 +222,24 @@ def _dispatch_scan(
         return task.id
 
     from workers.pipeline import run_full_pipeline, ACTIVE_SCANS
+
+    # SQLite test/local runs retain Starlette's deterministic BackgroundTasks
+    # behavior. Hosted Postgres runs use one bounded worker so simultaneous scan
+    # requests cannot occupy dozens of web-server threads and exhaust memory.
+    if "sqlite" not in settings.DATABASE_URL:
+        if not _LOCAL_SCAN_SLOTS.acquire(blocking=False):
+            raise RuntimeError("The scan queue is full; retry after an active scan finishes.")
+        ACTIVE_SCANS.add(job_id)
+        try:
+            future = _LOCAL_SCAN_EXECUTOR.submit(
+                run_full_pipeline, str(project_id), str(job_id), resume_existing,
+            )
+        except Exception:
+            ACTIVE_SCANS.discard(job_id)
+            _LOCAL_SCAN_SLOTS.release()
+            raise
+        future.add_done_callback(lambda _future: _LOCAL_SCAN_SLOTS.release())
+        return f"local-bounded-{job_id}"
 
     ACTIVE_SCANS.add(job_id)
     background_tasks.add_task(run_full_pipeline, str(project_id), str(job_id), resume_existing)

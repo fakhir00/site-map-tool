@@ -18,6 +18,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 import xmltodict
 from bs4 import BeautifulSoup
+from lxml import etree
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ MAX_SITEMAP_DEPTH = 6
 MAX_FETCH_RETRIES = 1
 DEFAULT_MAX_SITEMAPS = 30
 DEFAULT_MAX_PAGE_URLS = 1000
+MAX_SITEMAP_DOWNLOAD_BYTES = 6_000_000
+MAX_SITEMAP_XML_BYTES = 8_000_000
 
 
 def get_base_url(domain: str) -> str:
@@ -53,16 +56,32 @@ def get_base_url(domain: str) -> str:
 
 
 def fetch_url(url: str, timeout: int = 10, max_retries: int = MAX_FETCH_RETRIES) -> Optional[bytes]:
-    """Fetch URL content, returns bytes or None on failure."""
+    """Fetch bounded sitemap/robots content without materializing huge bodies."""
     for attempt in range(max_retries + 1):
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                if attempt < max_retries:
-                    time.sleep(0.75 * (2 ** attempt))
-                    continue
-            resp.raise_for_status()
-            return resp.content
+            with requests.get(
+                url,
+                headers=HEADERS,
+                timeout=timeout,
+                allow_redirects=True,
+                stream=True,
+            ) as resp:
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    if attempt < max_retries:
+                        time.sleep(0.75 * (2 ** attempt))
+                        continue
+                resp.raise_for_status()
+                declared_size = int(resp.headers.get("content-length") or 0)
+                if declared_size > MAX_SITEMAP_DOWNLOAD_BYTES:
+                    logger.warning("Skipping oversized sitemap response %s (%s bytes)", url, declared_size)
+                    return None
+                content = bytearray()
+                for chunk in resp.iter_content(chunk_size=64 * 1024):
+                    content.extend(chunk)
+                    if len(content) > MAX_SITEMAP_DOWNLOAD_BYTES:
+                        logger.warning("Skipping sitemap response over byte limit: %s", url)
+                        return None
+                return bytes(content)
         except Exception as e:
             if attempt < max_retries:
                 time.sleep(0.75 * (2 ** attempt))
@@ -72,12 +91,20 @@ def fetch_url(url: str, timeout: int = 10, max_retries: int = MAX_FETCH_RETRIES)
 
 
 def decompress_if_gzip(content: bytes) -> bytes:
-    """Decompress gzipped content if needed."""
+    """Decompress gzip with an output ceiling to prevent gzip memory bombs."""
     if content[:2] == b'\x1f\x8b':
         try:
-            return gzip.decompress(content)
+            with gzip.GzipFile(fileobj=io.BytesIO(content)) as stream:
+                expanded = stream.read(MAX_SITEMAP_XML_BYTES + 1)
+            if len(expanded) > MAX_SITEMAP_XML_BYTES:
+                logger.warning("Skipping gzip sitemap over decompressed byte limit")
+                return b""
+            return expanded
         except Exception:
-            pass
+            return b""
+    if len(content) > MAX_SITEMAP_XML_BYTES:
+        logger.warning("Skipping sitemap XML over byte limit")
+        return b""
     return content
 
 
@@ -120,6 +147,34 @@ def extract_urls_from_sitemap(data: dict) -> List[str]:
     return urls
 
 
+def _bounded_sitemap_locations(content: bytes, max_locations: int) -> tuple[str, List[str]]:
+    """Read only the needed XML locations while clearing parsed elements."""
+    xml = decompress_if_gzip(content)
+    if not xml or max_locations <= 0:
+        return "", []
+    kind = ""
+    locations: List[str] = []
+    try:
+        for event, element in etree.iterparse(
+            io.BytesIO(xml), events=("start", "end"), recover=True,
+        ):
+            local_name = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+            if event == "start" and not kind and local_name in {"urlset", "sitemapindex"}:
+                kind = local_name
+            elif event == "end" and local_name == "loc":
+                value = (element.text or "").strip()
+                if value:
+                    locations.append(value)
+                if len(locations) >= max_locations:
+                    break
+            if event == "end":
+                element.clear()
+        return kind, locations
+    except (etree.XMLSyntaxError, ValueError) as exc:
+        logger.warning("Streaming sitemap parse error: %s", exc)
+        return "", []
+
+
 def parse_robots_txt(content: bytes, base_url: str) -> List[str]:
     """Extract Sitemap directives from robots.txt."""
     sitemaps = []
@@ -157,18 +212,21 @@ def discover_sitemaps(
         if not content:
             return
 
-        data = parse_sitemap_xml(content)
-        if not data:
+        kind, urls = _bounded_sitemap_locations(
+            content,
+            max(1, (max_sitemaps or DEFAULT_MAX_SITEMAPS) - len(found_sitemaps)),
+        )
+        if not kind:
             return
 
-        if "sitemapindex" in data:
-            for child_url in extract_urls_from_sitemap(data):
+        if kind == "sitemapindex":
+            for child_url in urls:
                 if max_sitemaps is not None and len(found_sitemaps) >= max_sitemaps:
                     break
                 _walk_sitemap(child_url, depth + 1)
             return
 
-        if "urlset" in data:
+        if kind == "urlset":
             found_sitemaps.append(url)
 
     # 1. Try robots.txt
@@ -298,19 +356,22 @@ def _collect_page_urls_from_sitemap(
     content = fetch_url(sitemap_url, timeout)
     if not content:
         return []
-    data = parse_sitemap_xml(content)
-    urls = extract_urls_from_sitemap(data)
+    remaining = max_urls if max_urls is not None else DEFAULT_MAX_PAGE_URLS
+    kind, urls = _bounded_sitemap_locations(content, max(1, remaining))
 
-    if "sitemapindex" in data:
+    if kind == "sitemapindex":
         page_urls: List[str] = []
         for child_url in urls:
-            page_urls.extend(_collect_page_urls_from_sitemap(child_url, timeout, visited, depth + 1, max_urls))
+            child_limit = None if max_urls is None else max(0, max_urls - len(page_urls))
+            if child_limit == 0:
+                break
+            page_urls.extend(_collect_page_urls_from_sitemap(child_url, timeout, visited, depth + 1, child_limit))
             page_urls = list(dict.fromkeys(page_urls))
             if max_urls is not None and len(page_urls) >= max_urls:
                 break
         return page_urls
 
-    page_urls = [url for url in urls if not _looks_like_sitemap_url(url)]
+    page_urls = [url for url in urls if not _looks_like_sitemap_url(url)] if kind == "urlset" else []
     return page_urls[:max_urls] if max_urls is not None else page_urls
 
 

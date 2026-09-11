@@ -86,6 +86,7 @@ class DataForSeoTests(TestCase):
             patch("nlp.dataforseo._cached_response", return_value=None),
             patch("nlp.dataforseo._request", return_value=(response_for("lunar age calculator"), 0.01, False)) as request,
             patch("nlp.dataforseo.settings.DATAFORSEO_MAX_COST_PER_SCAN", 0.08),
+            patch("nlp.dataforseo.settings.DATAFORSEO_RESULT_LIMIT", 500),
         ):
             result = collect_keyword_research(
                 object(), "example.com", ["lunar age calculator", "calculate lunar age"],
@@ -94,6 +95,7 @@ class DataForSeoTests(TestCase):
         self.assertEqual(request.call_count, 1)
         first_payload = request.call_args_list[0].args[2]
         self.assertEqual(first_payload["keywords"], ["lunar age calculator", "calculate lunar age"])
+        self.assertEqual(first_payload["limit"], 200)
         self.assertEqual(result.requests, 1)
         self.assertEqual(result.cache_hits, 0)
         self.assertAlmostEqual(result.spent, 0.01)

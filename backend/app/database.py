@@ -10,8 +10,8 @@ class Base(DeclarativeBase):
 kwargs = {"echo": False}
 if "sqlite" not in settings.DATABASE_URL:
     kwargs.update({
-        "pool_size": 5,
-        "max_overflow": 5,
+        "pool_size": 2,
+        "max_overflow": 2,
         "pool_pre_ping": True,
         "pool_recycle": 300,
         "pool_timeout": 10,

@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 import requests
 from bs4 import BeautifulSoup
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,18 @@ HEADERS = {
 
 # Robots parser cache
 _robots_cache: dict = {}
+MAX_ROBOTS_CACHE_ENTRIES = 128
+
+
+def clear_robots_cache() -> None:
+    """Release per-domain robots parsers after each bounded scan."""
+    _robots_cache.clear()
+
+
+def _remember_robots(domain: str, parser: Optional[RobotFileParser]) -> None:
+    if domain not in _robots_cache and len(_robots_cache) >= MAX_ROBOTS_CACHE_ENTRIES:
+        _robots_cache.pop(next(iter(_robots_cache)))
+    _robots_cache[domain] = parser
 
 
 def get_robots_parser(domain: str) -> Optional[RobotFileParser]:
@@ -40,13 +53,13 @@ def get_robots_parser(domain: str) -> Optional[RobotFileParser]:
         rp.set_url(robots_url)
         response = requests.get(robots_url, headers=HEADERS, timeout=5, allow_redirects=True)
         if response.status_code >= 400:
-            _robots_cache[domain] = None
+            _remember_robots(domain, None)
             return None
         rp.parse(response.text.splitlines())
-        _robots_cache[domain] = rp
+        _remember_robots(domain, rp)
         return rp
     except Exception:
-        _robots_cache[domain] = None
+        _remember_robots(domain, None)
         return None
 
 
@@ -301,6 +314,9 @@ def scrape_page(
 
             # Extract main text
             text = extract_main_text(soup, raw_html=html_bytes)
+            # Bound the returned object before it joins other page results in a
+            # batch. The pipeline stores this same amount of keyword evidence.
+            text = text[:max(1000, int(settings.MAX_SCRAPED_TEXT_LENGTH))]
 
             # Metadata
             word_count = count_words(text)

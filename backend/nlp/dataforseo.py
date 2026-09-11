@@ -166,7 +166,9 @@ def collect_keyword_research(
         return KeywordResearchResult([], 0.0, 0, 0)
 
     base = {
-        "limit": max(25, min(500, settings.DATAFORSEO_RESULT_LIMIT)),
+        # One focused request per scan, with a hard result ceiling even if an
+        # old Render environment variable still contains the former 500 value.
+        "limit": max(25, min(200, settings.DATAFORSEO_RESULT_LIMIT)),
         "include_serp_info": False,
         "include_clickstream_data": False,
     }

@@ -35,8 +35,8 @@ else:
         "keepalives_interval": 10,
         "keepalives_count": 5,
     }
-    sync_engine_kwargs["pool_size"] = 3
-    sync_engine_kwargs["max_overflow"] = 3
+    sync_engine_kwargs["pool_size"] = 2
+    sync_engine_kwargs["max_overflow"] = 1
     # Hosted Postgres proxies can retire SSL sockets after a short idle period.
     # Prefer the newest pooled connection and recycle before common proxy limits.
     sync_engine_kwargs["pool_recycle"] = 120
@@ -447,6 +447,12 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         ACTIVE_SCANS.discard(job_uuid)
         if db is not None:
             db.close()
+        try:
+            from scraping.crawler import clear_robots_cache
+            clear_robots_cache()
+        except Exception:
+            pass
+        trim_memory()
 
 def _discover_content_urls(
     domain: str,
@@ -556,11 +562,13 @@ def _crawl_limit_per_domain(competitor_domains: list[str]) -> int:
     domain_count = max(1, len(competitor_domains) + 1)
     configured_per_domain = max(1, int(settings.MAX_CONTENT_URLS_PER_DOMAIN))
     global_per_domain = max(1, int(settings.MAX_URLS_PER_SCAN) // domain_count)
-    return max(1, min(configured_per_domain, global_per_domain))
+    return max(1, min(12, configured_per_domain, global_per_domain))
 
 
 def _scrape_chunk_size() -> int:
-    return max(1, min(10, int(settings.MAX_CONTENT_URLS_PER_DOMAIN)))
+    # Persist each small batch before fetching more pages. This bounds live DOM,
+    # response, extracted-text, and ORM objects in the shared Render web process.
+    return max(1, min(2, int(settings.MAX_CONTENT_URLS_PER_DOMAIN)))
 
 
 def _mark_chunk_failed(
@@ -914,7 +922,10 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
 
     own_root = _registered_domain(project.own_domain or project.domain)
     required_terms = _search_required_terms(seed_keywords)
-    competitor_limit = max(20, settings.MAX_COMPETITOR_DOMAINS)
+    # Twelve direct competitors across 3-5 seeds provide enough SERP evidence.
+    # The old max(20, setting) silently defeated lower-memory configuration and
+    # could schedule more than 500 full-page scrapes in the API process.
+    competitor_limit = max(3, min(12, int(settings.MAX_COMPETITOR_DOMAINS)))
     candidate_limit = max(competitor_limit * 3, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
     # Reserve discovery capacity for every Gold Hunter seed. A global limit here
     # previously let the first seed exhaust the pool before later seeds ran.
@@ -2096,7 +2107,9 @@ def _ensure_minimum_keyword_count(
         .join(KeywordUrl, KeywordUrl.keyword_id == Keyword.id)
         .where(Keyword.project_id == project_id, KeywordUrl.url_id == ai_url.id)
     ).scalars().all())
-    minimum_ai_keywords = min(40, max(10, int(settings.AI_KEYWORD_GENERATION_BATCH_SIZE)))
+    # Always add 40 audit-supported easy wins even when paid/scraped sources
+    # already bring the project above the overall keyword target.
+    minimum_ai_keywords = 40
 
     for batch_number in range(max(1, int(settings.AI_KEYWORD_GENERATION_MAX_BATCHES))):
         missing = max(target - len(existing), minimum_ai_keywords - len(ai_existing))

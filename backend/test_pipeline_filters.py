@@ -14,6 +14,7 @@ from nlp.openrouter import (
 from nlp.keywords import is_publishable_keyword
 from workers.pipeline import (
     _balanced_competitor_domains,
+    _crawl_limit_per_domain,
     _discover_competitor_domains,
     _discover_content_urls,
     _clean_seed_keywords,
@@ -21,12 +22,21 @@ from workers.pipeline import (
     _llm_filter_competitor_domains,
     _order_seeds_by_emd,
     _search_result_urls,
+    _scrape_chunk_size,
     _semantic_terms,
     _with_source_url_ids,
 )
 
 
 class PipelineFilterTests(TestCase):
+    def test_render_crawl_and_live_batch_have_hard_memory_caps(self):
+        with (
+            patch("workers.pipeline.settings.MAX_CONTENT_URLS_PER_DOMAIN", 500),
+            patch("workers.pipeline.settings.MAX_URLS_PER_SCAN", 5000),
+        ):
+            self.assertEqual(_crawl_limit_per_domain([f"d{i}.example" for i in range(20)]), 12)
+            self.assertEqual(_scrape_chunk_size(), 2)
+
     def test_extraction_artifacts_are_not_publishable_keywords(self):
         self.assertFalse(is_publishable_keyword("age korean age", min_words=2))
         self.assertFalse(is_publishable_keyword("traditional korean traditional", min_words=2))
