@@ -180,6 +180,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         db = None
         own_domain = _origin(project.own_domain or project.domain) or project.domain
         competitor_domains = _discover_competitor_domains(project, seed_keywords, negative_terms=negative_terms)
+        logger.info("[%s] Competitor discovery selected %s domains: %s", project_id, len(competitor_domains), competitor_domains)
         required_terms = _search_required_terms(seed_keywords)
         ranking_terms = _search_ranking_terms(seed_keywords)
         crawl_limit = _crawl_limit_per_domain(competitor_domains)
@@ -427,7 +428,22 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         _sync_project_counts(db, project)
         if not project.total_keywords:
             raise RuntimeError("No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry.")
-        _mark_complete(db, project, job, "complete")
+        warnings: list[str] = []
+        if dataforseo_count == 0:
+            warnings.append("DataForSEO stored no matching keywords")
+        if competitor_gap_count == 0:
+            warnings.append(
+                "no direct competitor pages were discovered"
+                if not competitor_domains
+                else "the competitor pages produced no accepted scraped keywords"
+            )
+        completion_warning = None
+        if warnings:
+            completion_warning = (
+                "Scan completed with limited external research: " + "; ".join(warnings) + ". "
+                "Check Settings > DataForSEO and the Render scan logs before retrying."
+            )
+        _mark_complete(db, project, job, "complete", completion_warning)
         logger.info(
             "[%s] Scan complete with %s keywords in %.1fs",
             project_id,
@@ -751,7 +767,7 @@ def _process_dataforseo_keywords(
         source = Url(
             project_id=project_id,
             url=source_url,
-            source_type="ai",
+            source_type="provider",
             source_domain="DataForSEO",
             status="scraped",
         )
@@ -996,14 +1012,15 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
         if is_apify_configured():
             apify_results = search_google_via_apify(kw, max_results=serp_limit, country_code=search_locale)
             for rank, res in enumerate(apify_results, start=1):
+                before = len(competitor_domains)
                 add_domain(
                     res.get("url"), kw, "apify_page_1", rank,
                     res.get("title"), res.get("snippet"),
                 )
-                primary_results_added = True
+                primary_results_added = primary_results_added or len(competitor_domains) > before
                 if len(competitor_domains) - start_count >= per_kw_limit:
                     break
-                    
+
         if not primary_results_added and len(competitor_domains) - start_count < per_kw_limit:
             remaining = per_kw_limit - (len(competitor_domains) - start_count)
             for rank, href in enumerate(
@@ -1013,6 +1030,28 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
                 add_domain(href, kw, "google_page_1", rank)
                 if len(competitor_domains) - start_count >= per_kw_limit:
                     break
+
+    # Hosted search engines commonly challenge datacenter IPs. Use a cached,
+    # exact-seed DataForSEO SERP only when every existing discovery route found
+    # nothing. Usually the first seed supplies enough domains, limiting spend to
+    # a single small SERP request rather than charging on every scan path.
+    if not competitor_domains:
+        try:
+            from nlp.dataforseo import search_competitors
+            for kw in seed_keywords:
+                with get_db() as provider_db:
+                    provider_results = search_competitors(
+                        provider_db, kw, locale=search_locale, max_results=serp_limit,
+                    )
+                for rank, res in enumerate(provider_results, start=1):
+                    add_domain(
+                        res.get("url"), kw, "dataforseo_serp", rank,
+                        res.get("title"), res.get("snippet"),
+                    )
+                if len(competitor_domains) >= max(3, min(competitor_limit, per_kw_limit)):
+                    break
+        except Exception as exc:
+            logger.warning("DataForSEO competitor discovery fallback failed: %s", exc)
 
     balanced_domains = _balanced_competitor_domains(
         competitor_domains, candidate_signals, seed_keywords, candidate_limit,
@@ -1025,9 +1064,52 @@ def _discover_competitor_domains(project: Any, seed_keywords: list[str], negativ
         project.audit_summary,
     )
     if llm_domains is not None:
-        return llm_domains
+        if llm_domains:
+            return llm_domains
+        evidence_fallback = _high_confidence_competitor_fallback(
+            balanced_domains, candidate_signals, seed_keywords, competitor_limit,
+        )
+        if evidence_fallback:
+            logger.warning(
+                "Competitor judge rejected every candidate; retained %s exact-seed SERP matches with explicit topical evidence",
+                len(evidence_fallback),
+            )
+            return evidence_fallback
+        return []
 
     return balanced_domains[:competitor_limit]
+
+
+def _high_confidence_competitor_fallback(
+    domains: list[str],
+    signals: dict[str, dict[str, Any]],
+    seed_keywords: list[str],
+    limit: int,
+) -> list[str]:
+    """Keep only exact-seed SERP results whose listing repeats the seed topic."""
+    from nlp.keywords import BROAD_TOPIC_TERMS, GENERIC_TOOL_TERMS, seed_keyword_terms
+
+    accepted: list[str] = []
+    for domain in domains:
+        signal = signals.get(domain) or {}
+        queries = signal.get("queries") or []
+        evidence = " ".join([
+            *(signal.get("titles") or []),
+            *(signal.get("snippets") or []),
+            *(signal.get("sample_urls") or []),
+        ]).lower()
+        for seed in seed_keywords:
+            if seed not in queries:
+                continue
+            distinctive = seed_keyword_terms([seed]) - BROAD_TOPIC_TERMS - GENERIC_TOOL_TERMS
+            matches = {term for term in distinctive if re.search(rf"\b{re.escape(term)}\b", evidence)}
+            required = 1 if len(distinctive) <= 1 else 2
+            if len(matches) >= required:
+                accepted.append(domain)
+                break
+        if len(accepted) >= limit:
+            break
+    return accepted
 
 
 def _balanced_competitor_domains(
@@ -2472,7 +2554,7 @@ def _sync_project_counts(db: Session, project: Any) -> None:
 
     rows = db.execute(
         select(Url.status, func.count(Url.id))
-        .where(Url.project_id == project.id, Url.source_type != "ai")
+        .where(Url.project_id == project.id, ~Url.source_type.in_(["ai", "provider"]))
         .group_by(Url.status)
     ).all()
     status_counts = {status: count for status, count in rows}

@@ -251,6 +251,27 @@ class PipelineFilterTests(TestCase):
             )
         self.assertEqual(result, [])
 
+    def test_exact_seed_serp_evidence_survives_over_strict_competitor_judge(self):
+        project = SimpleNamespace(
+            own_domain="https://moonnodescalculator.com",
+            domain="https://moonnodescalculator.com",
+            search_locale="us",
+            audit_summary="A moon nodes calculation tool",
+        )
+        results = [{
+            "url": "https://astrotool.example/moon-nodes-calculator",
+            "title": "Moon Nodes Calculator",
+            "snippet": "Calculate your north and south moon nodes",
+        }]
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=results),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=[]),
+        ):
+            domains = _discover_competitor_domains(project, ["moon nodes calculator"])
+
+        self.assertEqual(domains, ["https://astrotool.example"])
+
     def test_competitor_judge_cannot_add_an_unobserved_domain(self):
         candidates = [{
             "domain": "https://observed.example",
@@ -290,6 +311,20 @@ class PipelineFilterTests(TestCase):
         self.assertTrue(_keyword_matches_topic("electrical wiring guide", ["circuit diagram"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("fishbone diagram template", ["circuit diagram"], topic_terms, set()))
         self.assertFalse(_keyword_matches_topic("electrical fitness guide", ["circuit diagram"], topic_terms, set()))
+
+    def test_entity_plus_tool_seed_accepts_close_provider_variations(self):
+        self.assertTrue(_keyword_matches_topic(
+            "calculate north and south moon nodes",
+            ["moon nodes calculator"],
+            {"moon", "nodes"},
+            set(),
+        ))
+        self.assertFalse(_keyword_matches_topic(
+            "moon phase calendar",
+            ["moon nodes calculator"],
+            {"moon", "nodes"},
+            set(),
+        ))
 
     def test_generic_age_overlap_cannot_redefine_lunar_age_topic(self):
         topic_terms = {

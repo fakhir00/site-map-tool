@@ -1061,10 +1061,12 @@ Every candidate came from an organic result for an exact seed. The `queries`
 field names those seeds, `best_rank` is its highest position, and
 `titles`/`snippets` provide SERP evidence.
 Maintain coverage across every seed keyword: when relevant candidates exist for a seed, accept at least two for that seed before adding extra domains for another seed.
-Reject dictionaries, marketplaces, social networks, forums, docs portals, and generic informational sites.
-STRICT TOPICAL NICHE MATCH: You must aggressively reject any domain that belongs to a broader industry or different topical niche. 
-- If the target site is a dedicated micro-tool, localized business, or specialized service (like a specific calculator or trading strategy site), you MUST completely REJECT broad software tutorial blogs (e.g., Excel/Google Sheets blogs), generic IT/tech support sites, and generic directories.
-- Only accept domains that are DIRECT, dedicated competitors offering the same specific service/niche.
+Reject dictionaries, marketplaces, social networks, forums, unrelated docs portals, and unrelated generic informational sites.
+Require a strict topical and search-intent match using the supplied title, snippet, URL, and exact query.
+- For a micro-tool or specialized service, accept a ranking page that provides the same tool/action even when its parent domain offers other closely related tools.
+- For a review or comparison site, accept ranking review/comparison pages serving the same product/category intent; the whole domain does not need to review only one product.
+- Reject broad sites when the ranking page itself does not directly satisfy the supplied seed query.
+- Accept direct organic search competitors, including a competing tool page or content page targeting the same exact seed.
 - Never return a domain absent from Candidate competitors.
 
 Return ONLY a JSON array with up to {max_domains} objects.

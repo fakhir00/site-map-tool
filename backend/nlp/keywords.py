@@ -245,6 +245,12 @@ def is_topic_relevant_keyword(
         seed_scope = site_scope_terms(seed)
         if seed_anchors and (raw_terms & seed_anchors) and (raw_terms & seed_scope):
             return True
+        # Some exact-match tool seeds contain only distinctive entity words plus
+        # a generic tool word (for example, "moon nodes calculator"). In that
+        # case there is no separate scope word to satisfy the rule above. Keep a
+        # close variation when it retains the complete distinctive entity.
+        if not seed_scope and seed_anchors and seed_anchors.issubset(phrase_terms):
+            return True
 
     primary_seed = normalized_seeds[:1]
     primary_anchors = seed_keyword_terms(primary_seed) - BROAD_TOPIC_TERMS
@@ -266,6 +272,8 @@ def is_topic_relevant_keyword(
     # eclipse" and "circuit court" are different subjects. Requiring a site
     # function as the second edge keeps results within two semantic hops.
     if primary_anchors or semantic_anchors:
+        if not scope_terms and primary_anchors and primary_anchors.issubset(phrase_terms):
+            return True
         return bool(candidate_anchors and candidate_scope)
 
     anchors = seed_keyword_terms(normalized_seeds)

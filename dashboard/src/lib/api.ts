@@ -70,7 +70,7 @@ export type ProjectStats = {
 }
 
 export type ProjectSource = {
-  source_type: 'own' | 'competitor' | 'ai'
+  source_type: 'own' | 'competitor' | 'ai' | 'provider'
   source_domain: string | null
   urls_found: number
   scraped_urls: number
@@ -108,7 +108,7 @@ export type Keyword = {
   source_urls: string[]
   sources: {
     url: string
-    source_type: 'own' | 'competitor' | 'ai'
+    source_type: 'own' | 'competitor' | 'ai' | 'provider'
     source_domain: string | null
   }[]
   created_at: string

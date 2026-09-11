@@ -36,7 +36,7 @@ function keywordSources(keyword: Keyword) {
 }
 
 function sourceDomains(keyword: Keyword) {
-  const byLabel = new Map<string, { href: string; label: string; sourceType: 'own' | 'competitor' | 'ai' }>()
+  const byLabel = new Map<string, { href: string; label: string; sourceType: 'own' | 'competitor' | 'ai' | 'provider' }>()
   keywordSources(keyword).forEach((source) => {
     const href = source.url
     const label = source.source_domain || displayHost(href)

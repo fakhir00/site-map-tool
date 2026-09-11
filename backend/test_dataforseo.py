@@ -14,6 +14,7 @@ from nlp.dataforseo import (
     _research_seeds,
     dataforseo_account_status,
     collect_keyword_research,
+    search_competitors,
 )
 from workers.pipeline import _process_dataforseo_keywords
 
@@ -141,6 +142,7 @@ class DataForSeoTests(TestCase):
         self.assertEqual(request.call_count, 1)
         first_payload = request.call_args_list[0].args[2]
         self.assertEqual(first_payload["keywords"], ["lunar age calculator", "calculate lunar age"])
+        self.assertTrue(first_payload["closely_variants"])
         self.assertEqual(first_payload["limit"], 200)
         self.assertEqual(result.requests, 1)
         self.assertEqual(result.cache_hits, 0)
@@ -210,3 +212,22 @@ class DataForSeoTests(TestCase):
             self.assertEqual(rows[0].search_volume, 880)
             self.assertEqual(rows[0].difficulty, 18.0)
         engine.dispose()
+
+    def test_competitor_serp_extracts_only_organic_results(self):
+        response = {
+            "tasks": [{"result": [{"items": [
+                {"type": "organic", "url": "https://direct.example/tool", "title": "Moon Nodes Calculator", "description": "Calculate moon nodes"},
+                {"type": "people_also_ask", "url": "https://noise.example/question"},
+            ]}]}],
+        }
+        with (
+            patch("nlp.dataforseo.is_dataforseo_configured", return_value=True),
+            patch("nlp.dataforseo._request", return_value=(response, 0.003, False)),
+        ):
+            results = search_competitors(object(), "moon nodes calculator")
+
+        self.assertEqual(results, [{
+            "url": "https://direct.example/tool",
+            "title": "Moon Nodes Calculator",
+            "snippet": "Calculate moon nodes",
+        }])

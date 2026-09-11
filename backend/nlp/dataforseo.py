@@ -260,7 +260,9 @@ def collect_keyword_research(
     if research_seeds:
         requests_to_make.append((
             "dataforseo_labs/google/keyword_ideas/live",
-            {**base, "keywords": research_seeds[:200], "closely_variants": False},
+            # Phrase-match expansion stays near the supplied Gold Hunter seeds.
+            # Broad-match was the source of unrelated category-level ideas.
+            {**base, "keywords": research_seeds[:200], "closely_variants": True},
         ))
     # A domain can rank for stale, accidental, or mixed-topic queries. Importing
     # that footprint polluted focused EMD research and spent a second API call.
@@ -302,3 +304,63 @@ def collect_keyword_research(
         len(collected), request_count, cache_hits, spent,
     )
     return KeywordResearchResult(list(collected.values()), spent, request_count, cache_hits)
+
+
+def search_competitors(
+    db: Session,
+    keyword: str,
+    locale: str = "us",
+    max_results: int = 10,
+) -> list[dict[str, Any]]:
+    """Return exact-query organic competitors through one cached low-cost call."""
+    if not is_dataforseo_configured() or not keyword.strip():
+        return []
+
+    payload: dict[str, Any] = {
+        "keyword": keyword.strip(),
+        "device": "desktop",
+        "os": "windows",
+        "depth": max(10, min(20, int(max_results))),
+    }
+    if settings.DATAFORSEO_LOCATION_CODE:
+        payload["location_code"] = settings.DATAFORSEO_LOCATION_CODE
+    else:
+        payload["location_name"] = settings.DATAFORSEO_DEFAULT_LOCATION
+    if settings.DATAFORSEO_LANGUAGE_CODE:
+        payload["language_code"] = settings.DATAFORSEO_LANGUAGE_CODE
+    else:
+        payload["language_name"] = settings.DATAFORSEO_DEFAULT_LANGUAGE
+
+    try:
+        response, cost, cached = _request(
+            db, "serp/google/organic/live/regular", payload,
+        )
+    except Exception as exc:
+        logger.warning("DataForSEO competitor SERP failed for %r: %s", keyword, exc)
+        return []
+
+    results: list[dict[str, Any]] = []
+    for task in response.get("tasks") or []:
+        for result in task.get("result") or []:
+            for item in result.get("items") or []:
+                if item.get("type") not in {"organic", "featured_snippet"}:
+                    continue
+                url = item.get("url")
+                if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                    continue
+                results.append({
+                    "url": url,
+                    "title": item.get("title"),
+                    "snippet": item.get("description"),
+                })
+                if len(results) >= max_results:
+                    break
+            if len(results) >= max_results:
+                break
+        if len(results) >= max_results:
+            break
+    logger.info(
+        "DataForSEO competitor SERP returned %s results for %r (%s, $%.4f)",
+        len(results), keyword, "cache" if cached else "paid", cost,
+    )
+    return results

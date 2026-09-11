@@ -134,6 +134,7 @@ export function ProjectDetail() {
   const percent = scanStatus?.percent ?? 0
   const activeJobError = jobs[0]?.error_message
   const latestJobError = activeJobError && activeJobError !== dismissedError ? activeJobError : null
+  const isCompletionWarning = status === 'complete' && Boolean(latestJobError)
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error
 
   return (
@@ -216,7 +217,7 @@ export function ProjectDetail() {
       )}
 
       {latestJobError && (
-        <div className="relative flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 pr-10 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
+        <div className={`relative flex items-start gap-3 rounded-lg px-4 py-3 pr-10 text-sm ${isCompletionWarning ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300' : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300'}`}>
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{latestJobError}</p>
           <button 
@@ -281,9 +282,10 @@ export function ProjectDetail() {
               ) : (
                 sources.map((source) => {
                   const isAi = source.source_type === 'ai'
-                  const href = isAi ? undefined : (source.source_domain || project.domain)
-                  const label = isAi ? (source.source_domain || 'AI Recommendations') : displayHost(href!)
-                  const sourceLabel = source.source_type === 'own' ? 'Your site' : isAi ? 'AI' : 'Competitor'
+                  const isProvider = source.source_type === 'provider'
+                  const href = isAi || isProvider ? undefined : (source.source_domain || project.domain)
+                  const label = isAi || isProvider ? (source.source_domain || (isProvider ? 'Keyword provider' : 'AI Recommendations')) : displayHost(href!)
+                  const sourceLabel = source.source_type === 'own' ? 'Your site' : isAi ? 'AI' : isProvider ? 'Provider' : 'Competitor'
                   return (
                     <div className="flex items-center justify-between gap-4 px-5 py-4" key={`${source.source_type}-${source.source_domain || 'unknown'}`}>
                       <div className="min-w-0">
