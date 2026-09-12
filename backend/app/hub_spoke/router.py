@@ -390,6 +390,27 @@ async def clean_uploaded_keywords(
 ):
     context = _hub_spoke_context(body.context)
     keywords = await _clean_with_context(body.keywords, context)
+
+    if keywords:
+        from nlp.openrouter import _hub_same_page_intent
+        vol_lookup = {item.phrase: (item.search_volume or 0) for item in body.keyword_data}
+        deduped = []
+        for kw in keywords:
+            vol = vol_lookup.get(kw, 0)
+            existing_idx = None
+            for i, existing_kw in enumerate(deduped):
+                if _hub_same_page_intent(kw, existing_kw):
+                    existing_idx = i
+                    break
+            if existing_idx is not None:
+                existing_kw = deduped[existing_idx]
+                existing_vol = vol_lookup.get(existing_kw, 0)
+                if vol > existing_vol:
+                    deduped[existing_idx] = kw
+            else:
+                deduped.append(kw)
+        keywords = deduped
+
     if not keywords:
         primary_keyword = _primary_keyword_from_context(context)
         detail = (

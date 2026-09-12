@@ -2681,7 +2681,7 @@ def build_hub_spoke_fallback(
     """Build one Master Hub and 10-20 flat spokes if the provider is unavailable."""
     from nlp.keywords import clean_phrase
 
-    main = _select_master_keyword(keywords, main_keyword)
+    main = clean_phrase(main_keyword) or "core topic"
     keywords = _prepare_hub_page_keywords(keywords, main)
     item_by_phrase = {
         clean_phrase(str(item.get("phrase") or "")): item
@@ -3099,10 +3099,11 @@ async def cluster_hub_and_spoke(
     if not keywords:
         return None
 
-    main_keyword = _select_master_keyword(keywords[:500], main_keyword)
-    trimmed = _prepare_hub_page_keywords(keywords[:500], main_keyword)
+    from nlp.keywords import clean_phrase
+    main_keyword_clean = clean_phrase(main_keyword) or "core topic"
+    trimmed = _prepare_hub_page_keywords(keywords[:500], main_keyword_clean)
     if not is_ai_configured():
-        return build_hub_spoke_fallback(trimmed, main_keyword)
+        return build_hub_spoke_fallback(trimmed, main_keyword_clean)
 
     prompt = f"""
 You are an elite SEO Architect and Content Strategist specializing in Hub-Spoke and Pillar-Cluster models.
