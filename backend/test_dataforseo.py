@@ -127,7 +127,7 @@ class DataForSeoTests(TestCase):
             "source": "dataforseo",
         }])
 
-    def test_batches_all_seeds_without_importing_domain_ranking_junk(self):
+    def test_queries_each_seed_with_exact_keyword_suggestions(self):
         with (
             patch("nlp.dataforseo.is_dataforseo_configured", return_value=True),
             patch("nlp.dataforseo._cached_response", return_value=None),
@@ -139,14 +139,21 @@ class DataForSeoTests(TestCase):
                 object(), "example.com", ["lunar age calculator", "calculate lunar age"],
             )
 
-        self.assertEqual(request.call_count, 1)
+        self.assertEqual(request.call_count, 2)
+        self.assertTrue(all(
+            call.args[1].endswith("/keyword_suggestions/live")
+            for call in request.call_args_list
+        ))
         first_payload = request.call_args_list[0].args[2]
-        self.assertEqual(first_payload["keywords"], ["lunar age calculator", "calculate lunar age"])
-        self.assertTrue(first_payload["closely_variants"])
-        self.assertEqual(first_payload["limit"], 200)
-        self.assertEqual(result.requests, 1)
+        second_payload = request.call_args_list[1].args[2]
+        self.assertEqual(first_payload["keyword"], "lunar age calculator")
+        self.assertEqual(second_payload["keyword"], "calculate lunar age")
+        self.assertTrue(first_payload["exact_match"])
+        self.assertTrue(first_payload["include_seed_keyword"])
+        self.assertEqual(first_payload["limit"], 75)
+        self.assertEqual(result.requests, 2)
         self.assertEqual(result.cache_hits, 0)
-        self.assertAlmostEqual(result.spent, 0.01)
+        self.assertAlmostEqual(result.spent, 0.02)
         self.assertEqual(len(result.keywords), 1)
 
     def test_pipeline_stores_only_relevant_provider_keywords_and_metrics(self):

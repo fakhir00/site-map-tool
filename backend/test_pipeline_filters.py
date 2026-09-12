@@ -10,6 +10,7 @@ from nlp.openrouter import (
     extract_keywords_from_urls_ai,
     filter_keyword_gap_recommendations,
     generate_ai_keywords_sync,
+    judge_competitor_domains,
 )
 from nlp.keywords import is_publishable_keyword
 from workers.pipeline import (
@@ -29,6 +30,35 @@ from workers.pipeline import (
 
 
 class PipelineFilterTests(TestCase):
+    def test_competitor_judge_requires_direct_page_and_site_scope(self):
+        payload = [
+            {
+                "domain": "https://general.example",
+                "verdict": "accept",
+                "page_match": True,
+                "site_scope_match": False,
+                "confidence": 95,
+            },
+            {
+                "domain": "https://direct.example",
+                "verdict": "accept",
+                "page_match": True,
+                "site_scope_match": True,
+                "confidence": 90,
+            },
+        ]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._chat_json", return_value=payload),
+        ):
+            result = judge_competitor_domains(
+                ["dental pro 7 reviews"],
+                "https://dentalpro7.reviews",
+                [{"domain": "https://general.example"}, {"domain": "https://direct.example"}],
+            )
+
+        self.assertEqual([item["domain"] for item in result], ["https://direct.example"])
+
     def test_competitor_extraction_uses_exact_ranking_page_slug(self):
         page = SimpleNamespace(
             id=uuid.uuid4(),
@@ -132,6 +162,32 @@ class PipelineFilterTests(TestCase):
             )
 
         self.assertEqual(result[0]["phrase"], "lunar age calculator by birth date")
+
+    def test_ai_generation_repairs_a_fully_rejected_first_response(self):
+        invalid = [{
+            "phrase": "age of planets",
+            "type": "long-tail",
+            "support_source": "seed",
+            "support_phrase": "lunar age calculator",
+        }]
+        repaired = [{
+            "phrase": "lunar age calculator for newborns",
+            "type": "long-tail",
+        }]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._chat_json", side_effect=[invalid, repaired]),
+        ):
+            result = generate_ai_keywords_sync(
+                ["lunar age calculator"],
+                topic_terms={"lunar", "age", "newborns"},
+                apply_gap_filter=False,
+            )
+
+        self.assertEqual(result, [{
+            "phrase": "lunar age calculator for newborns",
+            "type": "long-tail",
+        }])
 
     def test_generator_discards_keywords_with_fabricated_support(self):
         payload = [
@@ -308,7 +364,7 @@ class PipelineFilterTests(TestCase):
 
         self.assertEqual(domains, ["https://astrotool.example"])
 
-    def test_exact_seed_serp_has_three_competitor_floor_when_judge_rejects_all(self):
+    def test_exact_seed_serp_does_not_force_general_competitors(self):
         project = SimpleNamespace(
             own_domain="https://dentalpro7.reviews",
             domain="https://dentalpro7.reviews",
@@ -330,7 +386,7 @@ class PipelineFilterTests(TestCase):
         ):
             domains = _discover_competitor_domains(project, ["dental pro 7 reviews"])
 
-        self.assertEqual(len(domains), 3)
+        self.assertEqual(domains, [])
 
     def test_competitor_discovery_preserves_exact_ranking_urls(self):
         project = SimpleNamespace(

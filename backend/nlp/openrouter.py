@@ -535,6 +535,49 @@ Each object must have:
                     "type": kw_type,
                 })
                 seen_phrases.add(phrase)
+
+        if not valid_keywords:
+            logger.warning(
+                "Primary AI keyword response had %s items but none passed evidence validation; requesting a strict seed-anchored repair",
+                len(payload),
+            )
+            repair_payload = await _achat_json(
+                system_prompt="Return only a valid JSON array of natural SEO keyword objects.",
+                user_prompt=f"""
+Generate up to {target_count} useful, easy-win SEO queries for this exact site.
+Seeds: {json.dumps(seed_keywords)}
+Site context: {audit_summary or "No additional context"}
+Do not repeat: {json.dumps(excluded)}
+
+Every phrase MUST contain one complete supplied seed exactly as written and add
+a natural supported question, comparison, problem, audience, feature, or use-case
+modifier. Stay inside the exact site topic. Reject awkward padding and unrelated
+ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
+""",
+                temperature=0.2,
+                max_tokens=max(2200, target_count * 75),
+            )
+            if isinstance(repair_payload, dict):
+                repair_payload = repair_payload.get("keywords") or []
+            for kw in repair_payload if isinstance(repair_payload, list) else []:
+                if not isinstance(kw, dict) or not kw.get("phrase"):
+                    continue
+                phrase = clean_phrase(str(kw["phrase"]))
+                if phrase in seen_phrases or phrase in excluded:
+                    continue
+                if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+                    continue
+                if not is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms):
+                    continue
+                if not _keyword_generation_support_is_valid(kw, seed_keywords, evidence, audit_summary):
+                    continue
+                valid_keywords.append({
+                    "phrase": phrase,
+                    "type": normalize_keyword_type(kw.get("type")),
+                })
+                seen_phrases.add(phrase)
+                if len(valid_keywords) >= target_count:
+                    break
         
         if valid_keywords:
             if not apply_gap_filter:
@@ -678,6 +721,49 @@ Each object must have:
                 })
                 seen_phrases.add(phrase)
         
+        if not valid_keywords:
+            logger.warning(
+                "Primary AI keyword response had %s items but none passed evidence validation; requesting a strict seed-anchored repair",
+                len(payload),
+            )
+            repair_payload = _chat_json(
+                system_prompt="Return only a valid JSON array of natural SEO keyword objects.",
+                user_prompt=f"""
+Generate up to {target_count} useful, easy-win SEO queries for this exact site.
+Seeds: {json.dumps(seed_keywords)}
+Site context: {audit_summary or "No additional context"}
+Do not repeat: {json.dumps(excluded)}
+
+Every phrase MUST contain one complete supplied seed exactly as written and add
+a natural supported question, comparison, problem, audience, feature, or use-case
+modifier. Stay inside the exact site topic. Reject awkward padding and unrelated
+ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
+""",
+                temperature=0.2,
+                max_tokens=max(2200, target_count * 75),
+            )
+            if isinstance(repair_payload, dict):
+                repair_payload = repair_payload.get("keywords") or []
+            for kw in repair_payload if isinstance(repair_payload, list) else []:
+                if not isinstance(kw, dict) or not kw.get("phrase"):
+                    continue
+                phrase = clean_phrase(str(kw["phrase"]))
+                if phrase in seen_phrases or phrase in excluded:
+                    continue
+                if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+                    continue
+                if not is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms):
+                    continue
+                if not _keyword_generation_support_is_valid(kw, seed_keywords, evidence, audit_summary):
+                    continue
+                valid_keywords.append({
+                    "phrase": phrase,
+                    "type": normalize_keyword_type(kw.get("type")),
+                })
+                seen_phrases.add(phrase)
+                if len(valid_keywords) >= target_count:
+                    break
+
         if valid_keywords:
             if not apply_gap_filter:
                 return valid_keywords
@@ -1080,23 +1166,26 @@ Primary keyword set:
 Candidate competitors:
 {json.dumps(candidates, ensure_ascii=True)}
 
-Choose only domains that are true business/search competitors for the target site.
+Choose only domains that are direct business and topical competitors for the target site.
 Every candidate came from an organic result for an exact seed. The `queries`
 field names those seeds, `best_rank` is its highest position, and
 `titles`/`snippets` provide SERP evidence.
-Maintain coverage across every seed keyword: when relevant candidates exist for a seed, accept at least two for that seed before adding extra domains for another seed.
-Reject dictionaries, marketplaces, social networks, forums, unrelated docs portals, and unrelated generic informational sites.
-Require a strict topical and search-intent match using the supplied title, snippet, URL, and exact query.
-- For a micro-tool or specialized service, accept a ranking page that provides the same tool/action even when its parent domain offers other closely related tools.
-- For a review or comparison site, accept ranking review/comparison pages serving the same product/category intent; the whole domain does not need to review only one product.
-- Reject broad sites when the ranking page itself does not directly satisfy the supplied seed query.
-- Accept direct organic search competitors, including a competing tool page or content page targeting the same exact seed.
+First infer the target's exact site model from its EMD, audit, and seeds: focused tool, product-review EMD, narrow publisher, or service.
+Require BOTH a direct page match and a direct site-scope match.
+- Reject dictionaries, coupon/deal portals, marketplaces, retailers, social networks, forums, generic publishers, broad news/health/education sites, unrelated docs portals, and domains that only mention the topic on one incidental page.
+- For a focused tool, accept sites offering the same tool/action to the same audience. A general tool directory or broad publisher is not direct competition.
+- For a product-review EMD, accept sites substantially focused on the same product or exact narrow product category and evaluation intent. Reject generic coupon sites and broad health/review publishers even when one page ranks.
+- For a narrow content site, accept sites with sustained coverage of the same narrow subject, not a general site with one matching article.
+- Ranking for a seed proves SERP presence; it does not by itself prove direct site-level competition.
+- Do not force a minimum count. Returning two direct competitors is better than adding eight general sites.
 - Never return a domain absent from Candidate competitors.
 
 Return ONLY a JSON array with up to {max_domains} objects.
 Each object must include:
 - "domain": accepted candidate domain
 - "verdict": "accept" or "reject"
+- "page_match": boolean; true only if the ranking page directly targets a supplied seed
+- "site_scope_match": boolean; true only if the domain/site itself competes in the same narrow topic and site model
 - "confidence": integer from 0 to 100
 - "reason": short string
 """
@@ -1118,7 +1207,13 @@ Each object must include:
             verdict = str(item.get("verdict") or "").strip().lower()
             domain = str(item.get("domain") or "").strip()
             confidence = int(item.get("confidence") or 0)
-            if verdict != "accept" or not domain:
+            if (
+                verdict != "accept"
+                or not domain
+                or item.get("page_match") is not True
+                or item.get("site_scope_match") is not True
+                or confidence < 75
+            ):
                 continue
             accepted.append({
                 "domain": domain,
@@ -1660,24 +1755,26 @@ CAPABILITY EVIDENCE RULES (MANDATORY)
 PHASE 2: DOMAIN FENCING
 Ban umbrella terms (general, basic, professional, engineering). Block adjacent misaligned domains (e.g., IT for an electronics site). If the Primary Keyword is vague, force-inject the strongest specific anchor discovered during the audit to kill ambiguity.
 
-PHASE 3: GAP DISCOVERY
-Identify missing elements. Classify into:
-- Tool Gaps (missing features, sub-tools, variations)
-- Content Gaps (missing educational guides, comparisons, use-case tutorials)
-Generate a pool of 8-10 candidate seeds that directly relate to the Core Action.
+PHASE 3: DIRECT TOPIC DISCOVERY
+Generate 8-10 candidate seeds inside the exact site topic. The first candidate
+must be the primary EMD/site keyword. The remaining candidates must be natural
+queries for the same product, tool, action, or narrowly defined category.
 
-PHASE 4: THE TRIPLE GATE FILTER (MANDATORY)
-Reject any seed that fails any single gate.
+For a tool site, favor the exact tool name, its core action, supported inputs or
+outputs, and close user problems. For a review site, favor the exact product or
+category plus review, comparison, ingredients/features, effectiveness, safety,
+pricing, or alternatives only when those angles are supported by SITE_CONTENT.
 
-Gate A (Volume): Must imply 1,000+ monthly searches. Reject unnatural, forum-style, or zero-volume phrases.
-Gate B (Sitemap Depth): The Top 10 results must be content-heavy sites with deep sitemaps (Wikipedia, Verywell Mind, Edutopia, TechCrunch, DataCamp, established educational or media domains). Reject seeds whose Top 10 are shallow personal blogs, app stores, Quora, or single-page tools.
-Gate C (Thematic Relevance): The seed must explicitly tie back to the site's Core Action. If the tool spins a wheel, the seed must contain "wheel", "spin", "random picker", or a direct use-case of that mechanic. Reject pure psychology, fitness, or engineering drifts that do not anchor to the tool's specific mechanic.
-
-PHASE 5: USE-CASE BROADENING (THE PIVOT)
-If the Primary Keyword is a short head-term (e.g., "yes or no wheel", "dot plot maker") that fails the Sitemap Gate due to shallow tool competitors, do NOT output the head-term. Do NOT drift into adjacent fields. Instead, force-inject a high-volume, content-rich use-case modifier (e.g., "for classroom", "best [category] websites", "how to make [tool] for [purpose]") to pivot the search toward educational, review, or tutorial sites while keeping the mechanic intact.
+PHASE 4: STRICT SEED FILTER (MANDATORY)
+- Keep the exact primary keyword as seed 1. Never remove it because of guessed volume or competitor sitemap size.
+- Every other seed must retain the same distinctive entity/product/tool and serve the site's actual audience and intent.
+- Reject broad industry topics, generic publishers, adjacent categories, and use-case pivots that change the site's core subject.
+- Never assume search volume. DataForSEO will measure demand later.
+- A seed may target a useful low-volume long-tail; relevance and direct commercial/search competition matter more than a guessed 1,000-search threshold.
+- The EMD/domain label is a primary topic signal. If page copy contains other products or comparison entities, do not let those replace the EMD's core subject.
 
 PHASE 6: FINAL OUTPUT
-Select 3 to 5 distinct seeds that pass all three gates. Never return fewer than 3 or more than 5. Provide your full audit summary and each final seed with a one-sentence justification covering why it passed the Volume Gate, Sitemap Gate, and Relevance Gate.
+Select 3 to 5 distinct, tightly connected seeds. Never return fewer than 3 or more than 5. Explain the direct relationship of each seed to the EMD, core subject, audience, and search intent without inventing volume.
 
 Return ONLY a JSON object in this exact format:
 {{
@@ -1727,11 +1824,11 @@ DRAFT RESULT:
 {json.dumps(payload)}
 
 Mandatory corrections:
-1. Make industry_niche narrow and specific to this exact EMD/site, its subject, and its site model. Never use a broad industry label alone.
+1. Treat the EMD/domain label as the primary topic boundary. Make industry_niche narrow and specific to this exact EMD/site, its subject, and its site model. Never use a broad industry label alone.
 2. Make search_intents an array of precise applicable labels. Use commercial-investigation for review, comparison, affiliate, "best", or product-evaluation sites when supported.
 3. Rebuild capabilities as an exhaustive source evidence inventory. Include every tool feature stated in SITE_CONTENT, every related tool named in SAME-SITE LINKED PAGES AND TOOLS, and every stated export/output format.
 4. Add nothing that SITE_CONTENT does not support. Do not invent functionality.
-5. Remove competitor_profile if present. Keep 3 to 5 distinct, tightly relevant seeds.
+5. Remove competitor_profile if present. Keep 3 to 5 distinct, tightly relevant seeds. Seed 1 must be the exact primary EMD/site topic; other products merely mentioned in copy must not replace it.
 """
         try:
             verified = await _achat_json(

@@ -18,6 +18,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 BASE_URL = "https://api.dataforseo.com/v3"
 ESTIMATED_REQUEST_COST = 0.015
+MAX_CONSERVATIVE_SCAN_COST = 0.08
 
 
 def _research_seeds(seed_keywords: list[str], audit_summary: str | None) -> list[str]:
@@ -259,12 +260,24 @@ def collect_keyword_research(
     requests_to_make: list[tuple[str, dict[str, Any]]] = []
     research_seeds = _research_seeds(seed_keywords, audit_summary)
     if research_seeds:
-        requests_to_make.append((
-            "dataforseo_labs/google/keyword_ideas/live",
-            # Phrase-match expansion stays near the supplied Gold Hunter seeds.
-            # Broad-match was the source of unrelated category-level ideas.
-            {**base, "keywords": research_seeds[:200], "closely_variants": True},
-        ))
+        per_seed_limit = max(25, min(75, int(base["limit"])))
+        for seed in research_seeds[:5]:
+            requests_to_make.append((
+                "dataforseo_labs/google/keyword_suggestions/live",
+                {
+                    **base,
+                    "limit": per_seed_limit,
+                    "keyword": seed,
+                    "exact_match": True,
+                    "include_seed_keyword": True,
+                    "ignore_synonyms": False,
+                    "filters": [["keyword_info.search_volume", ">", 0]],
+                    "order_by": [
+                        "keyword_properties.keyword_difficulty,asc",
+                        "keyword_info.search_volume,desc",
+                    ],
+                },
+            ))
     # A domain can rank for stale, accidental, or mixed-topic queries. Importing
     # that footprint polluted focused EMD research and spent a second API call.
     _ = domain
@@ -274,7 +287,10 @@ def collect_keyword_research(
     cache_hits = 0
     collected: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
-    cap = max(0.01, float(settings.DATAFORSEO_MAX_COST_PER_SCAN))
+    cap = min(
+        MAX_CONSERVATIVE_SCAN_COST,
+        max(0.01, float(settings.DATAFORSEO_MAX_COST_PER_SCAN)),
+    )
 
     for endpoint, payload in requests_to_make:
         # Cached calls cost nothing. For an uncached call, reserve a conservative
