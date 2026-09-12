@@ -18,6 +18,7 @@ from workers.pipeline import (
     _crawl_limit_per_domain,
     _discover_competitor_domains,
     _discover_content_urls,
+    _domains_to_discover,
     _clean_seed_keywords,
     _keyword_matches_topic,
     _llm_filter_competitor_domains,
@@ -31,6 +32,16 @@ from workers.pipeline import (
 
 
 class PipelineFilterTests(TestCase):
+    def test_resume_queues_new_competitors_when_only_own_urls_exist(self):
+        queued = _domains_to_discover(
+            "https://own.example",
+            ["https://direct.example"],
+            True,
+            {("own", "https://own.example")},
+        )
+
+        self.assertEqual(queued, [("https://direct.example", "competitor")])
+
     def test_competitor_judge_requires_direct_page_and_site_scope(self):
         payload = [
             {

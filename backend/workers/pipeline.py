@@ -224,9 +224,14 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         domain_queue = queue.Queue()
         url_queue = queue.Queue()
 
-        has_existing_urls = resume_existing and (
-            db.execute(select(func.count(Url.id)).where(Url.project_id == project_uuid)).scalar() or 0
-        ) > 0
+        existing_sources: set[tuple[str, str]] = set()
+        if resume_existing:
+            existing_sources = {
+                (source_type or "", source_domain or "")
+                for source_type, source_domain in db.execute(
+                    select(Url.source_type, Url.source_domain).where(Url.project_id == project_uuid)
+                ).all()
+            }
 
         if resume_existing:
             existing_pending = db.execute(
@@ -236,10 +241,13 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                 url_queue.put(u_id)
             logger.info("[%s] Resumed scan with %s pending URLs pre-queued", project_id, len(existing_pending))
 
-        if not has_existing_urls:
-            domain_queue.put((own_domain, "own"))
-            for cd in competitor_domains:
-                domain_queue.put((cd, "competitor"))
+        for domain_item in _domains_to_discover(
+            own_domain,
+            competitor_domains,
+            resume_existing,
+            existing_sources,
+        ):
+            domain_queue.put(domain_item)
 
         # Discovery and scraping use their own brief sessions. Release this one
         # before network work so no pooled SSL connection sits idle for minutes.
@@ -636,6 +644,22 @@ def _crawl_limit_per_domain(competitor_domains: list[str]) -> int:
     configured_per_domain = max(1, int(settings.MAX_CONTENT_URLS_PER_DOMAIN))
     global_per_domain = max(1, int(settings.MAX_URLS_PER_SCAN) // domain_count)
     return max(1, min(12, configured_per_domain, global_per_domain))
+
+
+def _domains_to_discover(
+    own_domain: str,
+    competitor_domains: list[str],
+    resume_existing: bool,
+    existing_sources: set[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """On resume, enqueue each source that has not persisted any URL yet."""
+    queued: list[tuple[str, str]] = []
+    if not resume_existing or not any(source_type == "own" for source_type, _ in existing_sources):
+        queued.append((own_domain, "own"))
+    for domain in competitor_domains:
+        if not resume_existing or ("competitor", domain) not in existing_sources:
+            queued.append((domain, "competitor"))
+    return queued
 
 
 def _scrape_chunk_size() -> int:
