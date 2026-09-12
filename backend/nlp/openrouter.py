@@ -549,7 +549,11 @@ Each object must have:
                 max_keywords=target_count,
             )
             if not filtered:
-                return []
+                logger.warning(
+                    "AI sanity filter returned no generated selections; retaining %s evidence-validated suggestions",
+                    len(valid_keywords),
+                )
+                return valid_keywords[:target_count]
             # Ensure phrase fallback
             for kw in filtered:
                 if not kw.get("phrase") and kw.get("source_phrase"):
@@ -685,7 +689,11 @@ Each object must have:
                 max_keywords=target_count,
             )
             if not filtered:
-                return []
+                logger.warning(
+                    "AI sanity filter returned no generated selections; retaining %s evidence-validated suggestions",
+                    len(valid_keywords),
+                )
+                return valid_keywords[:target_count]
             # Ensure phrase fallback
             for kw in filtered:
                 if not kw.get("phrase") and kw.get("source_phrase"):

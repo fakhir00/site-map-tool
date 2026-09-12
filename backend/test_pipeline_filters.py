@@ -114,6 +114,25 @@ class PipelineFilterTests(TestCase):
             "type": "long-tail",
         }])
 
+    def test_empty_second_ai_filter_does_not_erase_valid_generated_keywords(self):
+        payload = [{
+            "phrase": "lunar age calculator by birth date",
+            "type": "long-tail",
+            "support_source": "seed",
+            "support_phrase": "lunar age calculator",
+        }]
+        with (
+            patch("nlp.openrouter.is_ai_configured", return_value=True),
+            patch("nlp.openrouter._chat_json", side_effect=[payload, []]),
+        ):
+            result = generate_ai_keywords_sync(
+                ["lunar age calculator"],
+                topic_terms={"lunar", "age", "birth", "date"},
+                apply_gap_filter=True,
+            )
+
+        self.assertEqual(result[0]["phrase"], "lunar age calculator by birth date")
+
     def test_generator_discards_keywords_with_fabricated_support(self):
         payload = [
             {
@@ -288,6 +307,30 @@ class PipelineFilterTests(TestCase):
             domains = _discover_competitor_domains(project, ["moon nodes calculator"])
 
         self.assertEqual(domains, ["https://astrotool.example"])
+
+    def test_exact_seed_serp_has_three_competitor_floor_when_judge_rejects_all(self):
+        project = SimpleNamespace(
+            own_domain="https://dentalpro7.reviews",
+            domain="https://dentalpro7.reviews",
+            search_locale="us",
+            audit_summary="A product review website",
+        )
+        results = [
+            {
+                "url": f"https://review-{index}.example/product-page",
+                "title": f"Independent product review {index}",
+                "snippet": "Product ingredients, effectiveness, and customer feedback",
+            }
+            for index in range(1, 5)
+        ]
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=results),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=[]),
+        ):
+            domains = _discover_competitor_domains(project, ["dental pro 7 reviews"])
+
+        self.assertEqual(len(domains), 3)
 
     def test_competitor_discovery_preserves_exact_ranking_urls(self):
         project = SimpleNamespace(

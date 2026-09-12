@@ -1126,12 +1126,20 @@ def _discover_competitor_domains(
         competitor_limit,
         project.audit_summary,
     )
+    # Exact-seed organic results are the sites competing in that SERP even
+    # when an LLM dislikes the parent domain. Keep a small deterministic floor
+    # so the AI judge cannot reduce a successful provider run to zero pages.
+    minimum_competitors = min(5, max(3, len(seed_keywords)))
+    evidence_fallback = _high_confidence_competitor_fallback(
+        balanced_domains,
+        candidate_signals,
+        seed_keywords,
+        minimum_competitors,
+    )
     if llm_domains is not None:
         if llm_domains:
-            return selected(llm_domains)
-        evidence_fallback = _high_confidence_competitor_fallback(
-            balanced_domains, candidate_signals, seed_keywords, competitor_limit,
-        )
+            combined = list(dict.fromkeys([*llm_domains, *evidence_fallback]))
+            return selected(combined[:competitor_limit])
         if evidence_fallback:
             logger.warning(
                 "Competitor judge rejected every candidate; retained %s exact-seed SERP matches with explicit topical evidence",
@@ -1149,7 +1157,7 @@ def _high_confidence_competitor_fallback(
     seed_keywords: list[str],
     limit: int,
 ) -> list[str]:
-    """Keep only exact-seed SERP results whose listing repeats the seed topic."""
+    """Keep a bounded floor of genuine exact-seed organic competitors."""
     from nlp.keywords import BROAD_TOPIC_TERMS, GENERIC_TOOL_TERMS, seed_keyword_terms
 
     accepted: list[str] = []
@@ -1161,13 +1169,25 @@ def _high_confidence_competitor_fallback(
             *(signal.get("snippets") or []),
             *(signal.get("sample_urls") or []),
         ]).lower()
+        compact_evidence = re.sub(r"[^a-z0-9]", "", evidence)
+        trusted_serp = bool(
+            set(signal.get("sources") or [])
+            & {"apify_page_1", "google_page_1", "dataforseo_serp"}
+        )
+        best_rank = int(signal.get("best_rank") or 999)
         for seed in seed_keywords:
             if seed not in queries:
                 continue
             distinctive = seed_keyword_terms([seed]) - BROAD_TOPIC_TERMS - GENERIC_TOOL_TERMS
             matches = {term for term in distinctive if re.search(rf"\b{re.escape(term)}\b", evidence)}
             required = 1 if len(distinctive) <= 1 else 2
-            if len(matches) >= required:
+            compact_seed = re.sub(r"[^a-z0-9]", "", seed.lower())
+            explicit_match = bool(compact_seed and compact_seed in compact_evidence)
+            # A top organic page returned for the exact user-supplied seed is
+            # direct SERP competition. Platform and junk domains were already
+            # removed by add_domain before reaching this fallback.
+            exact_serp_match = trusted_serp and best_rank <= 10 and bool(signal.get("sample_urls"))
+            if explicit_match or len(matches) >= required or exact_serp_match:
                 accepted.append(domain)
                 break
         if len(accepted) >= limit:
