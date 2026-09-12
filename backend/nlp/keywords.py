@@ -542,9 +542,11 @@ def extract_keywords_from_page(
         return result
 
     # 1. Primary keywords via RAKE
-    result.primary = extract_rake_keywords(text, max_keywords=15)
+    # Competitor pages often contain navigation and explanatory prose before
+    # their useful long-tail phrases. Fifteen candidates was too shallow.
+    result.primary = extract_rake_keywords(text, max_keywords=40)
     if not result.primary:
-        result.primary = extract_statistical_keywords(text, max_keywords=15)
+        result.primary = extract_statistical_keywords(text, max_keywords=40)
 
     # 2. LSI keywords via KeyBERT (semantic)
     if use_keybert and len(text) > 200:

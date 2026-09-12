@@ -712,6 +712,7 @@ def extract_keywords_from_urls_ai(
     if not urls:
         return []
 
+    from urllib.parse import unquote, urlparse
     from nlp.keywords import clean_phrase, is_publishable_keyword, is_topic_relevant_keyword, seed_keyword_terms, extract_keywords_from_page
     
     if not topic_terms:
@@ -745,6 +746,17 @@ def extract_keywords_from_urls_ai(
             # Heading terms
             for phrase in kw_result.heading_keywords:
                 candidates.append((phrase, "heading"))
+
+            # Exact SERP result slugs are strong keyword evidence. Preserve
+            # natural slug phrases when page chrome dominates RAKE's ranking.
+            path = unquote(urlparse(str(getattr(u, "url", "") or "")).path)
+            path_parts = [
+                clean_phrase(part.replace("-", " ").replace("_", " "))
+                for part in path.strip("/").split("/")
+            ]
+            for path_phrase in path_parts[-2:]:
+                if 2 <= len(path_phrase.split()) <= 6:
+                    candidates.append((path_phrase, "primary"))
                 
             for phrase, kw_type in candidates:
                 if (
@@ -773,6 +785,10 @@ def extract_keywords_from_urls_ai(
             logger.error("Error extracting keywords from page: %s", exc)
 
     results = list(results_by_phrase.values())
+    logger.info(
+        "Mechanically extracted %s unique relevant phrases from competitor pages",
+        len(results),
+    )
     results.sort(
         key=lambda item: (
             len(item.get("url_ids", [])),

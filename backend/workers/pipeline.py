@@ -696,8 +696,17 @@ def _process_competitor_keyword_gaps(
         audit_summary=audit_summary,
         max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
     )
-    if filtered is None:
-        filtered = _fallback_gap_recommendations(extracted, settings.AI_KEYWORD_GAP_RESULT_LIMIT)
+    # The candidates already passed deterministic topical and quality checks.
+    # An empty/invalid model response must not erase all observed evidence.
+    if not filtered:
+        if filtered == []:
+            logger.warning(
+                "AI gap filter returned no selections; retaining mechanically verified competitor phrases"
+            )
+        filtered = _fallback_gap_recommendations(
+            extracted,
+            settings.AI_KEYWORD_GAP_RESULT_LIMIT,
+        )
     from nlp.keywords import is_publishable_keyword
     filtered = [
         item for item in filtered
@@ -714,6 +723,11 @@ def _process_competitor_keyword_gaps(
         )
     ]
     filtered = _with_source_url_ids(filtered, extracted)
+    logger.info(
+        "Competitor keyword filter retained %s of %s extracted phrases",
+        len(filtered),
+        len(extracted),
+    )
     if not filtered:
         return 0
 

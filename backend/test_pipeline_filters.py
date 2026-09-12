@@ -29,6 +29,23 @@ from workers.pipeline import (
 
 
 class PipelineFilterTests(TestCase):
+    def test_competitor_extraction_uses_exact_ranking_page_slug(self):
+        page = SimpleNamespace(
+            id=uuid.uuid4(),
+            url="https://example.com/moon-nodes-calculator",
+            h1="Welcome",
+            scraped_text=("unrelated navigation wording " * 20),
+        )
+
+        results = extract_keywords_from_urls_ai(
+            ["moon nodes calculator"],
+            [page],
+            topic_terms={"moon", "nodes"},
+            negative_terms=set(),
+        )
+
+        self.assertIn("moon nodes calculator", {item["phrase"] for item in results})
+
     def test_render_crawl_and_live_batch_have_hard_memory_caps(self):
         with (
             patch("workers.pipeline.settings.MAX_CONTENT_URLS_PER_DOMAIN", 500),
