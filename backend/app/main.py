@@ -4,6 +4,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 from contextlib import suppress
 import asyncio
+import os
 from app.config import settings
 from app.database import engine, Base
 from sqlalchemy import text
@@ -250,4 +251,5 @@ async def health():
         "status": "ok" if database_ready else "degraded",
         "service": "SiteMapSEO API",
         "database": "connected" if database_ready else "reconnecting",
+        "revision": os.getenv("RENDER_GIT_COMMIT", "local")[:7],
     }
