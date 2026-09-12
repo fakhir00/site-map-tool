@@ -1111,7 +1111,7 @@ def _discover_competitor_domains(
     # global URL ceiling continues to bound scraping memory.
     # The old max(20, setting) silently defeated lower-memory configuration and
     # could schedule more than 500 full-page scrapes in the API process.
-    competitor_limit = max(3, min(18, int(settings.MAX_COMPETITOR_DOMAINS)))
+    competitor_limit = max(3, min(25, int(settings.MAX_COMPETITOR_DOMAINS)))
     candidate_limit = max(competitor_limit * 3, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
     # Reserve discovery capacity for every Gold Hunter seed. A global limit here
     # previously let the first seed exhaust the pool before later seeds ran.

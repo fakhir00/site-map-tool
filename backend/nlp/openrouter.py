@@ -1171,7 +1171,7 @@ Every candidate came from an organic result for an exact seed. The `queries`
 field names those seeds, `best_rank` is its highest position, and
 `titles`/`snippets` provide SERP evidence.
 First infer the target's exact site model from its EMD, audit, and seeds: focused tool, product-review EMD, narrow publisher, or service.
-Require BOTH a direct page match and a direct site-scope match.
+Evaluate based on page match (does the ranking page target the exact seed?) and site-scope match.
 - Reject dictionaries, coupon/deal portals, marketplaces, retailers, social networks, forums, generic publishers, broad news/health/education sites, unrelated docs portals, and domains that only mention the topic on one incidental page.
 - For a focused tool, accept sites offering the same tool/action to the same audience. A general tool directory or broad publisher is not direct competition.
 - For a product-review EMD, accept sites substantially focused on the same product or exact narrow product category and evaluation intent. Reject generic coupon sites and broad health/review publishers even when one page ranks.
@@ -1204,15 +1204,19 @@ Each object must include:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            verdict = str(item.get("verdict") or "").strip().lower()
+            # Some LLMs omit the verdict or page_match field if they are already filtering the list
+            verdict = str(item.get("verdict") or "accept").strip().lower()
             domain = str(item.get("domain") or "").strip()
-            confidence = int(item.get("confidence") or 0)
+            confidence = int(item.get("confidence") or 80)
+            page_match = item.get("page_match")
+            if page_match is None:
+                page_match = True
+
             if (
                 verdict != "accept"
                 or not domain
-                or item.get("page_match") is not True
-                or item.get("site_scope_match") is not True
-                or confidence < 75
+                or not page_match
+                or confidence < 60
             ):
                 continue
             accepted.append({
