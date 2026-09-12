@@ -1066,14 +1066,15 @@ def _discover_competitor_domains(
 
     own_root = _registered_domain(project.own_domain or project.domain)
     required_terms = _search_required_terms(seed_keywords)
-    # Twelve direct competitors across 3-5 seeds provide enough SERP evidence.
+    # Allow up to eighteen direct competitors across 3-5 exact seeds while the
+    # global URL ceiling continues to bound scraping memory.
     # The old max(20, setting) silently defeated lower-memory configuration and
     # could schedule more than 500 full-page scrapes in the API process.
-    competitor_limit = max(3, min(12, int(settings.MAX_COMPETITOR_DOMAINS)))
+    competitor_limit = max(3, min(18, int(settings.MAX_COMPETITOR_DOMAINS)))
     candidate_limit = max(competitor_limit * 3, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
     # Reserve discovery capacity for every Gold Hunter seed. A global limit here
     # previously let the first seed exhaust the pool before later seeds ran.
-    serp_limit = max(15, settings.GOOGLE_SERP_RESULT_LIMIT)
+    serp_limit = max(20, settings.GOOGLE_SERP_RESULT_LIMIT)
     per_kw_limit = max(4, min(serp_limit, candidate_limit // len(seed_keywords)))
     search_locale = getattr(project, 'search_locale', 'us') or 'us'
     competitor_domains: list[str] = []
@@ -2441,9 +2442,9 @@ def _ensure_minimum_keyword_count(
         .join(KeywordUrl, KeywordUrl.keyword_id == Keyword.id)
         .where(Keyword.project_id == project_id, KeywordUrl.url_id == ai_url.id)
     ).scalars().all())
-    # Always add 40 audit-supported easy wins even when paid/scraped sources
+    # Always add 60 audit-supported easy wins even when paid/scraped sources
     # already bring the project above the overall keyword target.
-    minimum_ai_keywords = 40
+    minimum_ai_keywords = 60
 
     for batch_number in range(max(1, int(settings.AI_KEYWORD_GENERATION_MAX_BATCHES))):
         missing = max(target - len(existing), minimum_ai_keywords - len(ai_existing))

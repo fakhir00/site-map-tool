@@ -349,7 +349,7 @@ class WorkflowTests(unittest.TestCase):
         pid = uuid.UUID(self.project())
         generated = [
             {"phrase": f"circuit diagram easy win {index}", "type": "long-tail"}
-            for index in range(40)
+            for index in range(60)
         ]
         generator = Mock(return_value=generated)
         with self.sessions() as db:
@@ -375,7 +375,7 @@ class WorkflowTests(unittest.TestCase):
             )
             db.commit()
 
-        self.assertEqual(total, 140)
+        self.assertEqual(total, 160)
         generator.assert_called_once()
         self.assertIn("audit_summary", generator.call_args.kwargs)
 

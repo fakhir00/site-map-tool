@@ -18,7 +18,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 BASE_URL = "https://api.dataforseo.com/v3"
 ESTIMATED_REQUEST_COST = 0.015
-MAX_CONSERVATIVE_SCAN_COST = 0.08
+MAX_CONSERVATIVE_SCAN_COST = 0.10
 
 
 def _research_seeds(seed_keywords: list[str], audit_summary: str | None) -> list[str]:
@@ -260,7 +260,7 @@ def collect_keyword_research(
     requests_to_make: list[tuple[str, dict[str, Any]]] = []
     research_seeds = _research_seeds(seed_keywords, audit_summary)
     if research_seeds:
-        per_seed_limit = max(25, min(75, int(base["limit"])))
+        per_seed_limit = max(50, min(150, int(base["limit"])))
         for seed in research_seeds[:5]:
             requests_to_make.append((
                 "dataforseo_labs/google/keyword_suggestions/live",

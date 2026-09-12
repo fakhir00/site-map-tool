@@ -128,33 +128,42 @@ class DataForSeoTests(TestCase):
         }])
 
     def test_queries_each_seed_with_exact_keyword_suggestions(self):
+        seeds = [
+            "lunar age calculator",
+            "calculate lunar age",
+            "chinese lunar age",
+            "korean lunar age",
+            "lunar age by birth date",
+        ]
         with (
             patch("nlp.dataforseo.is_dataforseo_configured", return_value=True),
             patch("nlp.dataforseo._cached_response", return_value=None),
             patch("nlp.dataforseo._request", return_value=(response_for("lunar age calculator"), 0.01, False)) as request,
-            patch("nlp.dataforseo.settings.DATAFORSEO_MAX_COST_PER_SCAN", 0.08),
+            patch("nlp.dataforseo.settings.DATAFORSEO_MAX_COST_PER_SCAN", 0.10),
             patch("nlp.dataforseo.settings.DATAFORSEO_RESULT_LIMIT", 500),
         ):
             result = collect_keyword_research(
-                object(), "example.com", ["lunar age calculator", "calculate lunar age"],
+                object(), "example.com", seeds,
             )
 
-        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_count, 5)
         self.assertTrue(all(
             call.args[1].endswith("/keyword_suggestions/live")
             for call in request.call_args_list
         ))
         first_payload = request.call_args_list[0].args[2]
-        second_payload = request.call_args_list[1].args[2]
         self.assertEqual(first_payload["keyword"], "lunar age calculator")
-        self.assertEqual(second_payload["keyword"], "calculate lunar age")
+        self.assertEqual(
+            [call.args[2]["keyword"] for call in request.call_args_list],
+            seeds,
+        )
         self.assertTrue(first_payload["exact_match"])
         self.assertTrue(first_payload["include_seed_keyword"])
         self.assertNotIn("filters", first_payload)
-        self.assertEqual(first_payload["limit"], 75)
-        self.assertEqual(result.requests, 2)
+        self.assertEqual(first_payload["limit"], 150)
+        self.assertEqual(result.requests, 5)
         self.assertEqual(result.cache_hits, 0)
-        self.assertAlmostEqual(result.spent, 0.02)
+        self.assertAlmostEqual(result.spent, 0.05)
         self.assertEqual(len(result.keywords), 1)
 
     def test_pipeline_stores_only_relevant_provider_keywords_and_metrics(self):

@@ -291,6 +291,33 @@ class PipelineFilterTests(TestCase):
         self.assertTrue(any("beta" in domain for domain in domains))
         self.assertTrue(any("gamma" in domain for domain in domains))
 
+    def test_apify_searches_every_gold_hunter_seed(self):
+        project = SimpleNamespace(
+            own_domain="https://own.example",
+            domain="https://own.example",
+            search_locale="us",
+            audit_summary="A focused calculator",
+        )
+        seeds = ["alpha calculator", "beta calculator", "gamma calculator", "delta calculator", "epsilon calculator"]
+        calls = []
+
+        def search(query, **kwargs):
+            calls.append(query)
+            return [{
+                "url": f"https://{query.split()[0]}.example/{query.replace(' ', '-')}",
+                "title": query,
+                "snippet": f"A focused site for {query}",
+            }]
+
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", side_effect=search),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=None),
+        ):
+            _discover_competitor_domains(project, seeds)
+
+        self.assertEqual(calls, seeds)
+
     def test_competitor_discovery_never_runs_broad_modifier_queries(self):
         project = SimpleNamespace(
             own_domain="https://own.example",
