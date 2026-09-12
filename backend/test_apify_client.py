@@ -34,11 +34,14 @@ class ApifyClientTests(TestCase):
         }
         dataset = MagicMock()
         dataset.iterate_items.return_value = iter([{
-            "organicResults": [{
+            "results": [{
+                "position": 1,
                 "url": "https://competitor.example/tool",
                 "title": "Moon Nodes Calculator",
                 "description": "Calculate moon nodes",
             }],
+            "next_page": 2,
+            "next_start": 10,
         }])
         client = MagicMock()
         client.actor.return_value = actor
@@ -51,9 +54,16 @@ class ApifyClientTests(TestCase):
             results = search_google_via_apify("moon nodes calculator", max_results=5)
 
         self.assertEqual(len(results), 1)
-        actor.call.assert_called_once()
-        kwargs = actor.call.call_args.kwargs
-        self.assertEqual(kwargs["timeout_secs"], 90)
-        self.assertEqual(kwargs["wait_secs"], 100)
-        self.assertNotIn("run_timeout", kwargs)
-        self.assertNotIn("wait_duration", kwargs)
+        self.assertEqual(results[0]["url"], "https://competitor.example/tool")
+        # Should call the scraperlink actor for 2 pages
+        self.assertEqual(actor.call.call_count, 2)
+        first_call_kwargs = actor.call.call_args_list[0].kwargs
+        self.assertEqual(first_call_kwargs["timeout_secs"], 90)
+        self.assertEqual(first_call_kwargs["wait_secs"], 100)
+        # Verify the actor name used
+        client.actor.assert_called_with("scraperlink/google-search-results-serp-scraper")
+        # Verify input format uses 'keyword' not 'queries'
+        first_call_input = actor.call.call_args_list[0].kwargs["run_input"]
+        self.assertIn("keyword", first_call_input)
+        self.assertNotIn("queries", first_call_input)
+

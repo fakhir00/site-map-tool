@@ -105,6 +105,7 @@ async def _ensure_runtime_schema(conn):
             ("article_title", "TEXT"),
             ("h_tags", "JSON"),
             ("merged_from", "JSON"),
+            ("seo_recommendation", "TEXT"),
         ]:
             if col not in kw_columns:
                 await conn.execute(text(f"ALTER TABLE keywords ADD COLUMN {col} {col_type}"))
@@ -179,6 +180,7 @@ async def _ensure_runtime_schema(conn):
         ("article_title", "TEXT"),
         ("h_tags", "JSONB"),
         ("merged_from", "JSONB"),
+        ("seo_recommendation", "TEXT"),
     ]:
         if col not in kw_columns:
             await conn.execute(text(f"ALTER TABLE keywords ADD COLUMN {col} {col_type}"))

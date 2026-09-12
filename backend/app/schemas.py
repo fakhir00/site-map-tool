@@ -180,6 +180,7 @@ class KeywordOut(BaseModel):
     frequency: int
     search_volume: Optional[int]
     difficulty: Optional[float]
+    seo_recommendation: Optional[str] = None
     source_urls: List[str] = Field(default_factory=list)
     sources: List[KeywordSourceOut] = Field(default_factory=list)
     created_at: datetime

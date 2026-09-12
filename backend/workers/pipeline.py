@@ -468,6 +468,47 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         _sync_project_counts(db, project)
         if not project.total_keywords:
             raise RuntimeError("No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry.")
+
+        # ── DeepSeek SEO Enrichment ──────────────────────────────────
+        try:
+            from nlp.deepseek_seo import enrich_keywords_with_seo_data, is_deepseek_configured
+            if is_deepseek_configured():
+                unenriched = db.execute(
+                    select(Keyword.id, Keyword.phrase).where(
+                        Keyword.project_id == project_uuid,
+                        Keyword.search_volume.is_(None),
+                    )
+                ).all()
+                if unenriched:
+                    phrases = [row[1] for row in unenriched]
+                    phrase_to_id = {row[1].strip().lower(): row[0] for row in unenriched}
+                    logger.info("[%s] Enriching %s keywords with DeepSeek SEO data", project_id, len(phrases))
+                    seo_data = enrich_keywords_with_seo_data(
+                        phrases,
+                        seed_keywords,
+                        audit_summary=audit_summary,
+                    )
+                    enriched_count = 0
+                    for phrase_lower, data in seo_data.items():
+                        kw_id = phrase_to_id.get(phrase_lower)
+                        if kw_id:
+                            db.execute(
+                                update(Keyword).where(Keyword.id == kw_id).values(
+                                    search_volume=data.get("search_volume"),
+                                    difficulty=data.get("difficulty"),
+                                    seo_recommendation=data.get("recommendation"),
+                                )
+                            )
+                            enriched_count += 1
+                    if enriched_count:
+                        db.commit()
+                    logger.info("[%s] DeepSeek enriched %s keywords", project_id, enriched_count)
+        except Exception as seo_exc:
+            logger.warning("[%s] DeepSeek SEO enrichment failed (non-blocking): %s", project_id, seo_exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
         warnings: list[str] = []
         if dataforseo_count == 0:
             warnings.append(

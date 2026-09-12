@@ -108,6 +108,7 @@ class Keyword(Base):
     frequency: Mapped[int] = mapped_column(Integer, default=1)
     search_volume: Mapped[Optional[int]] = mapped_column(Integer)
     difficulty: Mapped[Optional[float]] = mapped_column(Float)
+    seo_recommendation: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

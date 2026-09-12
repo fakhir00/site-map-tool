@@ -48,62 +48,107 @@ def apify_account_status(force: bool = False) -> Dict[str, Any]:
     _ACCOUNT_STATUS_CACHE = (now, result)
     return dict(result)
 
-def search_google_via_apify(query: str, max_results: int = 10, country_code: str = "us") -> List[Dict[str, Any]]:
+def search_google_via_apify(query: str, max_results: int = 20, country_code: str = "us") -> List[Dict[str, Any]]:
     """
-    Search Google using Apify's google-search-scraper.
-    Returns structured organic results.
+    Search Google using the scraperlink/google-search-results-serp-scraper actor.
+    Scrapes top 2 pages of Google search results for broader competitor coverage.
+    Returns structured organic results with url, title, snippet.
     """
     if not is_apify_configured():
         logger.warning("Apify not configured. Skipping Google search via Apify.")
         return []
 
     client = _get_client()
-    run_input = {
-        "queries": query,
-        "maxPagesPerQuery": 1,
-        "resultsPerPage": max_results,
-        "countryCode": country_code.lower(),
-        "languageCode": "en",
-    }
-    
-    try:
-        logger.info(f"Running Apify google-search-scraper for query: {query}")
-        run = client.actor("apify/google-search-scraper").call(
-            run_input=run_input,
-            timeout_secs=90,
-            wait_secs=100,
-        )
-        if not run:
-            logger.error("Apify search returned no run metadata for %r", query)
-            return []
-        if run.get("status") != "SUCCEEDED":
-            logger.error(
-                "Apify search run did not succeed for %r: status=%s message=%s",
-                query,
-                run.get("status"),
-                run.get("statusMessage") or run.get("status_message") or "none",
+    all_results: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    pages_to_scrape = 2  # Scrape top 2 pages
+
+    for page_num in range(1, pages_to_scrape + 1):
+        run_input = {
+            "keyword": query,
+            "limit": "10",
+            "page": page_num,
+            "country": country_code.upper(),
+        }
+
+        try:
+            logger.info(
+                "Running scraperlink SERP scraper for query: %r page %s",
+                query, page_num,
             )
-            return []
-        
-        results = []
-        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-            organic_results = item.get("organicResults", [])
-            for res in organic_results:
-                url = res.get("url")
-                if url and not url.startswith("https://apify.com/pricing"):
-                    results.append({
-                        "url": url,
-                        "title": res.get("title"),
-                        "snippet": res.get("description") or res.get("snippet")
-                    })
-        if not results:
-            logger.warning("Apify search succeeded but returned no organic results for %r", query)
-        else:
-            logger.info("Apify search returned %s organic results for %r", len(results), query)
-        return results[:max_results]
-    except Exception as exc:
-        logger.error(f"Apify search failed for {query}: {exc}")
-        return []
+            run = client.actor("scraperlink/google-search-results-serp-scraper").call(
+                run_input=run_input,
+                timeout_secs=90,
+                wait_secs=100,
+            )
+            if not run:
+                logger.error(
+                    "Apify SERP scraper returned no run metadata for %r page %s",
+                    query, page_num,
+                )
+                continue
+            if run.get("status") != "SUCCEEDED":
+                logger.error(
+                    "Apify SERP scraper did not succeed for %r page %s: status=%s message=%s",
+                    query,
+                    page_num,
+                    run.get("status"),
+                    run.get("statusMessage") or run.get("status_message") or "none",
+                )
+                continue
+
+            for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+                # The actor returns {results: [...], next_page, next_start}
+                serp_results = item.get("results") or item.get("searchResults") or []
+                # Handle case where results might be a JSON string
+                if isinstance(serp_results, str):
+                    try:
+                        import json
+                        serp_results = json.loads(serp_results)
+                    except (json.JSONDecodeError, TypeError):
+                        serp_results = []
+
+                if isinstance(serp_results, list):
+                    for res in serp_results:
+                        if not isinstance(res, dict):
+                            continue
+                        url = res.get("url") or res.get("link")
+                        if not url or url in seen_urls:
+                            continue
+                        if url.startswith("https://apify.com/"):
+                            continue
+                        seen_urls.add(url)
+                        all_results.append({
+                            "url": url,
+                            "title": res.get("title"),
+                            "snippet": res.get("description") or res.get("snippet"),
+                        })
+                # Also handle flat item format (some actors return one item per result)
+                elif not serp_results:
+                    url = item.get("url") or item.get("link")
+                    if url and url not in seen_urls and not url.startswith("https://apify.com/"):
+                        seen_urls.add(url)
+                        all_results.append({
+                            "url": url,
+                            "title": item.get("title"),
+                            "snippet": item.get("description") or item.get("snippet"),
+                        })
+
+        except Exception as exc:
+            logger.error("Apify SERP scraper failed for %r page %s: %s", query, page_num, exc)
+            continue
+
+        if len(all_results) >= max_results:
+            break
+
+    if not all_results:
+        logger.warning("Apify SERP scraper returned no organic results for %r across %s pages", query, pages_to_scrape)
+    else:
+        logger.info(
+            "Apify SERP scraper returned %s organic results for %r across %s pages",
+            len(all_results), query, pages_to_scrape,
+        )
+    return all_results[:max_results]
 
 def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -> List[str]:
     """

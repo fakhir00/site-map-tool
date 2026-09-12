@@ -203,6 +203,61 @@ async def generate_keywords(
     return {"message": f"Generated {added_count} new keywords", "generated": added_count}
 
 
+@router.post("/{project_id}/keywords/seo-enrich")
+async def enrich_keywords_seo(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Enrich keywords with SEO data (search volume, difficulty, AI recommendation) via DeepSeek."""
+    project = await _assert_owns_project(project_id, current_user.id, db)
+
+    from nlp.deepseek_seo import enrich_keywords_with_seo_data, is_deepseek_configured
+    if not is_deepseek_configured():
+        raise HTTPException(status_code=503, detail="DeepSeek API is not configured. Add DEEPSEEK_API_KEY to your environment.")
+
+    from nlp.keywords import normalize_seed_keywords
+    seed_keywords = normalize_seed_keywords(project.target_keywords) if project.target_keywords else []
+
+    # Fetch keywords that don't have search_volume yet
+    result = await db.execute(
+        select(Keyword.id, Keyword.phrase).where(
+            Keyword.project_id == project.id,
+            Keyword.search_volume.is_(None),
+        )
+    )
+    unenriched = result.all()
+
+    if not unenriched:
+        return {"message": "All keywords already have SEO data", "enriched": 0}
+
+    phrases = [row[1] for row in unenriched]
+    phrase_to_id = {row[1].strip().lower(): row[0] for row in unenriched}
+
+    seo_data = enrich_keywords_with_seo_data(
+        phrases,
+        seed_keywords,
+        audit_summary=project.audit_summary,
+    )
+
+    from sqlalchemy import update as sa_update
+    enriched_count = 0
+    for phrase_lower, data in seo_data.items():
+        kw_id = phrase_to_id.get(phrase_lower)
+        if kw_id:
+            await db.execute(
+                sa_update(Keyword).where(Keyword.id == kw_id).values(
+                    search_volume=data.get("search_volume"),
+                    difficulty=data.get("difficulty"),
+                    seo_recommendation=data.get("recommendation"),
+                )
+            )
+            enriched_count += 1
+
+    await db.commit()
+    return {"message": f"Enriched {enriched_count} keywords with SEO data", "enriched": enriched_count}
+
+
 @router.post("/{project_id}/keywords/top-picks")
 async def generate_top_picks(
     project_id: uuid.UUID,
