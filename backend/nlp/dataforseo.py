@@ -238,12 +238,12 @@ def collect_keyword_research(
     seed_keywords: list[str],
     audit_summary: str | None = None,
 ) -> KeywordResearchResult:
-    """Collect ideas for every exact seed in one budget-capped request."""
+    """Collect suggestions for each exact seed under one scan budget."""
     if not is_dataforseo_configured():
         return KeywordResearchResult([], 0.0, 0, 0)
 
     base = {
-        # One focused request per scan, with a hard result ceiling even if an
+        # Focused per-seed requests, with a hard result ceiling even if an
         # old Render environment variable still contains the former 500 value.
         "limit": max(25, min(200, settings.DATAFORSEO_RESULT_LIMIT)),
         "include_serp_info": False,
@@ -271,10 +271,9 @@ def collect_keyword_research(
                     "exact_match": True,
                     "include_seed_keyword": True,
                     "ignore_synonyms": False,
-                    "filters": [["keyword_info.search_volume", ">", 0]],
                     "order_by": [
-                        "keyword_properties.keyword_difficulty,asc",
                         "keyword_info.search_volume,desc",
+                        "keyword_properties.keyword_difficulty,asc",
                     ],
                 },
             ))

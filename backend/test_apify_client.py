@@ -2,10 +2,22 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 from app.config import Settings
-from scraping.apify_client_module import search_google_via_apify
+from scraping.apify_client_module import apify_account_status, search_google_via_apify
 
 
 class ApifyClientTests(TestCase):
+    def test_account_status_validates_token_without_running_an_actor(self):
+        client = MagicMock()
+        client.user.return_value.get.return_value = {"id": "user-1"}
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module._get_client", return_value=client),
+        ):
+            status = apify_account_status(force=True)
+
+        self.assertTrue(status["authenticated"])
+        client.actor.assert_not_called()
+
     def test_common_apify_environment_aliases_are_accepted(self):
         configured = Settings(
             _env_file=None,

@@ -22,6 +22,7 @@ from workers.pipeline import (
     _keyword_matches_topic,
     _llm_filter_competitor_domains,
     _order_seeds_by_emd,
+    _scan_seed_keywords,
     _search_result_urls,
     _scrape_chunk_size,
     _semantic_terms,
@@ -343,7 +344,7 @@ class PipelineFilterTests(TestCase):
             )
         self.assertEqual(result, [])
 
-    def test_exact_seed_serp_evidence_survives_over_strict_competitor_judge(self):
+    def test_exact_seed_emd_survives_over_strict_competitor_judge(self):
         project = SimpleNamespace(
             own_domain="https://moonnodescalculator.com",
             domain="https://moonnodescalculator.com",
@@ -351,7 +352,7 @@ class PipelineFilterTests(TestCase):
             audit_summary="A moon nodes calculation tool",
         )
         results = [{
-            "url": "https://astrotool.example/moon-nodes-calculator",
+            "url": "https://moonnodescalculator.example/moon-nodes-calculator",
             "title": "Moon Nodes Calculator",
             "snippet": "Calculate your north and south moon nodes",
         }]
@@ -362,7 +363,65 @@ class PipelineFilterTests(TestCase):
         ):
             domains = _discover_competitor_domains(project, ["moon nodes calculator"])
 
-        self.assertEqual(domains, ["https://astrotool.example"])
+        self.assertEqual(domains, ["https://moonnodescalculator.example"])
+
+    def test_emd_recovery_seed_repairs_stale_review_project(self):
+        seeds = _scan_seed_keywords(
+            ["dentitox pro ingredients label"],
+            "https://dentalpro7.reviews",
+            json.dumps({"primary_keyword": "dentitox pro ingredients"}),
+        )
+
+        self.assertEqual(seeds[0], "dentalpro 7 reviews")
+        self.assertIn("dentitox pro ingredients label", seeds)
+
+    def test_coupon_platform_is_blocked_even_when_subdomain_matches_seed(self):
+        project = SimpleNamespace(
+            own_domain="https://dentalpro7.reviews",
+            domain="https://dentalpro7.reviews",
+            search_locale="us",
+            audit_summary="A focused Dental Pro 7 review site",
+        )
+        results = [
+            {
+                "url": "https://dental-pro-7.tenereteam.com/",
+                "title": "Dental Pro 7 Reviews",
+                "snippet": "Customer ratings and coupon offers",
+            },
+            {
+                "url": "https://dentalpro7reviews.com/",
+                "title": "Dental Pro 7 Reviews - Does It Work?",
+                "snippet": "Independent Dental Pro 7 analysis",
+            },
+        ]
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=results),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=[]),
+        ):
+            domains = _discover_competitor_domains(project, ["dental pro 7 reviews"])
+
+        self.assertEqual(domains, ["https://dentalpro7reviews.com"])
+
+    def test_emd_competitor_supplements_partial_ai_judgment(self):
+        project = SimpleNamespace(
+            own_domain="https://dentalpro7.reviews",
+            domain="https://dentalpro7.reviews",
+            search_locale="us",
+            audit_summary="A focused Dental Pro 7 review site",
+        )
+        results = [
+            {"url": "https://specialist.example/review", "title": "Dental Pro 7 review", "snippet": "Product analysis"},
+            {"url": "https://dentalpro7reviews.com/", "title": "Dental Pro 7 Reviews", "snippet": "Focused review site"},
+        ]
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=results),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=["https://specialist.example"]),
+        ):
+            domains = _discover_competitor_domains(project, ["dental pro 7 reviews"])
+
+        self.assertEqual(domains, ["https://specialist.example", "https://dentalpro7reviews.com"])
 
     def test_exact_seed_serp_does_not_force_general_competitors(self):
         project = SimpleNamespace(

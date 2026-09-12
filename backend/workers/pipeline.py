@@ -107,11 +107,21 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         scan_started = time.monotonic()
         _mark_running(db, project, job)
         logger.info("[%s] Starting concurrent scan for %s", project_id, project.domain)
-        seed_keywords = _order_seeds_by_emd(
-            _clean_seed_keywords(project.target_keywords),
-            project.own_domain or project.domain,
-        )
         audit_summary = project.audit_summary
+        stored_seed_keywords = _clean_seed_keywords(project.target_keywords)
+        seed_keywords = _scan_seed_keywords(
+            stored_seed_keywords,
+            project.own_domain or project.domain,
+            audit_summary,
+        )
+        if seed_keywords != stored_seed_keywords:
+            project.target_keywords = seed_keywords
+            db.commit()
+            logger.info(
+                "[%s] Repaired scan seeds from EMD/audit context: %s",
+                project_id,
+                seed_keywords,
+            )
         
         # Fix 0: Auto-generate audit context from homepage if missing
         if not audit_summary:
@@ -155,6 +165,17 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                             logger.info("[%s] Auto-generated audit_summary from homepage", project_id)
             except Exception as e:
                 logger.warning("[%s] Failed to auto-generate audit_summary: %s", project_id, e)
+
+        refreshed_seed_keywords = _scan_seed_keywords(
+            seed_keywords,
+            project.own_domain or project.domain,
+            audit_summary,
+        )
+        if refreshed_seed_keywords != seed_keywords:
+            seed_keywords = refreshed_seed_keywords
+            project.target_keywords = seed_keywords
+            db.commit()
+            logger.info("[%s] Added audit-derived scan seed context: %s", project_id, seed_keywords)
         
         semantic_started = time.monotonic()
         topic_terms, negative_terms = _semantic_terms(seed_keywords, audit_summary)
@@ -180,11 +201,13 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         db = None
         own_domain = _origin(project.own_domain or project.domain) or project.domain
         competitor_ranking_urls: dict[str, list[str]] = {}
+        competitor_diagnostics: list[str] = []
         competitor_domains = _discover_competitor_domains(
             project,
             seed_keywords,
             negative_terms=negative_terms,
             ranking_urls_out=competitor_ranking_urls,
+            diagnostics_out=competitor_diagnostics,
         )
         logger.info("[%s] Competitor discovery selected %s domains: %s", project_id, len(competitor_domains), competitor_domains)
         required_terms = _search_required_terms(seed_keywords)
@@ -446,7 +469,15 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             )
         if competitor_gap_count == 0:
             warnings.append(
-                "no direct competitor pages were discovered"
+                (
+                    "no direct competitor pages were discovered ("
+                    + (
+                        competitor_diagnostics[-1]
+                        if competitor_diagnostics
+                        else "no usable seed or search-provider result was available"
+                    )
+                    + ")"
+                )
                 if not competitor_domains
                 else "the competitor pages produced no accepted scraped keywords"
             )
@@ -454,7 +485,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         if warnings:
             completion_warning = (
                 "Scan completed with limited external research: " + "; ".join(warnings) + ". "
-                "Check Settings > DataForSEO and the Render scan logs before retrying."
+                "Check the provider status cards in Settings and the Render scan logs before retrying."
             )
         _mark_complete(db, project, job, "complete", completion_warning)
         logger.info(
@@ -787,6 +818,11 @@ def _process_dataforseo_keywords(
         seed_keywords,
         audit_summary,
     )
+    logger.info(
+        "DataForSEO exact-seed research returned %s candidates for seeds %s",
+        len(research.keywords),
+        seed_keywords,
+    )
     if diagnostics is not None:
         diagnostics.extend(research.errors)
     accepted = []
@@ -804,7 +840,8 @@ def _process_dataforseo_keywords(
         )
         if diagnostics is not None and not research.errors:
             diagnostics.append(
-                f"returned {len(research.keywords)} candidates but none passed the site relevance boundary"
+                f"exact-seed suggestions returned {len(research.keywords)} candidates "
+                f"for {len(seed_keywords)} seeds but none passed the site relevance boundary"
             )
         return 0
 
@@ -836,6 +873,11 @@ def _process_dataforseo_keywords(
             "difficulty": item.get("difficulty"),
         }
     _store_keywords(db, project_id, accumulator)
+    logger.info(
+        "DataForSEO accepted %s of %s exact-seed candidates",
+        len(accumulator),
+        len(research.keywords),
+    )
     return len(accumulator)
 
 
@@ -990,6 +1032,7 @@ def _discover_competitor_domains(
     seed_keywords: list[str],
     negative_terms: set[str] | None = None,
     ranking_urls_out: dict[str, list[str]] | None = None,
+    diagnostics_out: list[str] | None = None,
 ) -> list[str]:
     if ranking_urls_out is not None:
         ranking_urls_out.clear()
@@ -1012,6 +1055,8 @@ def _discover_competitor_domains(
     competitor_domains: list[str] = []
     competitor_roots: set[str] = set()
     candidate_signals: dict[str, dict[str, Any]] = {}
+    apify_result_count = 0
+    fallback_result_count = 0
     
     from scraping.apify_client_module import search_google_via_apify, is_apify_configured
 
@@ -1074,6 +1119,8 @@ def _discover_competitor_domains(
         primary_results_added = False
         if is_apify_configured():
             apify_results = search_google_via_apify(kw, max_results=serp_limit, country_code=search_locale)
+            apify_result_count += len(apify_results)
+            logger.info("Apify returned %s organic results for exact seed %r", len(apify_results), kw)
             for rank, res in enumerate(apify_results, start=1):
                 before = len(competitor_domains)
                 add_domain(
@@ -1090,6 +1137,7 @@ def _discover_competitor_domains(
                 _search_result_urls(kw, include_google=True, locale=search_locale, max_results=remaining),
                 start=1,
             ):
+                fallback_result_count += 1
                 add_domain(href, kw, "google_page_1", rank)
                 if len(competitor_domains) - start_count >= per_kw_limit:
                     break
@@ -1134,16 +1182,43 @@ def _discover_competitor_domains(
     )
     if llm_domains is not None:
         if llm_domains:
-            return selected(llm_domains[:competitor_limit])
+            combined = list(llm_domains)
+            for domain in evidence_fallback:
+                if domain not in combined:
+                    combined.append(domain)
+            result = selected(combined[:competitor_limit])
+            if diagnostics_out is not None:
+                diagnostics_out.append(
+                    f"Apify returned {apify_result_count} organic results; "
+                    f"{len(balanced_domains)} candidate sites; {len(result)} direct competitors selected"
+                )
+            return result
         if evidence_fallback:
             logger.warning(
-                "Competitor judge rejected every candidate; retained %s exact-seed SERP matches with explicit topical evidence",
+                "Competitor judge rejected every candidate; retained %s registered-domain EMD matches",
                 len(evidence_fallback),
             )
-            return selected(evidence_fallback)
+            result = selected(evidence_fallback)
+            if diagnostics_out is not None:
+                diagnostics_out.append(
+                    f"Apify returned {apify_result_count} organic results; "
+                    f"the AI judge selected none; {len(result)} EMD-matched competitors rescued"
+                )
+            return result
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                f"Apify returned {apify_result_count} organic results; "
+                f"{len(balanced_domains)} candidate sites; none matched the direct-site boundary"
+            )
         return []
 
-    return selected(balanced_domains[:competitor_limit])
+    result = selected(balanced_domains[:competitor_limit])
+    if diagnostics_out is not None:
+        diagnostics_out.append(
+            f"Apify returned {apify_result_count} organic results; "
+            f"fallback search returned {fallback_result_count}; {len(result)} competitors selected"
+        )
+    return result
 
 
 def _high_confidence_competitor_fallback(
@@ -1152,28 +1227,15 @@ def _high_confidence_competitor_fallback(
     seed_keywords: list[str],
     limit: int,
 ) -> list[str]:
-    """Keep a bounded floor of genuine exact-seed organic competitors."""
-    from nlp.keywords import BROAD_TOPIC_TERMS, GENERIC_TOOL_TERMS, seed_keyword_terms
-
+    """Rescue only focused domains whose registered name matches an exact seed."""
     accepted: list[str] = []
     for domain in domains:
         signal = signals.get(domain) or {}
         queries = signal.get("queries") or []
-        evidence = " ".join([
-            *(signal.get("titles") or []),
-            *(signal.get("snippets") or []),
-            *(signal.get("sample_urls") or []),
-        ]).lower()
-        compact_evidence = re.sub(r"[^a-z0-9]", "", evidence)
         for seed in seed_keywords:
             if seed not in queries:
                 continue
-            distinctive = seed_keyword_terms([seed]) - BROAD_TOPIC_TERMS - GENERIC_TOOL_TERMS
-            matches = {term for term in distinctive if re.search(rf"\b{re.escape(term)}\b", evidence)}
-            required = 1 if len(distinctive) <= 1 else 2
-            compact_seed = re.sub(r"[^a-z0-9]", "", seed.lower())
-            explicit_match = bool(compact_seed and compact_seed in compact_evidence)
-            if explicit_match or len(matches) >= required:
+            if _domain_matches_seed_scope(domain, seed):
                 accepted.append(domain)
                 break
         if len(accepted) >= limit:
@@ -1485,6 +1547,50 @@ def _clean_seed_keywords(raw_keywords: list[str] | None) -> list[str]:
     return cleaned_keywords
 
 
+def _scan_seed_keywords(
+    stored_keywords: list[str],
+    domain: str | None,
+    audit_summary: str | None,
+) -> list[str]:
+    """Build a bounded, EMD-first seed set and repair stale legacy projects."""
+    import json
+    from nlp.keywords import clean_phrase
+
+    seeds = list(dict.fromkeys(_clean_seed_keywords(stored_keywords)))
+    audit_primary = ""
+    try:
+        audit = json.loads(audit_summary) if audit_summary else {}
+        if isinstance(audit, dict):
+            audit_primary = clean_phrase(str(audit.get("primary_keyword") or ""))
+    except (TypeError, json.JSONDecodeError):
+        pass
+
+    if audit_primary and audit_primary not in seeds:
+        if not seeds or _domain_matches_seed_scope(domain or "", audit_primary):
+            seeds.append(audit_primary)
+
+    ordered = _order_seeds_by_emd(seeds, domain)
+    if any(_domain_matches_seed_scope(domain or "", seed) for seed in ordered):
+        return ordered[:5]
+
+    # A legacy project can contain a stale AI seed unrelated to its EMD. A
+    # descriptive TLD supplies a safe recovery query without trying to invent
+    # word boundaries inside arbitrary brand names.
+    registered = _registered_domain(domain)
+    if registered:
+        host = urlparse(f"https://{registered}").hostname or ""
+        parts = host.lower().removeprefix("www.").split(".")
+        label = parts[0] if parts else ""
+        suffix = parts[-1] if len(parts) > 1 else ""
+        if label and suffix in {"review", "reviews", "tools"}:
+            label = re.sub(r"([a-z])([0-9])", r"\1 \2", label)
+            recovery_seed = clean_phrase(f"{label} {suffix}")
+            if recovery_seed and recovery_seed not in ordered:
+                ordered.insert(0, recovery_seed)
+
+    return _order_seeds_by_emd(ordered, domain)[:5]
+
+
 def _expand_seed_keyword(keyword: str) -> list[str]:
     # We no longer split compound keywords using hardcoded dictionary lookups
     # (e.g. splitting "circuitdiagrammaker" to "circuit diagram maker")
@@ -1516,12 +1622,50 @@ def _registered_domain(url: str | None) -> str | None:
     try:
         import tldextract
 
-        extracted = tldextract.extract(host)
+        # Use tldextract's bundled public-suffix snapshot. Runtime downloads and
+        # cache locks are unnecessary in a short-lived hosted worker and used to
+        # make subdomains look like registered roots when the cache was unwritable.
+        extractor = getattr(_registered_domain, "_extractor", None)
+        if extractor is None:
+            extractor = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
+            setattr(_registered_domain, "_extractor", extractor)
+        extracted = extractor(host)
         if extracted.domain and extracted.suffix:
             return f"{extracted.domain}.{extracted.suffix}"
     except Exception:
         pass
     return host
+
+
+def _domain_matches_seed_scope(domain: str, seed: str) -> bool:
+    """Return true only when the registered domain itself carries the seed entity."""
+    from nlp.keywords import BROAD_TOPIC_TERMS, GENERIC_TOOL_TERMS, clean_phrase
+
+    root = _registered_domain(domain)
+    if not root or _is_blocked_competitor_root(root):
+        return False
+    label = root.lower().split(".")[0]
+    compact_label = re.sub(r"[^a-z0-9]", "", label)
+    words = clean_phrase(seed).split()
+    intent_terms = {
+        "best", "buy", "comparison", "cost", "free", "guide", "online",
+        "price", "pricing", "rating", "ratings", "review", "reviews",
+        "vs", "website",
+    }
+    entity_words = [
+        word for word in words
+        if word not in BROAD_TOPIC_TERMS
+        and word not in GENERIC_TOOL_TERMS
+        and word not in intent_terms
+    ]
+    entity = re.sub(r"[^a-z0-9]", "", "".join(entity_words))
+    compact_seed = re.sub(r"[^a-z0-9]", "", "".join(words))
+    if len(entity) >= 5 and entity in compact_label:
+        return True
+    return len(compact_seed) >= 7 and (
+        compact_seed in compact_label
+        or (len(compact_label) >= 7 and compact_label in compact_seed)
+    )
 
 
 def _unwrap_result_url(url: str | None) -> str | None:
@@ -1572,15 +1716,25 @@ def _is_blocked_competitor_root(root: str) -> bool:
         "microsoft.com",
         "pinterest.com",
         "soundcloud.com",
+        "quora.com",
         "reddit.com",
+        "tenereteam.com",
         "tiktok.com",
+        "trustpilot.com",
         "wikipedia.org",
         "x.com",
         "yahoo.com",
         "yellowpages.com",
         "youtube.com",
     }
-    return root in blocked_roots
+    if root in blocked_roots:
+        return True
+    label = root.lower().split(".")[0]
+    blocked_label_terms = {
+        "coupon", "coupons", "deal", "deals", "directory", "forum",
+        "forums", "marketplace", "social", "wiki",
+    }
+    return bool(set(re.findall(r"[a-z]+", label)) & blocked_label_terms)
 
 
 def _mark_running(db: Session, project: Any, job: Any) -> None:

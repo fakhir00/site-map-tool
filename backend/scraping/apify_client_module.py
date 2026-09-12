@@ -1,16 +1,52 @@
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
 from app.config import settings
 from scraping.crawler import ScrapedPage
 
 logger = logging.getLogger(__name__)
+_ACCOUNT_STATUS_CACHE: tuple[float, Dict[str, Any]] | None = None
 
 def is_apify_configured() -> bool:
     return bool(settings.APIFY_API_TOKEN)
 
 def _get_client() -> ApifyClient:
     return ApifyClient(settings.APIFY_API_TOKEN)
+
+
+def apify_account_status(force: bool = False) -> Dict[str, Any]:
+    """Validate the configured token without starting a paid actor run."""
+    global _ACCOUNT_STATUS_CACHE
+    now = time.monotonic()
+    if not force and _ACCOUNT_STATUS_CACHE and now - _ACCOUNT_STATUS_CACHE[0] < 300:
+        return dict(_ACCOUNT_STATUS_CACHE[1])
+    if not is_apify_configured():
+        result = {
+            "configured": False,
+            "authenticated": False,
+            "credential_source": None,
+            "message": "Add APIFY_API_TOKEN in Render.",
+        }
+    else:
+        try:
+            user = _get_client().user().get()
+            authenticated = isinstance(user, dict) and bool(user.get("id"))
+            result = {
+                "configured": True,
+                "authenticated": authenticated,
+                "credential_source": "APIFY_API_TOKEN",
+                "message": "Connected to Apify." if authenticated else "Apify rejected the configured token.",
+            }
+        except Exception as exc:
+            result = {
+                "configured": True,
+                "authenticated": False,
+                "credential_source": "APIFY_API_TOKEN",
+                "message": f"Could not verify Apify: {type(exc).__name__}",
+            }
+    _ACCOUNT_STATUS_CACHE = (now, result)
+    return dict(result)
 
 def search_google_via_apify(query: str, max_results: int = 10, country_code: str = "us") -> List[Dict[str, Any]]:
     """

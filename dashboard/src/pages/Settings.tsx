@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { CreditCard, Database } from 'lucide-react'
+import { Bot, CreditCard, Database } from 'lucide-react'
 import { api, type ProviderStatus, type User } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
@@ -12,6 +12,11 @@ export function Settings() {
   const { data: dataForSeo, isLoading: isLoadingDataForSeo } = useQuery({
     queryKey: ['provider-status', 'dataforseo'],
     queryFn: () => api.get<ProviderStatus>('/providers/dataforseo/status'),
+    retry: false,
+  })
+  const { data: apify, isLoading: isLoadingApify } = useQuery({
+    queryKey: ['provider-status', 'apify'],
+    queryFn: () => api.get<ProviderStatus>('/providers/apify/status'),
     retry: false,
   })
 
@@ -77,6 +82,23 @@ export function Settings() {
           </div>
           <Badge variant={dataForSeo?.authenticated ? 'teal' : 'amber'}>
             {isLoadingDataForSeo ? 'Checking' : dataForSeo?.authenticated ? 'Connected' : dataForSeo?.configured ? 'Authentication failed' : 'Not configured'}
+          </Badge>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Bot className="mt-0.5 h-5 w-5 text-indigo-700 dark:text-indigo-400" />
+            <div>
+              <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Apify</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {isLoadingApify ? 'Checking the Render token…' : apify?.message || 'Provider status unavailable.'}
+              </p>
+            </div>
+          </div>
+          <Badge variant={apify?.authenticated ? 'teal' : 'amber'}>
+            {isLoadingApify ? 'Checking' : apify?.authenticated ? 'Connected' : apify?.configured ? 'Authentication failed' : 'Not configured'}
           </Badge>
         </div>
       </Card>

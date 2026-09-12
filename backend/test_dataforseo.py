@@ -150,6 +150,7 @@ class DataForSeoTests(TestCase):
         self.assertEqual(second_payload["keyword"], "calculate lunar age")
         self.assertTrue(first_payload["exact_match"])
         self.assertTrue(first_payload["include_seed_keyword"])
+        self.assertNotIn("filters", first_payload)
         self.assertEqual(first_payload["limit"], 75)
         self.assertEqual(result.requests, 2)
         self.assertEqual(result.cache_hits, 0)
