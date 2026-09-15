@@ -236,6 +236,22 @@ def is_topic_relevant_keyword(
     if any(re.search(rf"\b{re.escape(seed)}\b", cleaned) for seed in normalized_seeds):
         return True
 
+    # Allow exact-match domains without spaces to match their constituent words
+    phrase_words = cleaned.split()
+    for seed in normalized_seeds:
+        seed_words = seed.split()
+        if len(seed_words) <= 2:
+            seed_compact = re.sub(r"[^a-z0-9]", "", seed)
+            for tld in ("com", "net", "org", "co", "io", "app", "us", "uk"):
+                if seed.endswith(f" {tld}") or seed == tld:
+                    seed_compact = seed_compact[:-len(tld)]
+                    break
+            if len(seed_compact) > 4:
+                for i in range(len(phrase_words)):
+                    for j in range(i + 1, len(phrase_words) + 1):
+                        if "".join(phrase_words[i:j]) == seed_compact:
+                            return True
+
     # Every Gold Hunter seed is an explicit site-scope signal. Allow a close
     # variation of any seed when it retains both that seed's distinctive entity
     # and its function/subject. This expands useful volume across all 3-5 seeds

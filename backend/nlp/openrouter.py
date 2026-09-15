@@ -1211,11 +1211,15 @@ Each object must include:
             page_match = item.get("page_match")
             if page_match is None:
                 page_match = True
+            site_scope_match = item.get("site_scope_match")
+            if site_scope_match is None:
+                site_scope_match = True
 
             if (
                 verdict != "accept"
                 or not domain
                 or not page_match
+                or not site_scope_match
                 or confidence < 60
             ):
                 continue

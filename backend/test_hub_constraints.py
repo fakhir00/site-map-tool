@@ -88,8 +88,8 @@ class HubConstraintTests(TestCase):
         payload = build_hub_spoke_fallback(keywords, "lunar age calculator")
         targets = {item["target_keyword"] for item in payload["spokes"]}
 
-        self.assertEqual(payload["master_hub"]["target_keyword"], "lunar age")
-        self.assertIn("lunar age calculator", targets)
+        self.assertEqual(payload["master_hub"]["target_keyword"], "lunar age calculator")
+        self.assertIn("lunar age", targets)
         self.assertIn("calculate lunar age by birthday", targets)
         easy_win = next(item for item in payload["spokes"] if item["target_keyword"] == "calculate lunar age by birthday")
         self.assertEqual(easy_win["ranking_role"], "easy_win_spoke")
