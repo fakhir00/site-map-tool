@@ -133,7 +133,9 @@ export function ProjectDetail() {
   const isPaused = status === 'paused'
   const percent = scanStatus?.percent ?? 0
   const activeJobError = jobs[0]?.error_message
-  const latestJobError = activeJobError && activeJobError !== dismissedError ? activeJobError : null
+  const hideCompletedDataForSeoWarning = status === 'complete' && Boolean(activeJobError?.toLowerCase().includes('dataforseo'))
+  const visibleJobError = hideCompletedDataForSeoWarning ? null : activeJobError
+  const latestJobError = visibleJobError && visibleJobError !== dismissedError ? visibleJobError : null
   const isCompletionWarning = status === 'complete' && Boolean(latestJobError)
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error
 
@@ -270,7 +272,7 @@ export function ProjectDetail() {
         </div>
 
         <div className="space-y-4">
-          <LiveSignals isActive={isRunning} progress={scanStatus} error={activeJobError} />
+          <LiveSignals isActive={isRunning} progress={scanStatus} error={latestJobError} />
           
           <Card className="p-0 flex flex-col">
             <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4 shrink-0">

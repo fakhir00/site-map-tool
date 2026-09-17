@@ -521,10 +521,12 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                 pass
         warnings: list[str] = []
         if dataforseo_count == 0:
-            warnings.append(
-                "DataForSEO: " + provider_diagnostics[0]
+            logger.warning(
+                "[%s] DataForSEO enrichment unavailable (non-blocking): %s",
+                project_id,
+                provider_diagnostics[0]
                 if provider_diagnostics
-                else "DataForSEO stored no matching keywords"
+                else "no matching keywords were stored",
             )
         if competitor_gap_count == 0:
             warnings.append(
