@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     APIFY_API_TOKEN: str = ""
     APIFY_API_KEY: str = ""
     APIFY_TOKEN: str = ""
+    APIFY_KEYWORD_ACTOR_ID: str = "qt4rCkNegFVRVWugm"
+    APIFY_COMPETITOR_ACTOR_ID: str = "563JCPLOqM1kMmbbP"
+    APIFY_KEYWORD_RESULT_LIMIT: int = 100
+    APIFY_KEYWORD_MIN_VOLUME: int = 10
+    APIFY_KEYWORD_LANGUAGE: str = "en"
     DATAFORSEO_LOGIN: str = ""
     DATAFORSEO_PASSWORD: str = ""
     DATAFORSEO_API_LOGIN: str = ""
@@ -41,8 +46,8 @@ class Settings(BaseSettings):
 
     # Scraping
     MAX_URLS_PER_SCAN: int = 200
-    MAX_COMPETITOR_DOMAINS: int = 18
-    GOOGLE_SERP_RESULT_LIMIT: int = 20
+    MAX_COMPETITOR_DOMAINS: int = 30
+    GOOGLE_SERP_RESULT_LIMIT: int = 30
     MAX_CONTENT_URLS_PER_DOMAIN: int = 12
     MAX_COMPETITOR_JUDGE_CANDIDATES: int = 90
     AI_KEYWORD_GAP_CANDIDATE_LIMIT: int = 250

@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
@@ -48,10 +49,10 @@ def apify_account_status(force: bool = False) -> Dict[str, Any]:
     _ACCOUNT_STATUS_CACHE = (now, result)
     return dict(result)
 
-def search_google_via_apify(query: str, max_results: int = 20, country_code: str = "us") -> List[Dict[str, Any]]:
+def search_google_via_apify(query: str, max_results: int = 30, country_code: str = "us") -> List[Dict[str, Any]]:
     """
-    Search Google using the scraperlink/google-search-results-serp-scraper actor.
-    Scrapes top 2 pages of Google search results for broader competitor coverage.
+    Search Google using the configured competitor discovery Actor.
+    Scrapes enough pages to satisfy max_results (the Actor returns ten per page).
     Returns structured organic results with url, title, snippet.
     """
     if not is_apify_configured():
@@ -61,7 +62,7 @@ def search_google_via_apify(query: str, max_results: int = 20, country_code: str
     client = _get_client()
     all_results: List[Dict[str, Any]] = []
     seen_urls: set[str] = set()
-    pages_to_scrape = 2  # Scrape top 2 pages
+    pages_to_scrape = max(1, math.ceil(max_results / 10))
 
     for page_num in range(1, pages_to_scrape + 1):
         run_input = {
@@ -73,10 +74,10 @@ def search_google_via_apify(query: str, max_results: int = 20, country_code: str
 
         try:
             logger.info(
-                "Running scraperlink SERP scraper for query: %r page %s",
+                "Running Apify competitor scraper for query: %r page %s",
                 query, page_num,
             )
-            run = client.actor("scraperlink/google-search-results-serp-scraper").call(
+            run = client.actor(settings.APIFY_COMPETITOR_ACTOR_ID).call(
                 run_input=run_input,
                 timeout_secs=90,
                 wait_secs=100,
@@ -149,6 +150,96 @@ def search_google_via_apify(query: str, max_results: int = 20, country_code: str
             len(all_results), query, pages_to_scrape,
         )
     return all_results[:max_results]
+
+
+def research_keywords_via_apify(
+    seed_keywords: List[str],
+    country_code: str = "us",
+    language: str | None = None,
+    max_results_per_seed: int | None = None,
+) -> List[Dict[str, Any]]:
+    """Run the keyword research Actor once for every seed and merge its results."""
+    if not is_apify_configured():
+        logger.warning("Apify not configured. Skipping keyword research.")
+        return []
+
+    client = _get_client()
+    actor_id = settings.APIFY_KEYWORD_ACTOR_ID
+    result_limit = max(1, min(500, max_results_per_seed or settings.APIFY_KEYWORD_RESULT_LIMIT))
+    locale = (country_code or "us").strip().lower()[:2]
+    result_language = (language or settings.APIFY_KEYWORD_LANGUAGE or "en").strip().lower()[:2]
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    for raw_seed in seed_keywords:
+        seed = str(raw_seed or "").strip()
+        if not seed:
+            continue
+        run_input = {
+            "keyword": seed,
+            "country": locale,
+            "language": result_language,
+            "limit": result_limit,
+            "min_volume": max(0, settings.APIFY_KEYWORD_MIN_VOLUME),
+        }
+        try:
+            logger.info("Running Apify keyword research for exact seed %r", seed)
+            run = client.actor(actor_id).call(
+                run_input=run_input,
+                timeout_secs=300,
+                wait_secs=310,
+            )
+            if not run or run.get("status") != "SUCCEEDED":
+                logger.error(
+                    "Apify keyword research did not succeed for %r: status=%s message=%s",
+                    seed,
+                    (run or {}).get("status"),
+                    (run or {}).get("statusMessage") or (run or {}).get("status_message") or "none",
+                )
+                continue
+
+            for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+                if not isinstance(item, dict):
+                    continue
+                phrase = str(item.get("keyword") or item.get("phrase") or "").strip().lower()
+                if not phrase:
+                    continue
+                normalized = {
+                    "phrase": phrase,
+                    "search_volume": _number_or_none(item.get("volume") or item.get("search_volume"), int),
+                    "difficulty": _number_or_none(item.get("sd") or item.get("difficulty"), float),
+                    "cpc": _number_or_none(item.get("cpc_usd") or item.get("cpc"), float),
+                    "intent": str(item.get("intent") or "").strip().lower() or None,
+                    "seed_keywords": [seed],
+                }
+                existing = merged.get(phrase)
+                if existing:
+                    if seed not in existing["seed_keywords"]:
+                        existing["seed_keywords"].append(seed)
+                    if (normalized["search_volume"] or 0) > (existing.get("search_volume") or 0):
+                        existing.update({
+                            key: value for key, value in normalized.items()
+                            if key != "seed_keywords" and value is not None
+                        })
+                else:
+                    merged[phrase] = normalized
+        except Exception as exc:
+            logger.error("Apify keyword research failed for exact seed %r: %s", seed, exc)
+
+    logger.info(
+        "Apify keyword research returned %s unique keywords across %s seeds",
+        len(merged),
+        len([seed for seed in seed_keywords if str(seed or "").strip()]),
+    )
+    return list(merged.values())
+
+
+def _number_or_none(value: Any, number_type: type) -> int | float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return number_type(value)
+    except (TypeError, ValueError):
+        return None
 
 def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -> List[str]:
     """

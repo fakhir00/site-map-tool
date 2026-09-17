@@ -1,8 +1,18 @@
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
+
 from app.config import Settings
-from scraping.apify_client_module import apify_account_status, search_google_via_apify
+from app.database import Base
+from app.models import Keyword, Project, User
+from scraping.apify_client_module import (
+    apify_account_status,
+    research_keywords_via_apify,
+    search_google_via_apify,
+)
+from workers.pipeline import _process_apify_keywords
 
 
 class ApifyClientTests(TestCase):
@@ -51,19 +61,106 @@ class ApifyClientTests(TestCase):
             patch("scraping.apify_client_module.is_apify_configured", return_value=True),
             patch("scraping.apify_client_module._get_client", return_value=client),
         ):
-            results = search_google_via_apify("moon nodes calculator", max_results=5)
+            results = search_google_via_apify("moon nodes calculator", max_results=30)
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["url"], "https://competitor.example/tool")
-        # Should call the scraperlink actor for 2 pages
-        self.assertEqual(actor.call.call_count, 2)
+        self.assertEqual(actor.call.call_count, 3)
         first_call_kwargs = actor.call.call_args_list[0].kwargs
         self.assertEqual(first_call_kwargs["timeout_secs"], 90)
         self.assertEqual(first_call_kwargs["wait_secs"], 100)
-        # Verify the actor name used
-        client.actor.assert_called_with("scraperlink/google-search-results-serp-scraper")
+        client.actor.assert_called_with("563JCPLOqM1kMmbbP")
         # Verify input format uses 'keyword' not 'queries'
         first_call_input = actor.call.call_args_list[0].kwargs["run_input"]
         self.assertIn("keyword", first_call_input)
         self.assertNotIn("queries", first_call_input)
 
+    def test_keyword_research_runs_every_seed_and_merges_duplicates(self):
+        actor = MagicMock()
+        actor.call.side_effect = [
+            {"status": "SUCCEEDED", "defaultDatasetId": "dataset-1"},
+            {"status": "SUCCEEDED", "defaultDatasetId": "dataset-2"},
+        ]
+        first_dataset = MagicMock()
+        first_dataset.iterate_items.return_value = iter([
+            {"keyword": "shared keyword idea", "volume": 100, "sd": 22, "intent": "informational"},
+        ])
+        second_dataset = MagicMock()
+        second_dataset.iterate_items.return_value = iter([
+            {"keyword": "shared keyword idea", "volume": 250, "sd": 18, "intent": "commercial"},
+            {"keyword": "second seed idea", "volume": 80, "sd": 12},
+        ])
+        client = MagicMock()
+        client.actor.return_value = actor
+        client.dataset.side_effect = [first_dataset, second_dataset]
+
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module._get_client", return_value=client),
+        ):
+            results = research_keywords_via_apify(
+                ["first seed", "second seed"],
+                country_code="US",
+                max_results_per_seed=30,
+            )
+
+        self.assertEqual(actor.call.call_count, 2)
+        self.assertEqual([call.kwargs["run_input"]["keyword"] for call in actor.call.call_args_list], ["first seed", "second seed"])
+        shared = next(item for item in results if item["phrase"] == "shared keyword idea")
+        self.assertEqual(shared["search_volume"], 250)
+        self.assertEqual(shared["seed_keywords"], ["first seed", "second seed"])
+        client.actor.assert_called_with("qt4rCkNegFVRVWugm")
+
+    def test_pipeline_stores_relevant_apify_metrics_and_intent(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        sessions = sessionmaker(engine, expire_on_commit=False)
+        with sessions() as db:
+            user = User(email="apify-test@example.com")
+            db.add(user)
+            db.flush()
+            project = Project(
+                user_id=user.id,
+                name="Lunar age",
+                domain="https://example.com",
+                target_keywords=["lunar age calculator"],
+            )
+            db.add(project)
+            db.commit()
+
+            researched = [
+                {
+                    "phrase": "lunar age calculator by birth date",
+                    "search_volume": 880,
+                    "difficulty": 18.0,
+                    "cpc": 1.25,
+                    "intent": "commercial",
+                    "seed_keywords": ["lunar age calculator"],
+                },
+                {
+                    "phrase": "dog age calculator",
+                    "search_volume": 50000,
+                    "difficulty": 60.0,
+                    "seed_keywords": ["lunar age calculator"],
+                },
+            ]
+            with (
+                patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+                patch("scraping.apify_client_module.research_keywords_via_apify", return_value=researched),
+            ):
+                count = _process_apify_keywords(
+                    db,
+                    project.id,
+                    ["lunar age calculator"],
+                    {"lunar", "age", "calendar"},
+                    set(),
+                )
+
+            rows = db.execute(select(Keyword)).scalars().all()
+            self.assertEqual(count, 1)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].phrase, "lunar age calculator by birth date")
+            self.assertEqual(rows[0].search_volume, 880)
+            self.assertEqual(rows[0].difficulty, 18.0)
+            self.assertEqual(rows[0].seo_recommendation, "Search intent: commercial; CPC: $1.25")
+        engine.dispose()

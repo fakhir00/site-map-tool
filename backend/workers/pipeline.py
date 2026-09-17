@@ -410,6 +410,16 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         gap_started = time.monotonic()
         competitor_evidence: list[str] = []
         provider_diagnostics: list[str] = []
+        apify_keyword_count = _process_apify_keywords(
+            db,
+            project_uuid,
+            seed_keywords,
+            topic_terms,
+            negative_terms,
+            search_locale=project.search_locale,
+            diagnostics=provider_diagnostics,
+        )
+        logger.info("[%s] Apify keyword pass stored %s keywords", project_id, apify_keyword_count)
         dataforseo_count = _process_dataforseo_keywords(
             db,
             project_uuid,
@@ -946,6 +956,86 @@ def _process_dataforseo_keywords(
     return len(accumulator)
 
 
+def _process_apify_keywords(
+    db: Session,
+    project_id: uuid.UUID,
+    seed_keywords: list[str],
+    topic_terms: set[str] | None,
+    negative_terms: set[str] | None,
+    search_locale: str = "us",
+    diagnostics: list[str] | None = None,
+) -> int:
+    """Store relevant keyword metrics returned for every exact scan seed."""
+    from app.models import Url
+    from nlp.keywords import clean_phrase, is_publishable_keyword
+    from scraping.apify_client_module import is_apify_configured, research_keywords_via_apify
+
+    if not is_apify_configured():
+        if diagnostics is not None:
+            diagnostics.append("Apify keyword research skipped because no API token is configured")
+        return 0
+
+    researched = research_keywords_via_apify(seed_keywords, country_code=search_locale)
+    accepted: list[dict[str, Any]] = []
+    for item in researched:
+        phrase = clean_phrase(str(item.get("phrase") or ""))
+        if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+            continue
+        if not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
+            continue
+        accepted.append({**item, "phrase": phrase})
+
+    if not accepted:
+        if diagnostics is not None:
+            diagnostics.append(
+                f"Apify returned {len(researched)} keyword candidates for {len(seed_keywords)} seeds; none passed relevance checks"
+            )
+        return 0
+
+    source_url = f"https://apify.com/actors/{settings.APIFY_KEYWORD_ACTOR_ID}"
+    source = db.execute(
+        select(Url).where(Url.project_id == project_id, Url.url == source_url)
+    ).scalar_one_or_none()
+    if not source:
+        source = Url(
+            project_id=project_id,
+            url=source_url,
+            source_type="provider",
+            source_domain="Apify Keyword Research",
+            status="scraped",
+        )
+        db.add(source)
+        db.flush()
+
+    accumulator: dict[str, dict[str, Any]] = {}
+    for item in accepted:
+        intent = item.get("intent")
+        cpc = item.get("cpc")
+        recommendation_parts = []
+        if intent:
+            recommendation_parts.append(f"Search intent: {intent}")
+        if cpc is not None:
+            recommendation_parts.append(f"CPC: ${float(cpc):.2f}")
+        accumulator[item["phrase"]] = {
+            "type": "long-tail" if len(item["phrase"].split()) >= 3 else "primary",
+            "count": max(1, len(item.get("seed_keywords") or [])),
+            "url_ids": {source.id},
+            "score": float(item.get("search_volume") or 1),
+            "source": "sitemap_ai",
+            "tier": "outlier",
+            "search_volume": item.get("search_volume"),
+            "difficulty": item.get("difficulty"),
+            "seo_recommendation": "; ".join(recommendation_parts) or None,
+        }
+    _store_keywords(db, project_id, accumulator)
+    logger.info(
+        "Apify accepted %s of %s keyword candidates across every seed",
+        len(accumulator),
+        len(researched),
+    )
+    return len(accumulator)
+
+
 def _fallback_gap_recommendations(candidates: list[dict[str, Any]], max_keywords: int) -> list[dict[str, Any]]:
     from nlp.keywords import STOPWORDS, clean_phrase
 
@@ -1107,11 +1197,11 @@ def _discover_competitor_domains(
 
     own_root = _registered_domain(project.own_domain or project.domain)
     required_terms = _search_required_terms(seed_keywords)
-    # Allow up to eighteen direct competitors across 3-5 exact seeds while the
+    # Allow up to thirty direct competitors across all exact seeds while the
     # global URL ceiling continues to bound scraping memory.
     # The old max(20, setting) silently defeated lower-memory configuration and
     # could schedule more than 500 full-page scrapes in the API process.
-    competitor_limit = max(3, min(25, int(settings.MAX_COMPETITOR_DOMAINS)))
+    competitor_limit = max(3, min(30, int(settings.MAX_COMPETITOR_DOMAINS)))
     candidate_limit = max(competitor_limit * 3, settings.MAX_COMPETITOR_JUDGE_CANDIDATES)
     # Reserve discovery capacity for every Gold Hunter seed. A global limit here
     # previously let the first seed exhaust the pool before later seeds ran.
@@ -2813,6 +2903,9 @@ def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, d
                     keyword.search_volume = data["search_volume"]
                 if data.get("difficulty") is not None:
                     keyword.difficulty = data["difficulty"]
+
+            if data.get("seo_recommendation"):
+                keyword.seo_recommendation = data["seo_recommendation"]
 
             # Persist 4-tier classification metadata if present
             if data.get("tier"):

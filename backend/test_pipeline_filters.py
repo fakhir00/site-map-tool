@@ -318,6 +318,30 @@ class PipelineFilterTests(TestCase):
 
         self.assertEqual(calls, seeds)
 
+    def test_competitor_discovery_returns_up_to_thirty_direct_domains(self):
+        project = SimpleNamespace(
+            own_domain="https://own.example",
+            domain="https://own.example",
+            search_locale="us",
+            audit_summary="A focused circuit calculator",
+        )
+        results = [{
+            "url": f"https://circuit{index}.example/alpha-circuit-calculator",
+            "title": "Alpha circuit calculator",
+            "snippet": "Calculate alpha circuits online",
+        } for index in range(35)]
+
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=results),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=None),
+            patch("workers.pipeline.settings.MAX_COMPETITOR_DOMAINS", 30),
+            patch("workers.pipeline.settings.GOOGLE_SERP_RESULT_LIMIT", 30),
+        ):
+            domains = _discover_competitor_domains(project, ["alpha circuit calculator"])
+
+        self.assertEqual(len(domains), 30)
+
     def test_competitor_discovery_never_runs_broad_modifier_queries(self):
         project = SimpleNamespace(
             own_domain="https://own.example",
