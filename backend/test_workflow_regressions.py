@@ -410,23 +410,46 @@ class WorkflowTests(unittest.TestCase):
         pid = self.project()
         with self.sessions() as db:
             project_id = uuid.UUID(pid)
-            keyword = Keyword(project_id=project_id, phrase='circuit design software', frequency=3)
+            keyword = Keyword(
+                project_id=project_id,
+                phrase='circuit design software',
+                frequency=3,
+                search_volume=500,
+            )
+            low_volume_keyword = Keyword(
+                project_id=project_id,
+                phrase='circuit layout tutorial',
+                frequency=1,
+                search_volume=20,
+            )
             source = Url(
                 project_id=project_id,
                 url='https://competitor.example/circuit-design',
                 source_type='competitor',
                 source_domain='https://competitor.example',
             )
-            db.add_all([keyword, source])
+            db.add_all([keyword, low_volume_keyword, source])
             db.flush()
             db.add(KeywordUrl(keyword_id=keyword.id, url_id=source.id))
             db.commit()
 
         listed = self.client.get(f'/api/projects/{pid}/keywords')
+        volume_ascending = self.client.get(f'/api/projects/{pid}/keywords?sort_by=search_volume_asc')
+        volume_descending = self.client.get(f'/api/projects/{pid}/keywords?sort_by=search_volume_desc')
         exported = self.client.get(f'/api/projects/{pid}/keywords/export')
 
         self.assertEqual(listed.status_code, 200, listed.text)
         self.assertEqual(listed.json()['items'][0]['source_urls'], ['https://competitor.example/circuit-design'])
+        self.assertEqual(volume_ascending.status_code, 200, volume_ascending.text)
+        self.assertEqual(
+            [item['phrase'] for item in volume_ascending.json()['items']],
+            ['circuit layout tutorial', 'circuit design software'],
+        )
+        self.assertEqual(volume_descending.status_code, 200, volume_descending.text)
+        self.assertEqual(
+            [item['phrase'] for item in volume_descending.json()['items']],
+            ['circuit design software', 'circuit layout tutorial'],
+        )
         self.assertEqual(exported.status_code, 200, exported.text)
         self.assertTrue(exported.headers['content-type'].startswith('text/csv'))
         self.assertIn('circuit design software', exported.text)

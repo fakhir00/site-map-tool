@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookmarkPlus, ChevronLeft, ChevronRight, Download, ExternalLink, FilePenLine, Network, Search, Sparkles } from 'lucide-react'
 import { api, type Keyword, type KeywordListResponse } from '../lib/api'
 import { Badge } from './ui/Badge'
@@ -79,24 +79,33 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [type, setType] = useState('')
+  const [volumeSort, setVolumeSort] = useState('search_volume_desc')
   const [exportError, setExportError] = useState('')
   const [articleError, setArticleError] = useState('')
   const [writingKeywordId, setWritingKeywordId] = useState<string | null>(null)
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setSearchQuery(search.trim()), 300)
+    return () => window.clearTimeout(timeout)
+  }, [search])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['keywords', projectId, page, search, type],
+    queryKey: ['keywords', projectId, page, searchQuery, type, volumeSort],
     queryFn: () => {
       const params = new URLSearchParams({
         page: page.toString(),
         page_size: '20',
       })
-      if (search) params.append('search', search)
+      if (searchQuery) params.append('search', searchQuery)
       if (type) params.append('keyword_type', type)
+      params.append('sort_by', volumeSort)
 
       return api.get<KeywordListResponse>(`/projects/${projectId}/keywords?${params}`)
     },
     enabled: Boolean(projectId),
+    placeholderData: keepPreviousData,
     refetchInterval: isActive ? 7000 : false,
   })
 
@@ -208,6 +217,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
           </div>
 
           <select
+            aria-label="Filter by keyword type"
             className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 dark:focus:ring-cyan-600"
             onChange={(event) => {
               setType(event.target.value)
@@ -223,6 +233,20 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
             <option value="long-tail">Long-tail</option>
             <option value="entity">Entity</option>
             <option value="heading">Heading</option>
+          </select>
+
+          <select
+            aria-label="Sort by search volume"
+            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 dark:focus:ring-cyan-600"
+            onChange={(event) => {
+              setVolumeSort(event.target.value)
+              setPage(1)
+              setSelectedIds(new Set())
+            }}
+            value={volumeSort}
+          >
+            <option value="search_volume_desc">Volume: High to low</option>
+            <option value="search_volume_asc">Volume: Low to high</option>
           </select>
         </div>
 

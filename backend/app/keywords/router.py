@@ -25,7 +25,10 @@ async def list_keywords(
     project_id: uuid.UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, le=200),
-    sort_by: str = Query("frequency", enum=["frequency", "phrase", "created_at"]),
+    sort_by: str = Query(
+        "frequency",
+        enum=["frequency", "phrase", "created_at", "search_volume_asc", "search_volume_desc"],
+    ),
     keyword_type: Optional[str] = None,
     search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
@@ -51,6 +54,10 @@ async def list_keywords(
         filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", -k.frequency))
     elif sort_by == "phrase":
         filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", k.phrase))
+    elif sort_by == "search_volume_asc":
+        filtered_keywords.sort(key=lambda k: (k.search_volume is None, k.search_volume or 0))
+    elif sort_by == "search_volume_desc":
+        filtered_keywords.sort(key=lambda k: (k.search_volume is None, -(k.search_volume or 0)))
     else:
         filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", -k.created_at.timestamp()))
 
