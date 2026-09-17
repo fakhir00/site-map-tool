@@ -5,6 +5,7 @@ Extracts primary keywords, LSI phrases, named entities, and heading keywords.
 
 import re
 import logging
+from datetime import datetime, timezone
 from typing import List, Iterable, Tuple
 from collections import Counter
 
@@ -83,6 +84,15 @@ def clean_phrase(phrase: str) -> str:
     phrase = re.sub(r'[^a-z0-9\s-]', ' ', phrase)
     phrase = re.sub(r'\s+', ' ', phrase).strip()
     return phrase
+
+
+def has_past_year(phrase: str, current_year: int | None = None) -> bool:
+    """Return True when a phrase contains a standalone four-digit past year."""
+    year_limit = current_year or datetime.now(timezone.utc).year
+    return any(
+        1000 <= int(match) < year_limit
+        for match in re.findall(r"\b\d{4}\b", str(phrase or ""))
+    )
 
 
 def normalize_seed_keywords(raw_keywords: Iterable[str] | None) -> list[str]:
@@ -182,6 +192,8 @@ def is_publishable_keyword(
     """Validate final keywords that are safe to store, export, or show."""
     cleaned = clean_phrase(phrase)
     if not is_valid_keyword(cleaned, min_words=min_words):
+        return False
+    if has_past_year(cleaned):
         return False
 
     words = cleaned.split()

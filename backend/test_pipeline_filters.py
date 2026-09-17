@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, patch
 import uuid
 import json
 
+from app.keywords.router import _is_displayable_keyword
+from app.models import Keyword
 from nlp.openrouter import (
     _balanced_keyword_candidates,
     _keyword_generation_support_is_valid,
@@ -12,7 +14,7 @@ from nlp.openrouter import (
     generate_ai_keywords_sync,
     judge_competitor_domains,
 )
-from nlp.keywords import is_publishable_keyword
+from nlp.keywords import has_past_year, is_publishable_keyword
 from workers.pipeline import (
     _balanced_competitor_domains,
     _crawl_limit_per_domain,
@@ -100,6 +102,23 @@ class PipelineFilterTests(TestCase):
         self.assertFalse(is_publishable_keyword("age korean age", min_words=2))
         self.assertFalse(is_publishable_keyword("traditional korean traditional", min_words=2))
         self.assertTrue(is_publishable_keyword("lunar age in korea", min_words=2))
+
+    def test_past_year_keywords_are_not_publishable(self):
+        self.assertTrue(has_past_year("best circuit software 1974", current_year=2026))
+        self.assertTrue(has_past_year("best circuit software 2024", current_year=2026))
+        self.assertFalse(has_past_year("best circuit software 2026", current_year=2026))
+        self.assertFalse(has_past_year("best circuit software 2027", current_year=2026))
+        self.assertFalse(is_publishable_keyword("best circuit software 1974", min_words=2))
+        self.assertFalse(is_publishable_keyword("best circuit software 2024", min_words=2))
+        self.assertTrue(is_publishable_keyword("best circuit software 2027", min_words=2))
+        self.assertTrue(is_publishable_keyword("circuit simulator 555 timer", min_words=2))
+
+    def test_past_year_top_picks_are_hidden_from_existing_results(self):
+        stale = Keyword(phrase="best circuit software 2024", keyword_type="top-pick")
+        current = Keyword(phrase="best circuit software 2026", keyword_type="top-pick")
+
+        self.assertFalse(_is_displayable_keyword(stale))
+        self.assertTrue(_is_displayable_keyword(current))
 
     def test_comma_separated_seeds_are_scanned_individually(self):
         self.assertEqual(

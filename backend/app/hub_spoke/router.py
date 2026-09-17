@@ -18,8 +18,8 @@ from nlp.keywords import (
     BROAD_TOPIC_TERMS,
     STOPWORDS,
     clean_phrase,
+    is_publishable_keyword,
     is_topic_relevant_keyword,
-    is_valid_keyword,
     keyword_terms,
     normalize_seed_keywords,
     seed_keyword_terms,
@@ -72,7 +72,7 @@ def _basic_clean(values: list[str]) -> list[str]:
         for raw in str(value).replace("\r", "\n").split("\n"):
             # CSV rows commonly contain a keyword in the first column.
             phrase = clean_phrase(raw.split(",", 1)[0].strip().strip('"'))
-            if not is_valid_keyword(phrase, min_words=1) or phrase in result:
+            if not is_publishable_keyword(phrase, min_words=1) or phrase in result:
                 continue
             result.append(phrase)
     return result
@@ -518,7 +518,11 @@ async def import_project_keywords(
     seen: set[str] = set()
     for phrase, keyword_type, search_volume, difficulty, frequency in result.all():
         normalized = clean_phrase(str(phrase or ""))
-        if not normalized or normalized in seen:
+        if (
+            not normalized
+            or normalized in seen
+            or not is_publishable_keyword(normalized, min_words=2)
+        ):
             continue
         seen.add(normalized)
         keyword_data.append({

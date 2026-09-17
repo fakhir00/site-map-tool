@@ -378,8 +378,6 @@ async def generate_hub_spoke(
     existing_keywords = list(keyword_map.values())
     
     import re
-    from datetime import datetime
-    current_year = datetime.now().year
 
     # Phase 1: Filter
 
@@ -404,12 +402,8 @@ async def generate_hub_spoke(
         if phrase_terms & negative_terms:
             continue
             
-        # Drop keywords containing past years (e.g., 2023, 2024, 2025 when we are in 2026)
-        year_match = re.search(r'\b(19\d{2}|20\d{2})\b', phrase_lower)
-        if year_match:
-            keyword_year = int(year_match.group(1))
-            if keyword_year < current_year:
-                continue
+        if not is_publishable_keyword(phrase_lower, min_words=2):
+            continue
 
         extras = []
         if kw.get("merged_from"):
@@ -979,6 +973,7 @@ async def get_keyword_bank(
             "done_at": bank.done_at.isoformat() if bank.done_at else None,
         }
         for bank, kw in rows
+        if _is_displayable_keyword(kw)
     ]
 
 from sqlalchemy import update, delete
@@ -1018,8 +1013,6 @@ async def bulk_action_keyword_bank(
 
 
 def _is_displayable_keyword(keyword: Keyword) -> bool:
-    if keyword.keyword_type == "top-pick":
-        return True
     return is_publishable_keyword(keyword.phrase, min_words=2)
 
 
