@@ -133,7 +133,7 @@ class HubWorkspaceTests(unittest.TestCase):
         errors = validate_architecture(_normalize_plan(payload, records), records)
         self.assertIn("two pages have the same declared search intent", errors)
 
-    def test_semantic_intent_conflict_is_merged_into_the_stronger_page(self):
+    def test_tool_and_reference_spoke_are_preserved_as_distinct_intents(self):
         records = normalize_keyword_records([
             {"phrase": "circuit diagram maker"},
             {"phrase": "circuit diagram online"},
@@ -151,7 +151,6 @@ class HubWorkspaceTests(unittest.TestCase):
                     "resolution": "Clarify the reference page.",
                 }],
             },
-            {"passed": True, "conflicts": []},
         ])
         with (
             patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
@@ -160,15 +159,16 @@ class HubWorkspaceTests(unittest.TestCase):
             mapping = asyncio.run(build_site_architecture(
                 records, context="Electronics design website", primary_keyword="circuit diagram maker",
             ))
-        self.assertEqual(provider.await_count, 3)
+        self.assertEqual(provider.await_count, 2)
         self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
-        self.assertEqual(mapping["spokes"], [])
+        self.assertEqual(mapping["master_hub"]["slug"], "/")
+        self.assertEqual(len(mapping["spokes"]), 1)
         symbol_decision = next(
             item for item in mapping["keyword_assignments"]
             if item["keyword"] == "circuit diagram symbols"
         )
-        self.assertEqual(symbol_decision["disposition"], "supporting")
-        self.assertEqual(symbol_decision["assigned_to"], "circuit diagram maker")
+        self.assertEqual(symbol_decision["disposition"], "page_target")
+        self.assertEqual(symbol_decision["assigned_to"], "circuit diagram symbols")
 
     def test_compact_provider_schema_builds_the_dashboard_mapping(self):
         compact = {
@@ -215,7 +215,7 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(validate_architecture(mapping, records), [])
         self.assertEqual(mapping["filtered_irrelevant_keywords"], ["celebrity news"])
 
-    def test_lunar_node_calculator_conflict_becomes_supporting_content(self):
+    def test_lunar_node_calculator_and_manual_guide_remain_separate(self):
         secondary = "how to calculate lunar nodes manually vs calculator"
         payload = {
             "site_strategy": "Lead with the calculator.",
@@ -243,14 +243,34 @@ class HubWorkspaceTests(unittest.TestCase):
             patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
             patch(
                 "nlp.hub_spoke_agent._achat_json",
-                new=AsyncMock(side_effect=[payload, conflict, {"passed": True, "conflicts": []}]),
+                new=AsyncMock(side_effect=[payload, conflict]),
             ),
         ):
             mapping = asyncio.run(build_site_architecture(records, primary_keyword="moon nodes calculator"))
-        self.assertEqual(mapping["spokes"], [])
+        self.assertEqual(mapping["master_hub"]["slug"], "/")
+        self.assertEqual(len(mapping["spokes"]), 1)
         decision = next(item for item in mapping["keyword_assignments"] if item["keyword"] == secondary)
-        self.assertEqual(decision["disposition"], "supporting")
-        self.assertEqual(decision["assigned_to"], "moon nodes calculator")
+        self.assertEqual(decision["disposition"], "page_target")
+        self.assertEqual(decision["assigned_to"], secondary)
+
+    def test_large_inventory_cannot_be_collapsed_into_one_page(self):
+        records = normalize_keyword_records([{"phrase": f"topic keyword {index}"} for index in range(36)])
+        payload = {
+            "master_target": "topic keyword 0",
+            "pages": [{
+                "target_keyword": "topic keyword 0", "search_intent": "serve every topic",
+                "article_title": "Topic", "page_type": "tool", "spoke_category": "Tools",
+            }],
+            "keyword_decisions": [
+                [item["phrase"], "page_target" if index == 0 else "supporting", "topic keyword 0", "h2", "Same topic."]
+                for index, item in enumerate(records)
+            ],
+        }
+        from nlp.hub_spoke_agent import _normalize_plan
+        plan = _normalize_plan(payload, records, "topic keyword 0")
+        errors = validate_architecture(plan, records, "topic keyword 0")
+        self.assertTrue(any("topical authority is too shallow" in error for error in errors))
+        self.assertTrue(any("absorbs 36 of 36" in error for error in errors))
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(
