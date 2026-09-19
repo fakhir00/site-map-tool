@@ -16,7 +16,13 @@ from app.hub_spoke.router import (
     _keyword_records,
     delete_hub_spoke_history,
 )
-from nlp.hub_spoke_agent import build_site_architecture, normalize_keyword_records, validate_architecture
+from nlp.hub_spoke_agent import (
+    _coerce_object,
+    build_site_architecture,
+    normalize_keyword_records,
+    validate_architecture,
+)
+from nlp.openrouter import _parse_json_payload
 
 
 def specialist_payload() -> dict:
@@ -54,6 +60,17 @@ def specialist_payload() -> dict:
 
 
 class HubWorkspaceTests(unittest.TestCase):
+    def test_provider_wrappers_and_json_strings_are_unwrapped(self):
+        payload = {"master_target": "circuit diagram maker", "pages": []}
+        self.assertEqual(_coerce_object({"result": json.dumps(payload)}), payload)
+        self.assertEqual(_coerce_object([payload]), payload)
+        self.assertIsNone(_coerce_object([{"fragment": 1}, {"fragment": 2}]))
+
+    def test_provider_prose_around_complete_json_is_parsed_as_one_object(self):
+        payload = {"master_target": "circuit diagram maker", "pages": [{"target_keyword": "x"}]}
+        content = "Here is the requested architecture:\n```json\n" + json.dumps(payload) + "\n```"
+        self.assertEqual(_parse_json_payload(content), payload)
+
     def test_keyword_metrics_survive_input_hygiene(self):
         body = KeywordWorkspaceRequest(
             keywords=["lunar age", "lunar age calculator"],
@@ -146,6 +163,51 @@ class HubWorkspaceTests(unittest.TestCase):
             ))
         self.assertEqual(provider.await_count, 4)
         self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
+
+    def test_compact_provider_schema_builds_the_dashboard_mapping(self):
+        compact = {
+            "site_strategy": "One creation hub and one reference page.",
+            "master_target": "circuit diagram maker",
+            "pages": [
+                {
+                    "target_keyword": "circuit diagram maker",
+                    "search_intent": "create a circuit diagram",
+                    "spoke_category": "Tools",
+                    "article_title": "Circuit Diagram Maker",
+                    "page_type": "tool",
+                    "content_brief": "Interactive creation tool.",
+                },
+                {
+                    "target_keyword": "circuit diagram symbols",
+                    "search_intent": "identify circuit symbols",
+                    "spoke_category": "Reference guides",
+                    "article_title": "Circuit Diagram Symbols",
+                    "page_type": "article",
+                    "content_brief": "Symbol reference guide.",
+                },
+            ],
+            "keyword_decisions": [
+                ["circuit diagram maker", "page_target", "circuit diagram maker", "title", "Main tool intent."],
+                ["circuit diagram online", "supporting", "circuit diagram maker", "feature", "Same creation goal."],
+                ["circuit diagram symbols", "page_target", "circuit diagram symbols", "title", "Reference intent."],
+                ["celebrity news", "discard", None, None, "Outside site scope."],
+            ],
+            "interlinking_strategy": "Link the tool and reference guide.",
+        }
+        records = normalize_keyword_records([
+            {"phrase": "circuit diagram maker"}, {"phrase": "circuit diagram online"},
+            {"phrase": "circuit diagram symbols"}, {"phrase": "celebrity news"},
+        ])
+        with (
+            patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
+            patch(
+                "nlp.hub_spoke_agent._achat_json",
+                new=AsyncMock(side_effect=[{"result": json.dumps(compact)}, {"passed": True, "conflicts": []}]),
+            ),
+        ):
+            mapping = asyncio.run(build_site_architecture(records, primary_keyword="circuit diagram maker"))
+        self.assertEqual(validate_architecture(mapping, records), [])
+        self.assertEqual(mapping["filtered_irrelevant_keywords"], ["celebrity news"])
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(

@@ -114,37 +114,57 @@ Rules:
 - Page titles, headings, questions, briefs, and link explanations may be newly written natural language.
 - Every spoke links to the master. The master links to every spoke. Add only useful lateral links.
 
-Return only one JSON object with this schema:
+Keep the response compact. Do not write full article outlines. Return only one JSON object with this schema:
 {{
   "site_strategy": "concise expert rationale",
-  "master_hub": {{
-    "article_title": "...", "target_keyword": "exact inventory keyword",
-    "search_intent": "specific unique intent", "ranking_role": "master_hub",
-    "slug": "/slug/", "page_type": "article or tool", "word_count_suggestion": 2500,
-    "content_brief": "...", "tool_functions": [],
-    "h2_sections": [{{"h2_heading": "...", "section_definition": "...", "targeted_keywords_placed_here": ["exact keyword"]}}],
-    "faq_schema_questions": [{{"question": "...", "targeted_keywords_placed_here": ["exact keyword"]}}],
-    "entity_terms": ["exact keyword"], "internal_links": ["exact page target"],
-    "writing_instructions": "..."
-  }},
-  "spokes": [{{
-    "spoke_category": "...", "article_title": "...", "target_keyword": "exact inventory keyword",
-    "search_intent": "specific unique intent", "ranking_role": "supporting_spoke or easy_win_spoke",
-    "slug": "/slug/", "page_type": "article or tool", "word_count_suggestion": 1800,
-    "content_brief": "...", "tool_functions": [],
-    "h2_sections": [{{"h2_heading": "...", "section_definition": "...", "targeted_keywords_placed_here": ["exact keyword"]}}],
-    "faq_schema_questions": [{{"question": "...", "targeted_keywords_placed_here": ["exact keyword"]}}],
-    "entity_terms": ["exact keyword"], "internal_links": ["exact page target"],
-    "writing_instructions": "..."
+  "master_target": "exact inventory keyword",
+  "pages": [{{
+    "target_keyword": "exact inventory keyword", "search_intent": "specific unique intent",
+    "spoke_category": "...", "article_title": "...", "page_type": "article or tool",
+    "content_brief": "one or two sentences explaining the page's exclusive scope"
   }}],
-  "keyword_assignments": [
-    {{"keyword": "exact keyword", "disposition": "page_target", "assigned_to": "same exact keyword", "placement": "title", "reason": "..."}},
-    {{"keyword": "exact keyword", "disposition": "supporting", "assigned_to": "exact page target", "placement": "h2, faq, entity, feature, or variation", "reason": "..."}},
-    {{"keyword": "exact keyword", "disposition": "discard", "assigned_to": null, "placement": null, "reason": "..."}}
+  "keyword_decisions": [
+    ["exact keyword", "page_target", "same exact keyword", "title", "short reason"],
+    ["exact keyword", "supporting", "exact page target", "h2/faq/entity/feature/variation", "short reason"],
+    ["exact keyword", "discard", null, null, "short reason"]
   ],
   "interlinking_strategy": "..."
 }}
+
+pages must contain the master and every spoke, once each. keyword_decisions must contain every inventory
+keyword once. Use the compact five-value arrays exactly as shown.
 """
+
+
+def _coerce_object(payload: Any) -> dict[str, Any] | None:
+    """Accept common provider wrappers without accepting incomplete fragment lists."""
+    value = payload
+    for _ in range(4):
+        if isinstance(value, dict):
+            for key in ("architecture", "result", "output", "data"):
+                nested = value.get(key)
+                if isinstance(nested, (dict, str)):
+                    value = nested
+                    break
+            else:
+                return value
+            continue
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], dict):
+            value = value[0]
+            continue
+        if isinstance(value, str):
+            candidate = value.strip()
+            if candidate.startswith("```json") and candidate.endswith("```"):
+                candidate = candidate[7:-3].strip()
+            elif candidate.startswith("```") and candidate.endswith("```"):
+                candidate = candidate[3:-3].strip()
+            try:
+                value = json.loads(candidate)
+                continue
+            except json.JSONDecodeError:
+                return None
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -195,11 +215,28 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
 
 def _normalize_plan(payload: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
     metrics = {item["phrase"]: item for item in records}
-    master = _clean_page(payload.get("master_hub") or {}, metrics)
+    if isinstance(payload.get("pages"), list):
+        raw_pages = [item for item in payload["pages"] if isinstance(item, dict)]
+        master_target = clean_phrase(str(payload.get("master_target") or ""))
+        master_raw = next(
+            (item for item in raw_pages if clean_phrase(str(item.get("target_keyword") or "")) == master_target),
+            raw_pages[0] if raw_pages else {},
+        )
+        spoke_raw = [item for item in raw_pages if item is not master_raw]
+    else:
+        master_raw = payload.get("master_hub") or {}
+        spoke_raw = payload.get("spokes") or []
+    master = _clean_page(master_raw, metrics)
     master["ranking_role"] = "master_hub"
-    spokes = [_clean_page(item, metrics) for item in payload.get("spokes") or [] if isinstance(item, dict)]
+    spokes = [_clean_page(item, metrics) for item in spoke_raw if isinstance(item, dict)]
     assignments = []
-    for raw in payload.get("keyword_assignments") or []:
+    raw_assignments = payload.get("keyword_assignments") or payload.get("keyword_decisions") or []
+    for raw in raw_assignments:
+        if isinstance(raw, (list, tuple)) and len(raw) >= 5:
+            raw = {
+                "keyword": raw[0], "disposition": raw[1], "assigned_to": raw[2],
+                "placement": raw[3], "reason": raw[4],
+            }
         if not isinstance(raw, dict):
             continue
         assignments.append({
@@ -303,7 +340,8 @@ Return {{"passed": true, "conflicts": []}} when no pair conflicts. Otherwise ret
         temperature=0,
         max_tokens=3000,
     )
-    if not isinstance(audit, dict) or not isinstance(audit.get("conflicts"), list):
+    audit = _coerce_object(audit)
+    if audit is None or not isinstance(audit.get("conflicts"), list):
         return ["the semantic cannibalization review returned an invalid result"]
     conflicts = audit["conflicts"]
     if audit.get("passed") is True and not conflicts:
@@ -412,8 +450,11 @@ async def build_site_architecture(
                 temperature=0.15,
                 max_tokens=16000,
             )
-            if not isinstance(payload, dict):
-                raise ValueError("the provider returned a non-object response")
+            payload = _coerce_object(payload)
+            if payload is None:
+                raise ValueError(
+                    "the provider response was incomplete or malformed JSON; retrying with the compact schema"
+                )
             plan = _normalize_plan(payload, normalized)
             last_errors = validate_architecture(plan, normalized)
             if not last_errors:

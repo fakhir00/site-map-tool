@@ -165,11 +165,25 @@ def _async_client(use_writing_model: bool = False) -> AsyncOpenAI:
 
 def _strip_code_fences(content: str) -> str:
     value = (content or "").strip()
-    if value.startswith("```json"):
+    if value.startswith("```json") and value.endswith("```"):
         return value[7:-3].strip()
-    if value.startswith("```"):
+    if value.startswith("```") and value.endswith("```"):
         return value[3:-3].strip()
     return value
+
+
+def _decode_embedded_json(content: str) -> Any:
+    """Decode the first complete JSON value even when a provider adds prose around it."""
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(content):
+        if character not in "[{":
+            continue
+        try:
+            value, _end = decoder.raw_decode(content[index:])
+            return value
+        except json.JSONDecodeError:
+            continue
+    raise json.JSONDecodeError("No complete JSON value found", content, 0)
 
 
 def _parse_json_payload(content: str) -> Any:
@@ -180,6 +194,13 @@ def _parse_json_payload(content: str) -> Any:
             return payload["data"]
         return payload
     except json.JSONDecodeError:
+        try:
+            payload = _decode_embedded_json(cleaned)
+            if isinstance(payload, dict) and "data" in payload:
+                return payload["data"]
+            return payload
+        except json.JSONDecodeError:
+            pass
         # If the JSON is truncated or malformed, try to salvage any complete {...} objects
         import re
         import ast
