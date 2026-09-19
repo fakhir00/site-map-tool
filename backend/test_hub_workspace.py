@@ -213,8 +213,14 @@ class HubWorkspaceTests(unittest.TestCase):
                 new=AsyncMock(side_effect=[{"result": json.dumps(compact)}, {"passed": True, "conflicts": []}]),
             ),
         ):
-            mapping = asyncio.run(build_site_architecture(records, primary_keyword="circuit diagram maker"))
+            mapping = asyncio.run(build_site_architecture(
+                records,
+                primary_keyword="circuit diagram maker",
+                site_domain="https://www.circuitDiagramMaker.com/tools",
+            ))
         self.assertEqual(validate_architecture(mapping, records), [])
+        self.assertEqual(mapping["site_domain"], "circuitdiagrammaker.com")
+        self.assertEqual(mapping["hubs"][0]["hub_title"], "MASTER HUB: circuitdiagrammaker.com")
         self.assertEqual(mapping["filtered_irrelevant_keywords"], ["celebrity news"])
 
     def test_lunar_node_calculator_and_manual_guide_remain_separate(self):

@@ -8,6 +8,7 @@ import math
 import re
 from difflib import SequenceMatcher
 from typing import Any
+from urllib.parse import urlparse
 
 from nlp.keywords import clean_phrase, is_publishable_keyword
 from nlp.openrouter import _achat_json, is_ai_configured
@@ -25,6 +26,31 @@ WRITING_STANDARDS = [
 
 class ArchitectureAgentError(RuntimeError):
     pass
+
+
+def _clean_domain(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    return (parsed.hostname or "").removeprefix("www.")
+
+
+def _domain_from_context(context: str) -> str:
+    try:
+        payload = json.loads(context) if context.strip() else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    for source in (payload, payload.get("audit_summary")):
+        if not isinstance(source, dict):
+            continue
+        for key in ("domain", "own_domain", "website_domain", "website_url", "site_url", "url"):
+            domain = _clean_domain(str(source.get(key) or ""))
+            if domain:
+                return domain
+    return ""
 
 
 def normalize_keyword_records(records: list[dict[str, Any]], primary_keyword: str = "") -> list[dict[str, Any]]:
@@ -727,7 +753,7 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
             label += f" [Include: {', '.join(include)}]"
         layers.setdefault(category, []).append(label)
     plan["hubs"] = [{
-        "hub_title": f"MASTER HUB: {master['article_title']}",
+        "hub_title": f"MASTER HUB: {plan.get('site_domain') or master_target}",
         "target_keyword": master_target,
         "h2_keywords": master["targeted_keywords"],
         "layers": layers,
@@ -756,6 +782,7 @@ async def build_site_architecture(
     *,
     context: str = "",
     primary_keyword: str = "",
+    site_domain: str = "",
 ) -> dict[str, Any]:
     normalized = normalize_keyword_records(records, primary_keyword)
     if not normalized:
@@ -798,6 +825,7 @@ async def build_site_architecture(
                     if last_errors:
                         break
             if not last_errors:
+                plan["site_domain"] = _clean_domain(site_domain) or _domain_from_context(context)
                 return _apply_assignments(plan)
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))
         except Exception as exc:

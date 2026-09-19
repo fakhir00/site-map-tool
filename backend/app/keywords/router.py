@@ -385,6 +385,7 @@ async def generate_hub_spoke(
             records,
             context=project.audit_summary or "",
             primary_keyword=main_kw,
+            site_domain=project.own_domain or project.domain,
         )
     except ArchitectureAgentError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

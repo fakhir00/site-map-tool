@@ -68,7 +68,9 @@ def _primary_keyword_from_context(context: str) -> str:
     return clean_phrase(str(payload.get("primary_keyword") or "")) if isinstance(payload, dict) else ""
 
 
-def _context_with_seed_keywords(context: str, seed_keywords: list[str]) -> str:
+def _context_with_seed_keywords(
+    context: str, seed_keywords: list[str], site_domain: str = "",
+) -> str:
     seeds = normalize_seed_keywords(seed_keywords)
     try:
         parsed = json.loads(context) if context.strip() else {}
@@ -80,6 +82,8 @@ def _context_with_seed_keywords(context: str, seed_keywords: list[str]) -> str:
     parsed["seed_keywords"] = seeds
     if seeds and not parsed.get("primary_keyword"):
         parsed["primary_keyword"] = seeds[0]
+    if site_domain:
+        parsed["domain"] = site_domain
     return json.dumps(parsed, indent=2)
 
 
@@ -168,7 +172,9 @@ async def import_project_keywords(
     return {
         "project_id": project.id, "project_name": project.name,
         "keywords": [item["phrase"] for item in keyword_data], "keyword_data": keyword_data,
-        "context": _context_with_seed_keywords(project.audit_summary or "", project.target_keywords or []),
+        "context": _context_with_seed_keywords(
+            project.audit_summary or "", project.target_keywords or [], project.own_domain or project.domain,
+        ),
     }
 
 
