@@ -22,7 +22,7 @@ type HistoryDetail = { id: string; project_id: string | null; title: string; con
 type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
-const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
+const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs|terms(?: and conditions)?|privacy(?: policy)?|disclaimer|legal|about us|contact us|cookie policy|refund policy|editorial policy|accessibility|support|faq)\b/i
 const shouldBuildTool = (keyword: string) => toolIntent.test(keyword) && !informationalIntent.test(keyword)
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const pageSlug = (keyword: string, supplied?: string) => supplied || `/${slugify(keyword)}/`
@@ -248,14 +248,14 @@ export function HubSpokeWorkspace() {
   const openTarget = (keyword: string, included: string[] = [], pageType?: string) => {
     const params = new URLSearchParams({ keyword })
     if (included.length) params.set('cluster', included.join('\n'))
-    const isTool = pageType ? pageType === 'tool' : shouldBuildTool(keyword)
+    const isTool = pageType === 'tool' && !informationalIntent.test(keyword)
     navigate(`${isTool ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
   }
 
   const renderPage = (spoke: string) => {
     const page = parseSpoke(spoke)
     const detail = mapping?.spokes?.find((item) => item.target_keyword.toLowerCase() === page.target.toLowerCase())
-    const isTool = detail?.page_type ? detail.page_type === 'tool' : shouldBuildTool(`${page.title} ${page.target}`)
+    const isTool = detail?.page_type === 'tool' && !informationalIntent.test(`${page.title} ${page.target}`)
     const Icon = isTool ? Wrench : FileText
     return (
       <button key={spoke} type="button" onClick={() => openTarget(page.target, page.included, detail?.page_type)} className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-cyan-600">

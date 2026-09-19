@@ -130,9 +130,17 @@ def _tool_volume_threshold(records: list[dict[str, Any]]) -> int:
 
 
 def _has_tool_intent(keyword: str) -> bool:
+    value = clean_phrase(keyword)
+    if re.search(
+        r"\b(terms(?: and conditions)?|privacy(?: policy)?|disclaimer|about us|contact us|cookie policy|"
+        r"refund policy|editorial policy|accessibility|legal|support|faq|guide|tutorial|meaning|"
+        r"interpretation|review|comparison|alternatives|article|history|how to)\b|\bvs\b",
+        value,
+    ):
+        return False
     return bool(re.search(
         r"\b(calculator|generator|checker|converter|builder|maker|simulator|estimator|planner|tool|software)\b",
-        clean_phrase(keyword),
+        value,
     ))
 
 

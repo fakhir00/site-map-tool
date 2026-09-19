@@ -317,9 +317,10 @@ class HubWorkspaceTests(unittest.TestCase):
     def test_spoke_tool_requires_enough_search_volume_for_the_effort(self):
         records = normalize_keyword_records([
             {"phrase": "widget calculator", "search_volume": 5000, "difficulty": 30},
-            {"phrase": "advanced widget calculator", "search_volume": 1200, "difficulty": 35},
+            {"phrase": "advanced widget calculator", "search_volume": 3000, "difficulty": 35},
             {"phrase": "tiny widget calculator", "search_volume": 20, "difficulty": 10},
             {"phrase": "widget calculation guide", "search_volume": 2000, "difficulty": 20},
+            {"phrase": "widget calculator terms and conditions", "search_volume": 5000, "difficulty": 15},
         ])
         metrics = {item["phrase"]: item for item in records}
         plan = {
@@ -328,6 +329,7 @@ class HubWorkspaceTests(unittest.TestCase):
                 _generated_page("advanced widget calculator", metrics),
                 _generated_page("tiny widget calculator", metrics),
                 _generated_page("widget calculation guide", metrics),
+                _generated_page("widget calculator terms and conditions", metrics),
             ],
         }
         plan = _apply_tool_roi_rules(plan, records)
@@ -335,6 +337,7 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(page_types["advanced widget calculator"], "tool")
         self.assertEqual(page_types["tiny widget calculator"], "article")
         self.assertEqual(page_types["widget calculation guide"], "article")
+        self.assertEqual(page_types["widget calculator terms and conditions"], "article")
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(
