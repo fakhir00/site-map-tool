@@ -236,14 +236,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(project['status'], 'complete')
         self.assertGreaterEqual(project['total_keywords'], 1)
 
-    def test_generate_does_not_pad_empty_ai_results_and_hub_repairs_invalid_ai_map(self):
+    def test_generate_does_not_pad_empty_ai_results_and_project_uses_specialist_architect(self):
         pid = self.project()
-        invalid_map = {
-            'hubs': [
-                {'hub_title': 'First', 'target_keyword': 'circuit diagram', 'layers': {}, 'sub_silos': []},
-                {'hub_title': 'Second', 'target_keyword': 'circuit diagram', 'layers': {}, 'sub_silos': []},
-            ]
-        }
         with (
             patch('app.keywords.router.generate_ai_keywords', new=AsyncMock(return_value=[])),
             patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value={
@@ -254,7 +248,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['total_keywords'], 0)
 
-        # Hub repair is a separate behavior and needs real candidate input.
+        # Architecture generation receives the project's real candidate inventory.
         with self.sessions() as db:
             db.add_all([
                 Keyword(
@@ -266,32 +260,36 @@ class WorkflowTests(unittest.TestCase):
             ])
             db.commit()
 
-        with (
-            patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value={
-                'core_terms': ['circuit'], 'negative_terms': [],
-            })),
-            patch('nlp.openrouter.cluster_hub_and_spoke', new=AsyncMock(return_value=invalid_map)),
-        ):
+        specialist_map = {
+            'hubs': [{'hub_title': 'Circuit Diagram', 'target_keyword': 'circuit diagram',
+                      'h2_keywords': [], 'layers': {'Topics': []}, 'sub_silos': []}],
+            'master_hub': {'article_title': 'Circuit Diagram', 'target_keyword': 'circuit diagram'},
+            'spokes': [], 'keyword_assignments': [],
+        }
+        with patch('nlp.hub_spoke_agent.build_site_architecture', new=AsyncMock(return_value=specialist_map)) as architect:
             response = self.client.post(f'/api/projects/{pid}/keywords/hub-spoke')
         self.assertEqual(response.status_code, 200, response.text)
         mapping = response.json()['clusters']
         self.assertEqual(len(mapping['hubs']), 1)
-        self.assertTrue(mapping['hubs'][0]['layers'] or mapping['hubs'][0]['sub_silos'])
+        self.assertEqual(len(architect.await_args.args[0]), 21)
 
-    def test_standalone_hub_workspace_cleans_and_builds_uploaded_list(self):
-        keywords = [f'circuit diagram topic {index}' for index in range(100)]
-        with (
-            patch('app.hub_spoke.router.is_ai_configured', return_value=False),
-            patch('nlp.openrouter.is_ai_configured', return_value=False),
-        ):
-            cleaned = self.client.post('/api/hub-spoke/clean', json={
-                'keywords': [*keywords, 'circuit diagram topic 1', '###'],
-                'context': 'Circuit design education for electronics students.',
-            })
-            self.assertEqual(cleaned.status_code, 200, cleaned.text)
-            self.assertEqual(cleaned.json()['count'], 100)
+    def test_standalone_hub_workspace_builds_and_saves_specialist_plan(self):
+        keywords = ['circuit diagram maker', 'circuit diagram symbols', 'celebrity news']
+        specialist_map = {
+            'hubs': [{'hub_title': 'Circuit Diagram Maker', 'target_keyword': 'circuit diagram maker',
+                      'h2_keywords': [], 'layers': {'Reference': ['Circuit Diagram Symbols (Target Keyword: circuit diagram symbols)']}, 'sub_silos': []}],
+            'master_hub': {'article_title': 'Circuit Diagram Maker', 'target_keyword': 'circuit diagram maker'},
+            'spokes': [{'article_title': 'Circuit Diagram Symbols', 'target_keyword': 'circuit diagram symbols'}],
+            'keyword_assignments': [
+                {'keyword': 'circuit diagram maker', 'disposition': 'page_target'},
+                {'keyword': 'circuit diagram symbols', 'disposition': 'page_target'},
+                {'keyword': 'celebrity news', 'disposition': 'discard'},
+            ],
+            'discarded_keywords': [{'keyword': 'celebrity news', 'reason': 'Off topic'}],
+        }
+        with patch('app.hub_spoke.router.build_site_architecture', new=AsyncMock(return_value=specialist_map)):
             built = self.client.post('/api/hub-spoke/build', json={
-                'keywords': cleaned.json()['keywords'],
+                'keywords': keywords,
                 'context': 'Circuit design education for electronics students.',
             })
         self.assertEqual(built.status_code, 200, built.text)
@@ -300,7 +298,7 @@ class WorkflowTests(unittest.TestCase):
         history = self.client.get('/api/hub-spoke/history')
         self.assertEqual(history.status_code, 200, history.text)
         self.assertEqual(history.json()[0]['id'], history_id)
-        self.assertEqual(history.json()[0]['keyword_count'], 100)
+        self.assertEqual(history.json()[0]['keyword_count'], 2)
         restored = self.client.get(f'/api/hub-spoke/history/{history_id}')
         self.assertEqual(restored.status_code, 200, restored.text)
         self.assertEqual(restored.json()['context'], 'Circuit design education for electronics students.')

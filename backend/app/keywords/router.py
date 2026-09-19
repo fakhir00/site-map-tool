@@ -353,356 +353,50 @@ async def generate_hub_spoke(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _assert_owns_project(project_id, current_user.id, db)
-    
-    # We need to know if the keyword came from an AI recommendation + tier info
-    from app.models import Keyword, KeywordUrl, Url
-    q_existing = (
-        select(
-            Keyword.phrase, Keyword.keyword_type, Url.source_domain,
-            Keyword.tier, Keyword.article_title, Keyword.h_tags,
-            Keyword.merged_from, Keyword.cluster_group_id, Keyword.sub_silo_id,
-        )
-        .outerjoin(KeywordUrl, Keyword.id == KeywordUrl.keyword_id)
-        .outerjoin(Url, KeywordUrl.url_id == Url.id)
-        .where(Keyword.project_id == project.id)
-        .order_by(Keyword.frequency.desc())
-    )
-    result = await db.execute(q_existing)
-    
-    keyword_map = {}
-    for phrase, kw_type, domain, tier, article_title, h_tags, merged_from, cluster_group_id, sub_silo_id in result.all():
-        if phrase not in keyword_map:
-            keyword_map[phrase] = {
-                "phrase": phrase, "type": kw_type, "is_ai": False,
-                "tier": tier, "article_title": article_title,
-                "h_tags": h_tags, "merged_from": merged_from,
-                "cluster_group_id": cluster_group_id,
-                "sub_silo_id": sub_silo_id,
-            }
-        if domain == "AI Recommendations":
-            keyword_map[phrase]["is_ai"] = True
-            
-    existing_keywords = list(keyword_map.values())
-    
-    import re
 
-    # Phase 1: Filter
-
-    h2_map = {}
-
-    from nlp.openrouter import generate_core_domain_terms
-    from nlp.keywords import normalize_seed_keywords
-    seed_keywords = normalize_seed_keywords(project.target_keywords)
-    semantic_res = await generate_core_domain_terms(seed_keywords, project.audit_summary)
-    topic_terms = set(semantic_res.get("core_terms", [])) | seed_keyword_terms(seed_keywords)
-    negative_terms = set(semantic_res.get("negative_terms", []))
-    from nlp.keywords import is_topic_relevant_keyword
-    
-    clean_candidates = []
-    for kw in existing_keywords:
-        phrase_lower = kw["phrase"].lower()
-        if not is_topic_relevant_keyword(phrase_lower, seed_keywords, topic_terms, negative_terms):
-            continue
-        
-        # Retroactive garbage collection: block any keywords containing negative terms
-        phrase_terms = set(re.findall(r'[a-z0-9]+', phrase_lower))
-        if phrase_terms & negative_terms:
-            continue
-            
-        if not is_publishable_keyword(phrase_lower, min_words=2):
-            continue
-
-        extras = []
-        if kw.get("merged_from"):
-            extras.extend(kw["merged_from"])
-        if kw.get("h_tags"):
-            extras.extend(kw["h_tags"])
-        if extras:
-            h2_map[phrase_lower] = extras
-            
-        clean_candidates.append(kw)
-
-    if not clean_candidates:
-        raise HTTPException(status_code=400, detail="No valid parent keywords found after filtering.")
-
-    # Phase 2: Send to LLM
-    # Keep placement decisions (H2 vs FAQ vs entity) inside one coherent plan.
-    top_candidates = clean_candidates[:500]
-    remaining = clean_candidates[500:]
-    
-    clean_keywords_for_llm = [
-        {"phrase": kw["phrase"], "type": kw["type"], "is_ai": kw["is_ai"]}
-        for kw in top_candidates
-    ]
-
-    # Phase 3: The AI Skeleton
-    from nlp.openrouter import cluster_hub_and_spoke
-    main_kw = seed_keywords[0] if seed_keywords else project.name
-    clusters = await cluster_hub_and_spoke(clean_keywords_for_llm, main_keyword=main_kw, audit_summary=project.audit_summary)
-    if not clusters:
-        raise HTTPException(status_code=500, detail="Failed to cluster keywords")
-    detailed_architecture = isinstance(clusters.get("master_hub"), dict) and isinstance(clusters.get("spokes"), list)
-
-    # Phase 4: Auto-Map Remaining Keywords
-    if remaining and not detailed_architecture and "hubs" in clusters and isinstance(clusters["hubs"], list) and len(clusters["hubs"]) > 0:
-        from nlp.keywords import phrase_similarity
-        import re
-        
-        placed_nodes = []
-        
-        for h_idx, hub in enumerate(clusters["hubs"]):
-            # Do not place things randomly into NOISE bin unless explicitly needed
-            if "NOISE" in hub.get("hub_title", "").upper():
-                continue
-                
-            layers = hub.get("layers", {})
-            for layer_name, spokes in layers.items():
-                for spoke in spokes:
-                    match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
-                    if match:
-                        placed_nodes.append({
-                            "hub_idx": h_idx,
-                            "sub_silo_idx": None,
-                            "layer_name": layer_name,
-                            "target_kw": match.group(1).strip()
-                        })
-            
-            sub_silos = hub.get("sub_silos", [])
-            for s_idx, silo in enumerate(sub_silos):
-                silo_layers = silo.get("layers", {})
-                for layer_name, spokes in silo_layers.items():
-                    for spoke in spokes:
-                        match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
-                        if match:
-                            placed_nodes.append({
-                                "hub_idx": h_idx,
-                                "sub_silo_idx": s_idx,
-                                "layer_name": layer_name,
-                                "target_kw": match.group(1).strip()
-                            })
-
-        for kw in remaining:
-            phrase = kw["phrase"]
-            if not placed_nodes:
-                continue
-            best_target = max(
-                placed_nodes,
-                key=lambda node: phrase_similarity(phrase, node["target_kw"]),
-            )["target_kw"]
-            # The editorial plan is capped at 20 spokes. Keywords outside the
-            # model batch enrich the closest existing article instead of
-            # silently creating hundreds of extra URLs.
-            h2_map.setdefault(best_target.lower(), []).append(phrase)
-
-    # Phase 5: Semantic Deduplication (The Bouncer)
-    def semantic_tokenize(phrase: str) -> list[str]:
-        slug = re.sub(r'[^\w]+', '-', phrase.lower()).strip('-')
-        tokens = slug.split('-')
-        
-        # Layer 2: Synonym Normalization
-        synonym_map = {
-            "guide": "tutorial",
-            "understanding": "meaning",
-            "meanings": "meaning",
-            "test": "quiz",
-            "software": "maker",
-            "tool": "maker",
-            "tools": "maker",
-            "best": "top",
-            "creator": "maker",
-            "creators": "maker",
-            "builder": "maker",
-            "builders": "maker",
-            "generator": "maker",
-            "generators": "maker",
-            "service": "agency",
-            "services": "agency",
-            "company": "agency",
-            "companies": "agency",
-            "online": "web"
-        }
-        
-        stopwords = {
-            "how", "to", "use", "for", "and", "vs", "the", "of", "a", "an", "is", "what", "with", "in", "on", "at"
-        }
-        
-        filtered = []
-        for t in tokens:
-            if not t or t in stopwords:
-                continue
-                
-            # Basic stemming: remove trailing 's' (unless it ends in 'ss')
-            if t.endswith('s') and not t.endswith('ss') and len(t) > 3:
-                t = t[:-1]
-                
-            # Apply synonym map
-            mapped_t = synonym_map.get(t, t)
-            filtered.append(mapped_t)
-                
-        # Layer 1: Sorted to catch swapped words
-        return sorted(filtered)
-
-    seen_tokens_map = {}
-    
-    def clean_hub_title(title: str) -> str:
-        title = re.sub(r'^(📍 MASTER HUB:|🪐 SUB-SILO \d+:)\s*', '', title)
-        return title.split('—')[0].strip()
-
-    def check_duplicate(phrase: str) -> str | None:
-        """Returns the original phrase of the survivor if duplicate, else None."""
-        tokens = semantic_tokenize(phrase)
-        if not tokens:
-            return None
-            
-        phrase_normalized = " ".join(tokens)
-        
-        for seen_tokens, survivor_phrase in seen_tokens_map.items():
-            seen_normalized = " ".join(seen_tokens)
-            
-            # Layer 1 & Layer 2: Exact match after swapping and synonyms
-            if phrase_normalized == seen_normalized:
-                return survivor_phrase
-                
-            # Layer 3: strong token overlap. Subset matching was too aggressive
-            # and collapsed distinct long-tail search intents.
-            set1 = set(tokens)
-            set2 = set(seen_tokens)
-            intersection = set1.intersection(set2)
-            union = set1.union(set2)
-            if union and (len(intersection) / len(union)) >= 0.80:
-                return survivor_phrase
-                
-        return None
-
-    def add_to_seen(phrase: str):
-        tokens = semantic_tokenize(phrase)
-        if tokens:
-            seen_tokens_map[tuple(tokens)] = phrase
-
-    # The detailed architect has already assigned H2, FAQ, and entity terms.
-    # The old card-only dedup pass would desynchronise those assignments.
-    if not detailed_architecture and clusters and "hubs" in clusters and isinstance(clusters["hubs"], list):
-        def inject_h2s(spoke_str: str, target_kw: str) -> str:
-            extras = h2_map.get(target_kw.lower(), [])
-            if extras:
-                # Deduplicate H2s uniquely to avoid repetitive appends
-                unique_extras = list(dict.fromkeys(extras))
-                if "[Include:" in spoke_str:
-                    spoke_str = re.sub(r'\]\s*$', f", {', '.join(unique_extras)}]", spoke_str)
-                else:
-                    spoke_str += f" [Include: {', '.join(unique_extras)}]"
-            return spoke_str
-
-        surviving_spokes_map = [] # stores dicts: {"node": layer_dict, "layer_name": name, "spoke": str, "target_kw": str}
-        
-        for hub in clusters["hubs"]:
-            if "layers" in hub and isinstance(hub["layers"], dict):
-                for layer_name, spokes in hub["layers"].items():
-                    hub["layers"][layer_name] = [] # clear for pass 2
-                    for spoke in spokes:
-                        match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
-                        if match:
-                            target_kw = match.group(1).strip()
-                            title = spoke[:match.start()].strip()
-                            survivor_target = check_duplicate(target_kw)
-                            survivor_title = check_duplicate(title)
-                            survivor = survivor_target or survivor_title
-                            if not survivor:
-                                add_to_seen(target_kw)
-                                add_to_seen(title)
-                                surviving_spokes_map.append({"node": hub["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": target_kw})
-                            else:
-                                if survivor.lower() not in h2_map:
-                                    h2_map[survivor.lower()] = []
-                                h2_map[survivor.lower()].append(target_kw.title())
-                        else:
-                            survivor = check_duplicate(spoke)
-                            if not survivor:
-                                add_to_seen(spoke)
-                                surviving_spokes_map.append({"node": hub["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": spoke})
-                            else:
-                                if survivor.lower() not in h2_map:
-                                    h2_map[survivor.lower()] = []
-                                h2_map[survivor.lower()].append(spoke.title())
-            
-            if "sub_silos" in hub and isinstance(hub["sub_silos"], list):
-                for silo in hub["sub_silos"]:
-                    if "layers" in silo and isinstance(silo["layers"], dict):
-                        for layer_name, spokes in silo["layers"].items():
-                            silo["layers"][layer_name] = [] # clear for pass 2
-                            for spoke in spokes:
-                                match = re.search(r'\(Target Keyword:\s*(.*?)\)', spoke, re.IGNORECASE)
-                                if match:
-                                    target_kw = match.group(1).strip()
-                                    title = spoke[:match.start()].strip()
-                                    survivor_target = check_duplicate(target_kw)
-                                    survivor_title = check_duplicate(title)
-                                    survivor = survivor_target or survivor_title
-                                    if not survivor:
-                                        add_to_seen(target_kw)
-                                        add_to_seen(title)
-                                        surviving_spokes_map.append({"node": silo["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": target_kw})
-                                    else:
-                                        if survivor.lower() not in h2_map:
-                                            h2_map[survivor.lower()] = []
-                                        h2_map[survivor.lower()].append(target_kw.title())
-                                else:
-                                    survivor = check_duplicate(spoke)
-                                    if not survivor:
-                                        add_to_seen(spoke)
-                                        surviving_spokes_map.append({"node": silo["layers"], "layer_name": layer_name, "spoke": spoke, "target_kw": spoke})
-                                    else:
-                                        if survivor.lower() not in h2_map:
-                                            h2_map[survivor.lower()] = []
-                                        h2_map[survivor.lower()].append(spoke.title())
-
-        # Pass 2: Inject all H2s into surviving spokes
-        for s in surviving_spokes_map:
-            s["node"][s["layer_name"]].append(inject_h2s(s["spoke"], s["target_kw"]))
-
-    from nlp.openrouter import _validate_hub_and_spoke, build_hub_spoke_fallback
-    allowed_keywords = {
-        ("entity:" if kw.get("type") == "entity" else "") + kw["phrase"]
-        for kw in existing_keywords
-    }
-    validation_error = _validate_hub_and_spoke(
-        clusters,
-        len(existing_keywords),
-        main_keyword=main_kw,
-        allowed_keywords=allowed_keywords,
-    )
-    if validation_error:
-        clusters = build_hub_spoke_fallback(clean_candidates, main_kw)
-        validation_error = _validate_hub_and_spoke(
-            clusters,
-            len(clean_candidates),
-            main_keyword=main_kw,
-            allowed_keywords={
-                ("entity:" if kw.get("type") == "entity" else "") + kw["phrase"]
-                for kw in clean_candidates
-            },
-        )
-        if validation_error:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Unable to build a constraint-safe hub map: {validation_error}",
-            )
-
+    # One SEO architecture agent now owns relevance, keyword disposition,
+    # page intent, cannibalization checks, and the final hub-spoke map.
     from app.models import HubSpokeCluster
-    q_cluster = select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id)
-    res_cluster = await db.execute(q_cluster)
-    cluster_record = res_cluster.scalar_one_or_none()
-    
+    from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture
+    result = await db.execute(
+        select(
+            Keyword.phrase,
+            Keyword.keyword_type,
+            Keyword.search_volume,
+            Keyword.difficulty,
+            Keyword.frequency,
+        )
+        .where(Keyword.project_id == project.id)
+        .order_by(Keyword.frequency.desc(), Keyword.created_at.asc())
+        .limit(5000)
+    )
+    records = [{
+        "phrase": phrase,
+        "type": keyword_type,
+        "search_volume": search_volume,
+        "difficulty": difficulty,
+        "frequency": frequency,
+    } for phrase, keyword_type, search_volume, difficulty, frequency in result.all()]
+    if not records:
+        raise HTTPException(status_code=400, detail="This project has no keywords to architect.")
+    main_kw = (project.target_keywords or [project.name])[0]
+    try:
+        clusters = await build_site_architecture(
+            records,
+            context=project.audit_summary or "",
+            primary_keyword=main_kw,
+        )
+    except ArchitectureAgentError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    cluster_result = await db.execute(select(HubSpokeCluster).where(HubSpokeCluster.project_id == project.id))
+    cluster_record = cluster_result.scalar_one_or_none()
     if cluster_record:
         cluster_record.mapping_data = clusters
     else:
-        cluster_record = HubSpokeCluster(project_id=project.id, mapping_data=clusters)
-        db.add(cluster_record)
-        
+        db.add(HubSpokeCluster(project_id=project.id, mapping_data=clusters))
     await db.commit()
-    return {"message": "Clustered successfully", "clusters": clusters}
-
-
+    return {"message": "SEO architecture created", "clusters": clusters}
 @router.get("/{project_id}/keywords/hub-spoke")
 async def get_hub_spoke(
     project_id: uuid.UUID,

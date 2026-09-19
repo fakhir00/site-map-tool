@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Clock3, Download, FileText, FileUp, Layers3, Loader2, Network, Sparkles, Trash2, Wrench, X } from 'lucide-react'
+import { ArrowRight, Clock3, Download, FileText, FileUp, Layers3, Loader2, Network, Sparkles, Wrench, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -15,7 +15,8 @@ type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: nu
 type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
-type Mapping = { hubs: Hub[]; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
+type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
+type Mapping = { hubs: Hub[]; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
 type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
 type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
@@ -125,7 +126,7 @@ export function HubSpokeWorkspace() {
   const [contextOpen, setContextOpen] = useState(false)
   const [context, setContext] = useState('')
   const [mapping, setMapping] = useState<Mapping | null>(null)
-  const [busy, setBusy] = useState<'clean' | 'build' | 'load' | null>(null)
+  const [busy, setBusy] = useState<'build' | 'load' | null>(null)
   const [error, setError] = useState('')
   const [sourceProjectId, setSourceProjectId] = useState<string | null>(null)
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
@@ -206,23 +207,11 @@ export function HubSpokeWorkspace() {
     setError('')
   }
 
-  const removeNoise = async () => {
-    setBusy('clean'); setError('')
-    try {
-      const result = await api.postAI<{ keywords: string[]; keyword_data?: KeywordMetric[] }>('/hub-spoke/clean', { keywords, keyword_data: keywordData, context })
-      setCleaned(result.keywords)
-      setKeywordData(result.keyword_data || keywordData.filter((item) => result.keywords.includes(item.phrase)))
-      setMapping(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Keyword cleaning failed')
-    } finally { setBusy(null) }
-  }
-
   const build = async () => {
     setBusy('build'); setError('')
     try {
       const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
-        keywords: cleaned.length ? cleaned : keywords,
+        keywords,
         keyword_data: keywordData,
         context,
         project_id: sourceProjectId,
@@ -305,7 +294,7 @@ export function HubSpokeWorkspace() {
     <div className="space-y-6">
       <section>
         <h2 className="text-2xl font-bold">Hub Spoke</h2>
-        <p className="mt-1 text-sm text-slate-500">Upload keyword research, remove noise with your context, then build a cannibalization-safe content architecture.</p>
+        <p className="mt-1 text-sm text-slate-500">Give the SEO architecture specialist your site context and keyword research. It will use, consolidate, or discard every keyword and build a cannibalization-safe plan.</p>
       </section>
 
       {history.length > 0 && (
@@ -359,8 +348,7 @@ export function HubSpokeWorkspace() {
 
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={() => setContextOpen((value) => !value)}><Sparkles className="h-4 w-4" />Add context</Button>
-          <Button disabled={!keywords.length || busy !== null} onClick={removeNoise}><Trash2 className="h-4 w-4" />{busy === 'clean' ? 'Cleaning…' : 'Remove noise'}</Button>
-          <Button disabled={!keywords.length || busy !== null} onClick={build}><Network className="h-4 w-4" />{busy === 'build' ? 'Building…' : 'Make hub spoke'}</Button>
+          <Button disabled={!keywords.length || busy !== null} onClick={build}><Network className="h-4 w-4" />{busy === 'build' ? 'SEO specialist is planning…' : 'Build specialist architecture'}</Button>
         </div>
 
         {contextOpen && (
@@ -370,7 +358,7 @@ export function HubSpokeWorkspace() {
               className="min-h-40 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900"
               value={context}
               onChange={(event) => setContext(event.target.value)}
-              placeholder="Describe the website, product, target audience, search intent, competitors, capabilities, and topics that must be excluded."
+              placeholder="Describe the site, product, audience, business goals, real capabilities, existing pages, and hard topic boundaries. The specialist will infer and separate search intents."
             />
           </div>
         )}
@@ -381,8 +369,8 @@ export function HubSpokeWorkspace() {
       {cleaned.length > 0 && (
         <Card className="p-6">
           <div className="flex items-center justify-between gap-4">
-            <div><h3 className="font-bold">Clean keyword list</h3><p className="text-sm text-slate-500">{cleaned.length.toLocaleString()} relevant keywords remain</p></div>
-            <Button variant="secondary" onClick={() => downloadText('cleaned-keywords.txt', cleaned.join('\n'))}><Download className="h-4 w-4" />Download cleaned list</Button>
+            <div><h3 className="font-bold">Keywords used by the specialist</h3><p className="text-sm text-slate-500">{cleaned.length.toLocaleString()} keywords became page targets or supporting terms</p></div>
+            <Button variant="secondary" onClick={() => downloadText('usable-keywords.txt', cleaned.join('\n'))}><Download className="h-4 w-4" />Download usable keywords</Button>
           </div>
           <div className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-50 p-4 text-sm dark:bg-slate-900/60">{cleaned.map((keyword) => <div key={keyword}>{keyword}</div>)}</div>
         </Card>
@@ -413,6 +401,7 @@ export function HubSpokeWorkspace() {
             </Card>
           ))}
           {mapping.interlinking_strategy && <Card className="border-emerald-200 bg-emerald-50/70 p-5 dark:border-emerald-900 dark:bg-emerald-950/20"><p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Interlinking strategy</p><p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{mapping.interlinking_strategy}</p></Card>}
+          {mapping.discarded_keywords && mapping.discarded_keywords.length > 0 && <Card className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Discarded by the SEO specialist</p><p className="mt-1 text-sm text-slate-500">These queries do not need a page or supporting placement in this architecture.</p><div className="mt-3 max-h-72 space-y-2 overflow-auto">{mapping.discarded_keywords.map((item) => <div key={item.keyword} className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-900"><span className="font-semibold">{item.keyword}</span><span className="ml-2 text-slate-500">— {item.reason}</span></div>)}</div></Card>}
         </section>
       )}
     </div>

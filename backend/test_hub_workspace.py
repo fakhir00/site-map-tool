@@ -1,5 +1,6 @@
-import unittest
+import asyncio
 import json
+import unittest
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -7,21 +8,53 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 
 from app.hub_spoke.router import (
-    _basic_clean,
-    _clean_with_context,
-    _context_with_seed_keywords,
-    _keyword_records,
-    _hub_spoke_context,
-    _mechanical_relevance_filter,
     KeywordMetricInput,
     KeywordWorkspaceRequest,
+    _basic_clean,
+    _context_with_seed_keywords,
+    _hub_spoke_context,
+    _keyword_records,
     delete_hub_spoke_history,
 )
-from nlp.openrouter import _validate_hub_and_spoke
+from nlp.hub_spoke_agent import build_site_architecture, normalize_keyword_records, validate_architecture
+
+
+def specialist_payload() -> dict:
+    return {
+        "site_strategy": "Build one tool hub and a separate educational spoke.",
+        "master_hub": {
+            "article_title": "Circuit Diagram Maker",
+            "target_keyword": "circuit diagram maker",
+            "search_intent": "create a circuit diagram online",
+            "ranking_role": "master_hub",
+            "page_type": "tool",
+            "content_brief": "Let users create circuit diagrams.",
+            "h2_sections": [], "faq_schema_questions": [], "entity_terms": [],
+            "internal_links": ["circuit diagram symbols"], "tool_functions": ["diagram editor"],
+        },
+        "spokes": [{
+            "spoke_category": "Reference guides",
+            "article_title": "Circuit Diagram Symbols",
+            "target_keyword": "circuit diagram symbols",
+            "search_intent": "identify circuit diagram symbols",
+            "ranking_role": "supporting_spoke",
+            "page_type": "article",
+            "content_brief": "Explain common symbols.",
+            "h2_sections": [], "faq_schema_questions": [], "entity_terms": [],
+            "internal_links": ["circuit diagram maker"], "tool_functions": [],
+        }],
+        "keyword_assignments": [
+            {"keyword": "circuit diagram maker", "disposition": "page_target", "assigned_to": "circuit diagram maker", "placement": "title", "reason": "Central creation intent."},
+            {"keyword": "circuit diagram online", "disposition": "supporting", "assigned_to": "circuit diagram maker", "placement": "feature", "reason": "Same creation intent."},
+            {"keyword": "circuit diagram symbols", "disposition": "page_target", "assigned_to": "circuit diagram symbols", "placement": "title", "reason": "Distinct reference intent."},
+            {"keyword": "celebrity news", "disposition": "discard", "assigned_to": None, "placement": None, "reason": "Outside the electronics site scope."},
+        ],
+        "interlinking_strategy": "The reference spoke links to the creation tool and the hub links back.",
+    }
 
 
 class HubWorkspaceTests(unittest.TestCase):
-    def test_keyword_metrics_survive_cleaning(self):
+    def test_keyword_metrics_survive_input_hygiene(self):
         body = KeywordWorkspaceRequest(
             keywords=["lunar age", "lunar age calculator"],
             keyword_data=[
@@ -29,11 +62,12 @@ class HubWorkspaceTests(unittest.TestCase):
                 KeywordMetricInput(phrase="lunar age calculator", search_volume=900, difficulty=18),
             ],
         )
-        records = _keyword_records(body, ["lunar age calculator"])
-        self.assertEqual(records[0]["search_volume"], 900)
-        self.assertEqual(records[0]["difficulty"], 18)
+        records = _keyword_records(body)
+        lookup = {item["phrase"]: item for item in records}
+        self.assertEqual(lookup["lunar age calculator"]["search_volume"], 900)
+        self.assertEqual(lookup["lunar age calculator"]["difficulty"], 18)
 
-    def test_competitor_profile_is_removed_from_hub_context(self):
+    def test_competitor_profile_is_removed_from_site_context(self):
         context = _hub_spoke_context(json.dumps({
             "primary_keyword": "lunar age calculator",
             "competitor_profile": "broad astronomy sites",
@@ -43,124 +77,98 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertNotIn("competitor_profile", parsed)
         self.assertEqual(parsed["primary_keyword"], "lunar age calculator")
 
-    def test_basic_clean_handles_csv_text_and_duplicates(self):
+    def test_basic_clean_only_normalizes_and_deduplicates(self):
         self.assertEqual(
             _basic_clean(['Keyword,Volume', '"circuit diagram",100', 'circuit diagram', '###']),
             ['keyword', 'circuit diagram'],
         )
 
-    def test_uploaded_keywords_build_without_ai(self):
-        from nlp.openrouter import cluster_hub_and_spoke
-        import asyncio
-
-        keywords = [{"phrase": f"circuit diagram topic {index}", "type": "long-tail"} for index in range(100)]
-        with patch("nlp.openrouter.is_ai_configured", return_value=False):
-            mapping = asyncio.run(cluster_hub_and_spoke(keywords, "circuit diagram"))
-        self.assertIsNotNone(mapping)
-        self.assertIsNone(_validate_hub_and_spoke(
-            mapping,
-            len(keywords),
-            "circuit diagram",
-            {item["phrase"] for item in keywords},
-        ))
-
-    def test_context_cleaner_strictly_removes_other_topics_without_ai(self):
-        import asyncio
-
-        with patch("app.hub_spoke.router.is_ai_configured", return_value=False):
-            cleaned = asyncio.run(_clean_with_context(
-                ["circuit diagram symbols", "electronic circuit tutorial", "car insurance quotes", "celebrity news"],
-                "Circuit diagram software and electronics education for engineering students.",
-            ))
-        self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
-
-    def test_mechanical_filter_rejects_an_unrelated_keyword_group(self):
-        cleaned = _mechanical_relevance_filter(
-            [
-                "circuit diagram maker",
-                "electronic circuit symbols",
-                "circuit drawing software",
-                "car insurance quotes",
-                "cheap vehicle insurance",
-            ],
-            "A circuit design tool for electronics students and engineers.",
-        )
-        self.assertEqual(cleaned, [
-            "circuit diagram maker",
-            "electronic circuit symbols",
-            "circuit drawing software",
+    def test_specialist_accounts_for_every_keyword_and_exposes_discards(self):
+        records = normalize_keyword_records([
+            {"phrase": "circuit diagram maker"},
+            {"phrase": "circuit diagram online"},
+            {"phrase": "circuit diagram symbols"},
+            {"phrase": "celebrity news"},
         ])
-
-    def test_mechanical_filter_runs_after_ai_selection(self):
-        import asyncio
-
-        candidates = ["circuit diagram symbols", "electronic circuit tutorial", "celebrity news today"]
         with (
-            patch("app.hub_spoke.router.is_ai_configured", return_value=True),
-            patch("app.hub_spoke.router._achat_json", new=AsyncMock(return_value={"keywords": candidates})),
+            patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
+            patch(
+                "nlp.hub_spoke_agent._achat_json",
+                new=AsyncMock(side_effect=[specialist_payload(), {"passed": True, "conflicts": []}]),
+            ),
         ):
-            cleaned = asyncio.run(_clean_with_context(
-                candidates,
-                "Circuit diagram software and electronics education.",
+            mapping = asyncio.run(build_site_architecture(
+                records, context="Electronics design website", primary_keyword="circuit diagram maker",
             ))
-        self.assertEqual(cleaned, ["circuit diagram symbols", "electronic circuit tutorial"])
+        self.assertEqual(validate_architecture(mapping, records), [])
+        self.assertEqual(mapping["filtered_irrelevant_keywords"], ["celebrity news"])
+        self.assertIn("circuit diagram online", mapping["master_hub"]["targeted_keywords"])
+        self.assertEqual(len(mapping["hubs"][0]["layers"]["Reference guides"]), 1)
 
-    def test_explicit_primary_keyword_cannot_be_redefined_by_generic_age_terms(self):
-        context = json.dumps({
-            "primary_keyword": "lunar age calculator",
-            "industry_niche": "lunar calendar and age conversion tools",
-            "target_audience": ["people researching age systems in China and Korea"],
-        })
-        unrelated = [
-            "korean age calculator", "korean age system", "international age",
-            "age months calculator", "age milliseconds calculator", "dogs age", "age cat",
-        ]
-        self.assertEqual(_mechanical_relevance_filter(unrelated, context), [])
-
-        mixed = [
-            "lunar age calculator", "how lunar age works", "korean lunar age",
-            "korean age calculator", "age milliseconds calculator", "dogs age",
-        ]
-        self.assertEqual(_mechanical_relevance_filter(mixed, context), [
-            "lunar age calculator", "how lunar age works", "korean lunar age",
+    def test_duplicate_intents_are_rejected(self):
+        records = normalize_keyword_records([
+            {"phrase": "circuit diagram maker"}, {"phrase": "circuit diagram symbols"},
+            {"phrase": "circuit diagram online"}, {"phrase": "celebrity news"},
         ])
+        payload = specialist_payload()
+        payload["spokes"][0]["search_intent"] = payload["master_hub"]["search_intent"]
+        from nlp.hub_spoke_agent import _normalize_plan
+        errors = validate_architecture(_normalize_plan(payload, records), records)
+        self.assertIn("two pages have the same declared search intent", errors)
 
-    def test_all_imported_seeds_are_contextual_relevance_anchors(self):
+    def test_semantic_intent_conflict_forces_a_revised_plan(self):
+        records = normalize_keyword_records([
+            {"phrase": "circuit diagram maker"},
+            {"phrase": "circuit diagram online"},
+            {"phrase": "circuit diagram symbols"},
+            {"phrase": "celebrity news"},
+        ])
+        provider = AsyncMock(side_effect=[
+            specialist_payload(),
+            {
+                "passed": False,
+                "conflicts": [{
+                    "page_a": "circuit diagram maker",
+                    "page_b": "circuit diagram symbols",
+                    "reason": "The proposed briefs overlap.",
+                    "resolution": "Clarify the reference page.",
+                }],
+            },
+            specialist_payload(),
+            {"passed": True, "conflicts": []},
+        ])
+        with (
+            patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
+            patch("nlp.hub_spoke_agent._achat_json", new=provider),
+        ):
+            mapping = asyncio.run(build_site_architecture(
+                records, context="Electronics design website", primary_keyword="circuit diagram maker",
+            ))
+        self.assertEqual(provider.await_count, 4)
+        self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
+
+    def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(
-            json.dumps({"primary_keyword": "circuit diagram maker", "industry_niche": "electronics"}),
-            ["circuit diagram maker", "pcb design software", "electrical schematic guide"],
+            json.dumps({"primary_keyword": "circuit diagram maker"}),
+            ["circuit diagram maker", "pcb design software"],
         )
-        self.assertEqual(json.loads(context)["seed_keywords"], [
-            "circuit diagram maker", "pcb design software", "electrical schematic guide",
-        ])
-        self.assertEqual(_mechanical_relevance_filter([
-            "circuit symbol reference", "pcb layout tutorial", "electrical schematic examples", "dog age calculator",
-        ], context), [
-            "circuit symbol reference", "pcb layout tutorial", "electrical schematic examples",
-        ])
+        self.assertEqual(json.loads(context)["seed_keywords"], ["circuit diagram maker", "pcb design software"])
 
 
 class HubWorkspaceDeleteTests(unittest.IsolatedAsyncioTestCase):
     async def test_history_delete_is_scoped_to_the_current_user(self):
         db = AsyncMock()
         db.execute.return_value = SimpleNamespace(rowcount=1)
-        history_id = uuid.uuid4()
-        user_id = uuid.uuid4()
-
-        await delete_hub_spoke_history(history_id, SimpleNamespace(id=user_id), db)
-
-        statement = db.execute.await_args.args[0]
-        sql = str(statement)
+        await delete_hub_spoke_history(uuid.uuid4(), SimpleNamespace(id=uuid.uuid4()), db)
+        sql = str(db.execute.await_args.args[0])
         self.assertIn("hub_spoke_history.id", sql)
         self.assertIn("hub_spoke_history.user_id", sql)
 
     async def test_missing_or_unowned_history_returns_not_found(self):
         db = AsyncMock()
         db.execute.return_value = SimpleNamespace(rowcount=0)
-
         with self.assertRaises(HTTPException) as raised:
             await delete_hub_spoke_history(uuid.uuid4(), SimpleNamespace(id=uuid.uuid4()), db)
-
         self.assertEqual(raised.exception.status_code, 404)
 
 
