@@ -18,6 +18,8 @@ from app.hub_spoke.router import (
 )
 from nlp.hub_spoke_agent import (
     _coerce_object,
+    _normalize_plan,
+    _repair_plan_consistency,
     build_site_architecture,
     normalize_keyword_records,
     validate_architecture,
@@ -271,6 +273,38 @@ class HubWorkspaceTests(unittest.TestCase):
         errors = validate_architecture(plan, records, "topic keyword 0")
         self.assertTrue(any("topical authority is too shallow" in error for error in errors))
         self.assertTrue(any("absorbs 36 of 36" in error for error in errors))
+
+    def test_model_page_consistency_errors_are_repaired_before_validation(self):
+        records = normalize_keyword_records([
+            {"phrase": "moon nodes calculator"},
+            {"phrase": "north node meaning"},
+            {"phrase": "south node meaning"},
+            {"phrase": "north node true meaning"},
+        ])
+        malformed = {
+            "master_target": "moon nodes calculator",
+            "pages": [
+                {"target_keyword": "moon nodes calculator", "search_intent": "informational", "article_title": "Calculator", "page_type": "tool"},
+                {"target_keyword": "north node meanings", "search_intent": "informational", "article_title": "North Node Meaning", "page_type": "article"},
+                {"target_keyword": "north node meanings", "search_intent": "informational", "article_title": "Duplicate", "page_type": "article"},
+            ],
+            "keyword_decisions": [
+                ["moon nodes calculator", "supporting", "north node meanings", "h2", "Incorrect model decision."],
+                ["north node meaning", "page_target", "north node meaning", "title", "Meaning page."],
+                ["south node meaning", "page_target", "south node meaning", "title", "Meaning page."],
+                ["north node true meaning", "supporting", "north node meanings", "h2", "Close variant."],
+            ],
+        }
+        plan = _repair_plan_consistency(
+            _normalize_plan(malformed, records, "moon nodes calculator"),
+            records,
+            "moon nodes calculator",
+        )
+        self.assertEqual(validate_architecture(plan, records, "moon nodes calculator"), [])
+        self.assertEqual(plan["master_hub"]["slug"], "/")
+        targets = [plan["master_hub"]["target_keyword"], *(page["target_keyword"] for page in plan["spokes"])]
+        self.assertEqual(len(targets), len(set(targets)))
+        self.assertIn("south node meaning", targets)
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(

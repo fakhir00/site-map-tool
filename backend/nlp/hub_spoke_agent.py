@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+from difflib import SequenceMatcher
 from typing import Any
 
 from nlp.keywords import clean_phrase, is_publishable_keyword
@@ -282,6 +283,181 @@ def _normalize_plan(
         "writing_standards": WRITING_STANDARDS,
         "_keyword_metrics": records,
     }
+
+
+def _infer_intent_class(keyword: str) -> str:
+    value = clean_phrase(keyword)
+    if re.search(r"\b(vs|versus|compare|comparison|difference)\b", value):
+        return "comparison"
+    if re.search(r"\b(how|manual|calculate|guide|tutorial)\b", value):
+        return "informational_guide"
+    if re.search(r"\b(accuracy|accurate|unknown|without|wrong|error|birth time)\b", value):
+        return "troubleshooting"
+    if re.search(r"\b(meaning|what is|definition)\b", value):
+        return "definition"
+    if re.search(r"\b(interpret|purpose|direction|expression|reveal)\w*\b", value):
+        return "interpretation"
+    if "calculator" in value:
+        return "transactional_tool"
+    return "reference"
+
+
+def _infer_category(keyword: str) -> str:
+    value = clean_phrase(keyword)
+    category_rules = (
+        (r"\b(transit|return|cycle|period|activation)\w*\b", "Timing and transits"),
+        (r"\b(compatib|synastry|relationship)\w*\b", "Relationships and compatibility"),
+        (r"\b(sign|zodiac|house|placement|birth chart)\w*\b", "Signs, houses and placements"),
+        (r"\b(calculate|manual|accuracy|accurate|birth time|unknown time|method)\w*\b", "Methods and accuracy"),
+        (r"\b(karm|past life|soul|vedic|rahu|ketu)\w*\b", "Karmic themes and traditions"),
+        (r"\b(meaning|interpret|purpose|definition|expression)\w*\b", "Meanings and interpretation"),
+    )
+    for pattern, category in category_rules:
+        if re.search(pattern, value):
+            return category
+    return "Foundational guides"
+
+
+def _resolve_inventory_keyword(value: str, candidates: list[str]) -> str | None:
+    requested = clean_phrase(value)
+    if not requested:
+        return None
+    if requested in candidates:
+        return requested
+    requested_terms = set(requested.split())
+    best_keyword = ""
+    best_score = 0.0
+    for keyword in candidates:
+        keyword_terms = set(keyword.split())
+        overlap = len(requested_terms & keyword_terms)
+        if not overlap:
+            continue
+        union = len(requested_terms | keyword_terms) or 1
+        score = (overlap / union) * 0.65 + SequenceMatcher(None, requested, keyword).ratio() * 0.35
+        if score > best_score:
+            best_keyword, best_score = keyword, score
+    return best_keyword if best_score >= 0.58 else None
+
+
+def _generated_page(target: str, metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    intent_class = _infer_intent_class(target)
+    page_type = "tool" if intent_class == "transactional_tool" else "article"
+    return _clean_page({
+        "target_keyword": target,
+        "article_title": target.title(),
+        "search_intent": f"{intent_class.replace('_', ' ')} for {target}",
+        "intent_class": intent_class,
+        "spoke_category": _infer_category(target),
+        "page_type": page_type,
+        "content_brief": f"Satisfy the distinct search intent behind “{target}” without duplicating another page.",
+    }, metrics)
+
+
+def _repair_plan_consistency(
+    plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
+) -> dict[str, Any]:
+    """Turn structurally inconsistent model output into an exact inventory-backed plan."""
+    inventory = [item["phrase"] for item in records]
+    inventory_set = set(inventory)
+    metrics = {item["phrase"]: item for item in records}
+    primary = clean_phrase(primary_keyword) or inventory[0]
+    valid_decisions = [
+        item for item in plan.get("keyword_assignments") or [] if item.get("keyword") in inventory_set
+    ]
+    decisions = list({item["keyword"]: item for item in valid_decisions}.values())
+    declared_targets = [
+        item["keyword"] for item in decisions if item.get("disposition") == "page_target"
+    ]
+    preferred_candidates = list(dict.fromkeys([primary, *declared_targets, *inventory]))
+
+    repaired_pages: list[dict[str, Any]] = []
+    redirects: dict[str, str] = {}
+    for page in [plan.get("master_hub") or {}, *(plan.get("spokes") or [])]:
+        old_target = clean_phrase(str(page.get("target_keyword") or ""))
+        target = _resolve_inventory_keyword(old_target, preferred_candidates)
+        if target is None:
+            target = _resolve_inventory_keyword(str(page.get("article_title") or ""), preferred_candidates)
+        if target is None:
+            continue
+        if old_target:
+            redirects[old_target] = target
+        if any(existing["target_keyword"] == target for existing in repaired_pages):
+            continue
+        page["target_keyword"] = target
+        page["slug"] = _slug(target)
+        page["search_volume"] = metrics[target].get("search_volume")
+        page["difficulty"] = metrics[target].get("difficulty")
+        page["intent_class"] = page.get("intent_class") or _infer_intent_class(target)
+        if clean_phrase(str(page.get("spoke_category") or "")) in {"", "strategic topic"}:
+            page["spoke_category"] = _infer_category(target)
+        repaired_pages.append(page)
+
+    by_target = {page["target_keyword"]: page for page in repaired_pages}
+    if primary not in by_target:
+        by_target[primary] = _generated_page(primary, metrics)
+    for target in declared_targets:
+        if target not in by_target:
+            by_target[target] = _generated_page(target, metrics)
+
+    master = by_target.pop(primary)
+    master["target_keyword"] = primary
+    master["ranking_role"] = "master_hub"
+    master["slug"] = "/"
+    master["page_type"] = "tool"
+    master["intent_class"] = "transactional_tool"
+    spokes = list(by_target.values())
+    for spoke in spokes:
+        spoke["ranking_role"] = "supporting_spoke"
+
+    decision_by_keyword = {item["keyword"]: item for item in decisions}
+    page_targets = {primary, *(page["target_keyword"] for page in spokes)}
+    for target in page_targets:
+        decision = decision_by_keyword.get(target)
+        if decision is None:
+            decision = {
+                "keyword": target, "disposition": "page_target", "assigned_to": target,
+                "placement": "title", "reason": "Selected as a distinct topical-authority page.",
+            }
+            decisions.append(decision)
+            decision_by_keyword[target] = decision
+        else:
+            decision.update({"disposition": "page_target", "assigned_to": target, "placement": "title"})
+    for keyword in inventory:
+        if keyword in decision_by_keyword:
+            continue
+        destination = _resolve_inventory_keyword(keyword, list(page_targets)) or primary
+        decision = {
+            "keyword": keyword, "disposition": "supporting", "assigned_to": destination,
+            "placement": "h2", "reason": "Assigned to the closest validated topical page.",
+        }
+        decisions.append(decision)
+        decision_by_keyword[keyword] = decision
+    for decision in decisions:
+        keyword = decision["keyword"]
+        if keyword in page_targets:
+            continue
+        destination = decision.get("assigned_to")
+        if destination in redirects:
+            destination = redirects[destination]
+        if decision.get("disposition") == "page_target":
+            decision["disposition"] = "supporting"
+        if decision.get("disposition") == "supporting" and destination not in page_targets:
+            destination = _resolve_inventory_keyword(str(destination or keyword), list(page_targets)) or primary
+        if decision.get("disposition") == "supporting":
+            decision["assigned_to"] = destination
+
+    seen_intents: set[str] = set()
+    for page in [master, *spokes]:
+        intent = clean_phrase(str(page.get("search_intent") or ""))
+        if not intent or intent in seen_intents:
+            intent = f"{page['intent_class'].replace('_', ' ')} for {page['target_keyword']}"
+            page["search_intent"] = intent
+        seen_intents.add(clean_phrase(intent))
+
+    plan["master_hub"] = master
+    plan["spokes"] = spokes
+    plan["keyword_assignments"] = decisions
+    return plan
 
 
 def validate_architecture(
@@ -607,6 +783,7 @@ async def build_site_architecture(
                     "the provider response was incomplete or malformed JSON; retrying with the compact schema"
                 )
             plan = _normalize_plan(payload, normalized, main)
+            plan = _repair_plan_consistency(plan, normalized, main)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
                 review_limit = min(5, len(plan["spokes"]) + 1)
