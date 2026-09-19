@@ -17,7 +17,9 @@ from app.hub_spoke.router import (
     delete_hub_spoke_history,
 )
 from nlp.hub_spoke_agent import (
+    _apply_tool_roi_rules,
     _coerce_object,
+    _generated_page,
     _normalize_plan,
     _repair_plan_consistency,
     build_site_architecture,
@@ -311,6 +313,28 @@ class HubWorkspaceTests(unittest.TestCase):
         targets = [plan["master_hub"]["target_keyword"], *(page["target_keyword"] for page in plan["spokes"])]
         self.assertEqual(len(targets), len(set(targets)))
         self.assertIn("south node meaning", targets)
+
+    def test_spoke_tool_requires_enough_search_volume_for_the_effort(self):
+        records = normalize_keyword_records([
+            {"phrase": "widget calculator", "search_volume": 5000, "difficulty": 30},
+            {"phrase": "advanced widget calculator", "search_volume": 1200, "difficulty": 35},
+            {"phrase": "tiny widget calculator", "search_volume": 20, "difficulty": 10},
+            {"phrase": "widget calculation guide", "search_volume": 2000, "difficulty": 20},
+        ])
+        metrics = {item["phrase"]: item for item in records}
+        plan = {
+            "master_hub": _generated_page("widget calculator", metrics),
+            "spokes": [
+                _generated_page("advanced widget calculator", metrics),
+                _generated_page("tiny widget calculator", metrics),
+                _generated_page("widget calculation guide", metrics),
+            ],
+        }
+        plan = _apply_tool_roi_rules(plan, records)
+        page_types = {page["target_keyword"]: page["page_type"] for page in plan["spokes"]}
+        self.assertEqual(page_types["advanced widget calculator"], "tool")
+        self.assertEqual(page_types["tiny widget calculator"], "article")
+        self.assertEqual(page_types["widget calculation guide"], "article")
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(

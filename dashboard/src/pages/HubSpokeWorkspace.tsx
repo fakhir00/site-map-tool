@@ -12,7 +12,7 @@ type Hub = Silo & { sub_silos?: Silo[] }
 type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
 type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
 type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number }
-type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[] }
+type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
 type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
@@ -248,13 +248,14 @@ export function HubSpokeWorkspace() {
   const openTarget = (keyword: string, included: string[] = [], pageType?: string) => {
     const params = new URLSearchParams({ keyword })
     if (included.length) params.set('cluster', included.join('\n'))
-    navigate(`${pageType === 'tool' || shouldBuildTool(keyword) ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
+    const isTool = pageType ? pageType === 'tool' : shouldBuildTool(keyword)
+    navigate(`${isTool ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
   }
 
   const renderPage = (spoke: string) => {
     const page = parseSpoke(spoke)
     const detail = mapping?.spokes?.find((item) => item.target_keyword.toLowerCase() === page.target.toLowerCase())
-    const isTool = detail?.page_type === 'tool' || shouldBuildTool(`${page.title} ${page.target}`)
+    const isTool = detail?.page_type ? detail.page_type === 'tool' : shouldBuildTool(`${page.title} ${page.target}`)
     const Icon = isTool ? Wrench : FileText
     return (
       <button key={spoke} type="button" onClick={() => openTarget(page.target, page.included, detail?.page_type)} className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-cyan-600">
@@ -266,6 +267,7 @@ export function HubSpokeWorkspace() {
             <span className="mt-0.5 block font-mono text-xs text-emerald-700 dark:text-emerald-400">Slug: {pageSlug(page.target, detail?.slug)}</span>
             {(detail?.search_volume != null || detail?.difficulty != null) && <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold"><span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Volume {detail.search_volume?.toLocaleString() ?? '—'}</span><span className="rounded-full bg-violet-100 px-2 py-1 text-violet-800 dark:bg-violet-950 dark:text-violet-300">KD {detail.difficulty != null ? Math.round(detail.difficulty) : '—'}</span>{detail.ranking_role === 'easy_win_spoke' && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Easy-win spoke</span>}</span>}
             {detail?.content_brief && <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{detail.content_brief}</span>}
+            {detail?.tool_economics?.reason && <span className="mt-2 block text-xs text-slate-500">Format decision: {detail.tool_economics.reason}</span>}
             {(detail?.word_count_suggestion || detail?.h2_sections?.length) && <span className="mt-2 block text-xs text-slate-400">{detail.word_count_suggestion?.toLocaleString()} words{detail.h2_sections?.length ? ` • ${detail.h2_sections.length} planned sections` : ''}</span>}
             {page.included.length > 0 && <span className="mt-3 block rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><strong>Includes:</strong> {page.included.join(' • ')}</span>}
           </span>

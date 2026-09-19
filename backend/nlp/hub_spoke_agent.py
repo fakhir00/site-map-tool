@@ -117,8 +117,28 @@ def _minimum_authority_pages(usable_keyword_count: int) -> int:
     return min(16, max(6, math.ceil(math.sqrt(usable_keyword_count))))
 
 
+def _tool_volume_threshold(records: list[dict[str, Any]]) -> int:
+    volumes = sorted(
+        int(item["search_volume"])
+        for item in records
+        if item.get("search_volume") is not None and int(item["search_volume"]) > 0
+    )
+    if not volumes:
+        return 250
+    percentile_index = min(len(volumes) - 1, math.floor((len(volumes) - 1) * 0.65))
+    return max(250, volumes[percentile_index])
+
+
+def _has_tool_intent(keyword: str) -> bool:
+    return bool(re.search(
+        r"\b(calculator|generator|checker|converter|builder|maker|simulator|estimator|planner|tool|software)\b",
+        clean_phrase(keyword),
+    ))
+
+
 def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str) -> str:
     authority_floor = _minimum_authority_pages(len(records))
+    tool_threshold = _tool_volume_threshold(records)
     return f"""
 Act as a senior technical SEO architect whose specialty is hub-and-spoke information architecture.
 You own the complete decision. Study the website context and every supplied keyword, then create a
@@ -153,6 +173,9 @@ Rules:
   relevant. Do not collapse dozens of different informational needs into the homepage or a few mega-pages.
 - Assign broad variants of the core product to the homepage, but reserve informational and educational
   queries for the most specific spoke that can satisfy them completely.
+- A spoke may be a tool only when the keyword has explicit interactive-tool intent and its supplied search
+  volume is at least {tool_threshold:,}. Building a tool has high effort. When volume is lower or unknown,
+  make that spoke a focused article/guide instead. The EMD master homepage remains the primary tool.
 - Every page target and every keyword named in an assignment must be copied exactly from the inventory.
 - Discard only genuinely unusable or off-topic phrases. Awkward but understandable phrases can support a page.
 - Page titles, headings, questions, briefs, and link explanations may be newly written natural language.
@@ -486,6 +509,58 @@ def _repair_plan_consistency(
     return plan
 
 
+def _apply_tool_roi_rules(plan: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reserve costly spoke tools for explicit tool queries with enough measured demand."""
+    threshold = _tool_volume_threshold(records)
+    master = plan["master_hub"]
+    master["page_type"] = "tool"
+    master["intent_class"] = "transactional_tool"
+    master["tool_economics"] = {
+        "qualifies": True,
+        "reason": "The EMD primary keyword is the site's main tool homepage.",
+        "minimum_volume": threshold,
+        "search_volume": master.get("search_volume"),
+        "difficulty": master.get("difficulty"),
+    }
+    for page in plan.get("spokes") or []:
+        volume = int(page.get("search_volume") or 0)
+        difficulty = float(page.get("difficulty") if page.get("difficulty") is not None else 100)
+        explicit_tool_intent = _has_tool_intent(page["target_keyword"])
+        demand_justifies_effort = volume >= threshold and (
+            difficulty <= 65 or volume >= threshold * 3
+        )
+        qualifies = explicit_tool_intent and demand_justifies_effort
+        page["page_type"] = "tool" if qualifies else "article"
+        if qualifies:
+            page["intent_class"] = "transactional_tool"
+            reason = (
+                f"Tool intent with volume {volume:,} meets the {threshold:,} demand threshold"
+                + (" despite high difficulty." if difficulty > 65 else ".")
+            )
+        else:
+            page["tool_functions"] = []
+            if not explicit_tool_intent:
+                reason = "The query does not require an interactive result, so an article is the right format."
+            elif not volume:
+                reason = "No verified search volume is available to justify building another tool."
+            elif volume < threshold:
+                reason = f"Volume {volume:,} is below the {threshold:,} tool-effort threshold."
+            else:
+                reason = (
+                    f"Volume {volume:,} does not justify a separate tool at difficulty {difficulty:.0f}; "
+                    "use a focused article instead."
+                )
+        page["tool_economics"] = {
+            "qualifies": qualifies,
+            "reason": reason,
+            "minimum_volume": threshold,
+            "search_volume": page.get("search_volume"),
+            "difficulty": page.get("difficulty"),
+        }
+    plan["tool_volume_threshold"] = threshold
+    return plan
+
+
 def validate_architecture(
     plan: dict[str, Any], records: list[dict[str, Any]], required_master_target: str = "",
 ) -> list[str]:
@@ -811,6 +886,7 @@ async def build_site_architecture(
                 )
             plan = _normalize_plan(payload, normalized, main)
             plan = _repair_plan_consistency(plan, normalized, main)
+            plan = _apply_tool_roi_rules(plan, normalized)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
                 review_limit = min(5, len(plan["spokes"]) + 1)
