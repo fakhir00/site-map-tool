@@ -310,7 +310,9 @@ def validate_architecture(plan: dict[str, Any], records: list[dict[str, Any]]) -
     return list(dict.fromkeys(errors))
 
 
-async def _audit_intent_cannibalization(plan: dict[str, Any], context: str) -> list[str]:
+async def _audit_intent_cannibalization(
+    plan: dict[str, Any], context: str,
+) -> tuple[list[dict[str, str]], list[str]]:
     """Use a separate review pass to catch semantic overlap hidden by different wording."""
     pages = [plan["master_hub"], *plan["spokes"]]
     review_input = [{
@@ -342,17 +344,79 @@ Return {{"passed": true, "conflicts": []}} when no pair conflicts. Otherwise ret
     )
     audit = _coerce_object(audit)
     if audit is None or not isinstance(audit.get("conflicts"), list):
-        return ["the semantic cannibalization review returned an invalid result"]
-    conflicts = audit["conflicts"]
+        return [], ["the semantic cannibalization review returned an invalid result"]
+    conflicts = [item for item in audit["conflicts"] if isinstance(item, dict)]
     if audit.get("passed") is True and not conflicts:
-        return []
+        return [], []
     if not conflicts:
-        return ["the semantic cannibalization review did not approve the architecture"]
-    return [
+        return [], ["the semantic cannibalization review did not approve the architecture"]
+    errors = [
         "intent conflict: " + str(item.get("page_a") or "unknown") + " vs "
         + str(item.get("page_b") or "unknown") + " — " + str(item.get("reason") or "overlapping intent")
-        for item in conflicts if isinstance(item, dict)
-    ] or ["the semantic cannibalization review found an unspecified conflict"]
+        for item in conflicts
+    ]
+    return conflicts, errors or ["the semantic cannibalization review found an unspecified conflict"]
+
+
+def _merge_intent_conflicts(
+    plan: dict[str, Any], conflicts: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[str]]:
+    """Consolidate reviewer-confirmed conflicts instead of failing the whole architecture."""
+    pages = [plan["master_hub"], *plan["spokes"]]
+    by_target = {page["target_keyword"]: page for page in pages}
+    master_target = plan["master_hub"]["target_keyword"]
+    redirects: dict[str, str] = {}
+    merge_notes: list[str] = []
+
+    def final_target(target: str) -> str:
+        seen: set[str] = set()
+        while target in redirects and target not in seen:
+            seen.add(target)
+            target = redirects[target]
+        return target
+
+    def strength(target: str) -> tuple[int, int, float]:
+        page = by_target[target]
+        return (
+            1 if target == master_target else 0,
+            int(page.get("search_volume") or 0),
+            -float(page.get("difficulty") if page.get("difficulty") is not None else 101),
+        )
+
+    for conflict in conflicts:
+        left = final_target(clean_phrase(str(conflict.get("page_a") or "")))
+        right = final_target(clean_phrase(str(conflict.get("page_b") or "")))
+        if not left or not right or left == right or left not in by_target or right not in by_target:
+            continue
+        winner, loser = (left, right) if strength(left) >= strength(right) else (right, left)
+        redirects[loser] = winner
+        merge_notes.append(
+            f'Merged "{loser}" into "{winner}": '
+            + str(conflict.get("reason") or "overlapping search intent")
+        )
+
+    if not redirects:
+        return plan, []
+    for loser in list(redirects):
+        redirects[loser] = final_target(redirects[loser])
+    plan["spokes"] = [
+        page for page in plan["spokes"] if page["target_keyword"] not in redirects
+    ]
+    for decision in plan["keyword_assignments"]:
+        keyword = decision["keyword"]
+        destination = decision.get("assigned_to")
+        if destination in redirects:
+            decision["assigned_to"] = redirects[destination]
+        if keyword in redirects and decision["disposition"] == "page_target":
+            decision["disposition"] = "supporting"
+            decision["assigned_to"] = redirects[keyword]
+            decision["placement"] = "h2"
+            decision["reason"] = "Consolidated into the stronger page after semantic cannibalization review."
+    plan["site_strategy"] = " ".join(
+        value for value in [plan.get("site_strategy", ""), *merge_notes] if value
+    )
+    plan["_planning_thought"] = plan["site_strategy"]
+    return plan, merge_notes
 
 
 def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
@@ -458,7 +522,17 @@ async def build_site_architecture(
             plan = _normalize_plan(payload, normalized)
             last_errors = validate_architecture(plan, normalized)
             if not last_errors:
-                last_errors = await _audit_intent_cannibalization(plan, context)
+                review_limit = min(5, len(plan["spokes"]) + 1)
+                for _review in range(review_limit):
+                    conflicts, last_errors = await _audit_intent_cannibalization(plan, context)
+                    if not conflicts:
+                        break
+                    plan, merge_notes = _merge_intent_conflicts(plan, conflicts)
+                    if not merge_notes:
+                        break
+                    last_errors = validate_architecture(plan, normalized)
+                    if last_errors:
+                        break
             if not last_errors:
                 return _apply_assignments(plan)
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))

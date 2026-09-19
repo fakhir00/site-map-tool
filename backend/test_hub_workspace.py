@@ -133,7 +133,7 @@ class HubWorkspaceTests(unittest.TestCase):
         errors = validate_architecture(_normalize_plan(payload, records), records)
         self.assertIn("two pages have the same declared search intent", errors)
 
-    def test_semantic_intent_conflict_forces_a_revised_plan(self):
+    def test_semantic_intent_conflict_is_merged_into_the_stronger_page(self):
         records = normalize_keyword_records([
             {"phrase": "circuit diagram maker"},
             {"phrase": "circuit diagram online"},
@@ -151,7 +151,6 @@ class HubWorkspaceTests(unittest.TestCase):
                     "resolution": "Clarify the reference page.",
                 }],
             },
-            specialist_payload(),
             {"passed": True, "conflicts": []},
         ])
         with (
@@ -161,8 +160,15 @@ class HubWorkspaceTests(unittest.TestCase):
             mapping = asyncio.run(build_site_architecture(
                 records, context="Electronics design website", primary_keyword="circuit diagram maker",
             ))
-        self.assertEqual(provider.await_count, 4)
+        self.assertEqual(provider.await_count, 3)
         self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
+        self.assertEqual(mapping["spokes"], [])
+        symbol_decision = next(
+            item for item in mapping["keyword_assignments"]
+            if item["keyword"] == "circuit diagram symbols"
+        )
+        self.assertEqual(symbol_decision["disposition"], "supporting")
+        self.assertEqual(symbol_decision["assigned_to"], "circuit diagram maker")
 
     def test_compact_provider_schema_builds_the_dashboard_mapping(self):
         compact = {
@@ -208,6 +214,43 @@ class HubWorkspaceTests(unittest.TestCase):
             mapping = asyncio.run(build_site_architecture(records, primary_keyword="circuit diagram maker"))
         self.assertEqual(validate_architecture(mapping, records), [])
         self.assertEqual(mapping["filtered_irrelevant_keywords"], ["celebrity news"])
+
+    def test_lunar_node_calculator_conflict_becomes_supporting_content(self):
+        secondary = "how to calculate lunar nodes manually vs calculator"
+        payload = {
+            "site_strategy": "Lead with the calculator.",
+            "master_target": "moon nodes calculator",
+            "pages": [
+                {"target_keyword": "moon nodes calculator", "search_intent": "calculate lunar nodes", "article_title": "Moon Nodes Calculator", "page_type": "tool", "content_brief": "Calculate placements."},
+                {"target_keyword": secondary, "search_intent": "compare manual and calculator methods", "article_title": "Manual vs Calculator", "page_type": "article", "content_brief": "Explain both methods."},
+            ],
+            "keyword_decisions": [
+                ["moon nodes calculator", "page_target", "moon nodes calculator", "title", "Core tool."],
+                [secondary, "page_target", secondary, "title", "Comparison query."],
+            ],
+            "interlinking_strategy": "One cluster.",
+        }
+        conflict = {"passed": False, "conflicts": [{
+            "page_a": "moon nodes calculator", "page_b": secondary,
+            "reason": "Both pages serve users obtaining lunar node placements.",
+            "resolution": "Merge the comparison into the calculator page.",
+        }]}
+        records = normalize_keyword_records([
+            {"phrase": "moon nodes calculator", "search_volume": 900},
+            {"phrase": secondary, "search_volume": 20},
+        ])
+        with (
+            patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
+            patch(
+                "nlp.hub_spoke_agent._achat_json",
+                new=AsyncMock(side_effect=[payload, conflict, {"passed": True, "conflicts": []}]),
+            ),
+        ):
+            mapping = asyncio.run(build_site_architecture(records, primary_keyword="moon nodes calculator"))
+        self.assertEqual(mapping["spokes"], [])
+        decision = next(item for item in mapping["keyword_assignments"] if item["keyword"] == secondary)
+        self.assertEqual(decision["disposition"], "supporting")
+        self.assertEqual(decision["assigned_to"], "moon nodes calculator")
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(
