@@ -95,6 +95,45 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(mapping["_semantic_audit_status"], "unavailable")
         self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
 
+    def test_final_relevance_review_discards_a_competitor_keyword(self):
+        competitor = "astro seek circuit diagram calculator"
+        payload = specialist_payload()
+        payload["keyword_assignments"].append({
+            "keyword": competitor,
+            "disposition": "supporting",
+            "assigned_to": "circuit diagram maker",
+            "placement": "variation",
+            "reason": "Related calculator phrase.",
+        })
+        records = normalize_keyword_records([
+            {"phrase": "circuit diagram maker"},
+            {"phrase": "circuit diagram online"},
+            {"phrase": "circuit diagram symbols"},
+            {"phrase": "celebrity news"},
+            {"phrase": competitor},
+        ])
+        review = {
+            "passed": True,
+            "conflicts": [],
+            "rejections": [{
+                "keyword": competitor,
+                "reason": "Navigational query for a competitor brand.",
+            }],
+        }
+        with (
+            patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
+            patch(
+                "nlp.hub_spoke_agent._achat_json",
+                new=AsyncMock(side_effect=[payload, review]),
+            ),
+        ):
+            mapping = asyncio.run(build_site_architecture(
+                records, primary_keyword="circuit diagram maker",
+            ))
+        decision = next(item for item in mapping["keyword_assignments"] if item["keyword"] == competitor)
+        self.assertEqual(decision["disposition"], "discard")
+        self.assertIn("competitor", decision["reason"])
+
     def test_keyword_metrics_survive_input_hygiene(self):
         body = KeywordWorkspaceRequest(
             keywords=["lunar age", "lunar age calculator"],
@@ -116,6 +155,7 @@ class HubWorkspaceTests(unittest.TestCase):
         }))
         parsed = json.loads(context)
         self.assertNotIn("competitor_profile", parsed)
+        self.assertEqual(parsed["competitor_exclusions"], "broad astronomy sites")
         self.assertEqual(parsed["primary_keyword"], "lunar age calculator")
 
     def test_basic_clean_only_normalizes_and_deduplicates(self):

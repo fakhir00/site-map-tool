@@ -155,6 +155,9 @@ topical-authority architecture that covers the subject deeply without search-int
 WEBSITE CONTEXT
 {context or "No additional context was supplied. Infer scope conservatively from the keyword set."}
 
+Any competitor_profile or competitor_exclusions data in this context is exclusion evidence only. Never
+turn those competitor brands, domains, products, or navigational searches into this site's target keywords.
+
 PRIMARY TOPIC
 {primary_keyword}
 
@@ -170,6 +173,8 @@ Rules:
   variation on one page. assigned_to must be that page's exact target keyword.
 - Use discard for irrelevant, broken, unsafe, obsolete, navigational, duplicate-with-no-added-value,
   or unsupported queries. Give a short specific reason. Never discard merely because volume is absent.
+- Discard competitor brand names, competitor domains, competitor product names, and navigational searches
+  for another company unless the website context explicitly requests competitor-comparison content.
 - Never create two pages that would compete for the same search intent. Variants with the same user
   goal belong on one page. Similar words with different goals may remain separate pages.
 - The requested PRIMARY TOPIC is the exact-match-domain homepage. It is non-negotiable: master_target
@@ -482,10 +487,10 @@ def _repair_plan_consistency(
     for keyword in inventory:
         if keyword in decision_by_keyword:
             continue
-        destination = _resolve_inventory_keyword(keyword, list(page_targets)) or primary
         decision = {
-            "keyword": keyword, "disposition": "supporting", "assigned_to": destination,
-            "placement": "h2", "reason": "Assigned to the closest validated topical page.",
+            "keyword": keyword, "disposition": "discard", "assigned_to": None,
+            "placement": None,
+            "reason": "The specialist did not provide a validated topical placement for this keyword.",
         }
         decisions.append(decision)
         decision_by_keyword[keyword] = decision
@@ -659,7 +664,7 @@ def validate_architecture(
 
 async def _audit_intent_cannibalization(
     plan: dict[str, Any], context: str,
-) -> tuple[list[dict[str, str]], list[str]]:
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]]:
     """Use a separate review pass to catch semantic overlap hidden by different wording."""
     pages = [plan["master_hub"], *plan["spokes"]]
     review_input = [{
@@ -670,6 +675,11 @@ async def _audit_intent_cannibalization(
         "page_type": page["page_type"],
         "content_brief": page["content_brief"],
     } for page in pages]
+    keyword_placements = [{
+        "keyword": item["keyword"],
+        "assigned_to": item.get("assigned_to"),
+        "disposition": item.get("disposition"),
+    } for item in plan.get("keyword_assignments") or [] if item.get("disposition") != "discard"]
     audit = await _achat_json(
         system_prompt=(
             "You are the final SEO cannibalization reviewer. Compare page intents as user goals and "
@@ -682,19 +692,36 @@ Website context:
 Proposed indexable pages:
 {json.dumps(review_input, ensure_ascii=False)}
 
+Retained keyword placements:
+{json.dumps(keyword_placements, ensure_ascii=False)}
+
 Find only pairs that would satisfy the same user goal with the same result type. Do not flag pages merely
 because they discuss the same entity. A calculator/tool, a manual calculation guide, a definition, an
 interpretation, and a comparison serve different intents and should coexist as topical-authority spokes.
 Likewise, entity-specific pages may coexist when each gives a complete answer about a distinct entity.
-Return {{"passed": true, "conflicts": []}} when no pair conflicts. Otherwise return:
-{{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "reason": "...", "resolution": "merge or clarify"}}]}}
+Also reject retained keywords that are clearly unrelated, broken, competitor-branded, another company's
+product/domain, or navigational searches for another site. A keyword containing relevant topic words is
+still irrelevant when its real intent is reaching a competitor. Do not reject useful non-branded subtopics.
+Return:
+{{"passed": true, "conflicts": [], "rejections": []}}
+or
+{{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "reason": "...", "resolution": "merge or clarify"}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
 """,
         temperature=0,
         max_tokens=3000,
     )
     audit = _coerce_object(audit)
     if audit is None or not isinstance(audit.get("conflicts"), list):
-        return [], ["the semantic cannibalization review returned an invalid result"]
+        return [], [], ["the semantic cannibalization review returned an invalid result"]
+    retained = {item["keyword"] for item in keyword_placements}
+    rejections = [
+        {
+            "keyword": clean_phrase(str(item.get("keyword") or "")),
+            "reason": str(item.get("reason") or "Rejected by the relevance review.").strip(),
+        }
+        for item in audit.get("rejections") or []
+        if isinstance(item, dict) and clean_phrase(str(item.get("keyword") or "")) in retained
+    ]
     raw_conflicts = [item for item in audit["conflicts"] if isinstance(item, dict)]
     by_target = {page["target_keyword"]: page for page in pages}
     conflicts = []
@@ -712,17 +739,53 @@ Return {{"passed": true, "conflicts": []}} when no pair conflicts. Otherwise ret
             continue
         conflicts.append(item)
     if audit.get("passed") is True and not conflicts:
-        return [], []
+        return [], rejections, []
     if raw_conflicts and not conflicts:
-        return [], []
+        return [], rejections, []
     if not conflicts:
-        return [], ["the semantic cannibalization review did not approve the architecture"]
+        if rejections:
+            return [], rejections, []
+        return [], [], ["the semantic cannibalization review did not approve the architecture"]
     errors = [
         "intent conflict: " + str(item.get("page_a") or "unknown") + " vs "
         + str(item.get("page_b") or "unknown") + " — " + str(item.get("reason") or "overlapping intent")
         for item in conflicts
     ]
-    return conflicts, errors or ["the semantic cannibalization review found an unspecified conflict"]
+    return conflicts, rejections, errors or ["the semantic cannibalization review found an unspecified conflict"]
+
+
+def _apply_relevance_rejections(
+    plan: dict[str, Any], rejections: list[dict[str, str]],
+) -> list[str]:
+    master_target = plan["master_hub"]["target_keyword"]
+    reasons = {
+        item["keyword"]: item["reason"]
+        for item in rejections
+        if item.get("keyword") and item["keyword"] != master_target
+    }
+    if not reasons:
+        return []
+    rejected_targets = {
+        item["keyword"] for item in plan["keyword_assignments"]
+        if item["keyword"] in reasons and item.get("disposition") == "page_target"
+    }
+    plan["spokes"] = [
+        page for page in plan["spokes"] if page["target_keyword"] not in rejected_targets
+    ]
+    remaining_targets = [master_target, *(page["target_keyword"] for page in plan["spokes"])]
+    for decision in plan["keyword_assignments"]:
+        keyword = decision["keyword"]
+        if keyword in reasons:
+            decision.update({
+                "disposition": "discard", "assigned_to": None, "placement": None,
+                "reason": reasons[keyword],
+            })
+        elif decision.get("assigned_to") in rejected_targets:
+            decision["assigned_to"] = (
+                _resolve_inventory_keyword(keyword, remaining_targets) or master_target
+            )
+            decision["reason"] = "Reassigned after an irrelevant destination page was removed."
+    return sorted(reasons)
 
 
 def _merge_intent_conflicts(
@@ -904,10 +967,20 @@ async def build_site_architecture(
                 review_limit = min(5, len(plan["spokes"]) + 1)
                 for _review in range(review_limit):
                     try:
-                        conflicts, audit_errors = await _audit_intent_cannibalization(plan, context)
+                        conflicts, rejections, audit_errors = await _audit_intent_cannibalization(plan, context)
                     except Exception as exc:
                         conflicts = []
+                        rejections = []
                         audit_errors = [str(exc) or type(exc).__name__]
+                    if rejections:
+                        removed_keywords = _apply_relevance_rejections(plan, rejections)
+                        if removed_keywords:
+                            logger.info(
+                                "Relevance review discarded %s retained keywords", len(removed_keywords),
+                            )
+                            last_errors = validate_architecture(plan, normalized, main)
+                            if last_errors:
+                                break
                     if audit_errors and not conflicts:
                         logger.warning(
                             "Semantic cannibalization review unavailable; keeping the structurally "

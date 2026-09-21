@@ -78,7 +78,9 @@ def _context_with_seed_keywords(
         parsed = {"audit_summary": context.strip()} if context.strip() else {}
     if not isinstance(parsed, dict):
         parsed = {"audit_summary": context.strip()}
-    parsed.pop("competitor_profile", None)
+    competitor_profile = parsed.pop("competitor_profile", None)
+    if competitor_profile:
+        parsed["competitor_exclusions"] = competitor_profile
     parsed["seed_keywords"] = seeds
     if seeds and not parsed.get("primary_keyword"):
         parsed["primary_keyword"] = seeds[0]
@@ -94,10 +96,14 @@ def _hub_spoke_context(context: str) -> str:
         return context
     if not isinstance(parsed, dict):
         return context
-    parsed.pop("competitor_profile", None)
+    competitor_profile = parsed.pop("competitor_profile", None)
+    if competitor_profile:
+        parsed["competitor_exclusions"] = competitor_profile
     audit = parsed.get("audit_summary")
     if isinstance(audit, dict):
-        audit.pop("competitor_profile", None)
+        nested_competitors = audit.pop("competitor_profile", None)
+        if nested_competitors:
+            parsed["competitor_exclusions"] = nested_competitors
     return json.dumps(parsed, indent=2)
 
 
