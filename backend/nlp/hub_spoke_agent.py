@@ -144,6 +144,55 @@ def _has_tool_intent(keyword: str) -> bool:
     ))
 
 
+PRIMARY_INTENT_TERMS = {
+    "review", "reviews", "calculator", "checker", "generator", "tool", "software",
+    "maker", "builder", "converter", "planner", "simulator", "estimator",
+    "guide", "online", "free", "best", "official", "website", "site", "app",
+}
+
+
+def _primary_core_terms(primary_keyword: str) -> list[str]:
+    return [
+        term for term in clean_phrase(primary_keyword).split()
+        if term not in PRIMARY_INTENT_TERMS
+    ]
+
+
+def _is_core_entity_relevant(keyword: str, primary_keyword: str) -> bool:
+    """Protect the EMD's subject/entity without admitting broad one-word matches."""
+    core = _primary_core_terms(primary_keyword)
+    phrase = clean_phrase(keyword)
+    phrase_terms = set(phrase.split())
+    if not core:
+        return False
+    overlap = sum(term in phrase_terms for term in core)
+    if len(core) == 1:
+        return overlap == 1
+    core_prefix = " ".join(core[:2])
+    has_ordered_anchor = bool(re.search(rf"\b{re.escape(core_prefix)}\b", phrase))
+    return has_ordered_anchor or overlap == len(core)
+
+
+def _is_protected_emd_entity(keyword: str, primary_keyword: str) -> bool:
+    primary_terms = set(clean_phrase(primary_keyword).split())
+    core = _primary_core_terms(primary_keyword)
+    entity_site = bool({"review", "reviews"} & primary_terms) or any(
+        any(character.isdigit() for character in term) for term in core
+    )
+    if not entity_site or not _is_core_entity_relevant(keyword, primary_keyword):
+        return False
+    phrase = clean_phrase(keyword)
+    if phrase == clean_phrase(primary_keyword) or phrase == " ".join(core[:2]):
+        return True
+    vague_fragments = {
+        "available", "before", "bottles", "comes", "customers", "exclusive", "existing",
+        "explore", "identical", "know", "product", "recommended", "refill", "solution",
+        "sold", "standard", "store", "twice", "verified", "official",
+    }
+    meaningful = set(phrase.split()) - set(core) - PRIMARY_INTENT_TERMS
+    return bool(meaningful - vague_fragments)
+
+
 def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str) -> str:
     authority_floor = _minimum_authority_pages(len(records))
     tool_threshold = _tool_volume_threshold(records)
@@ -188,7 +237,8 @@ Rules:
   queries for the most specific spoke that can satisfy them completely.
 - A spoke may be a tool only when the keyword has explicit interactive-tool intent and its supplied search
   volume is at least {tool_threshold:,}. Building a tool has high effort. When volume is lower or unknown,
-  make that spoke a focused article/guide instead. The EMD master homepage remains the primary tool.
+  make that spoke a focused article/guide instead. The EMD master homepage follows its real intent: a
+  calculator EMD is a tool, while a reviews, information, or editorial EMD is a content homepage.
 - Every page target and every keyword named in an assignment must be copied exactly from the inventory.
 - Discard only genuinely unusable or off-topic phrases. Awkward but understandable phrases can support a page.
 - Page titles, headings, questions, briefs, and link explanations may be newly written natural language.
@@ -349,6 +399,8 @@ def _normalize_plan(
 
 def _infer_intent_class(keyword: str) -> str:
     value = clean_phrase(keyword)
+    if re.search(r"\b(review|reviews|testimonial|testimonials)\b", value):
+        return "review"
     if re.search(r"\b(vs|versus|compare|comparison|difference)\b", value):
         return "comparison"
     if re.search(r"\b(how|manual|calculate|guide|tutorial)\b", value):
@@ -367,6 +419,14 @@ def _infer_intent_class(keyword: str) -> str:
 def _infer_category(keyword: str) -> str:
     value = clean_phrase(keyword)
     category_rules = (
+        (r"\b(ingredient|botanical|oil|extract|formula|formulation)\w*\b", "Ingredients and formulation"),
+        (r"\b(side effect|safety|safe|allergic|allergy|sensitive|avoid|burning)\w*\b", "Safety and side effects"),
+        (r"\b(price|pricing|buy|buying|order|cost|where to buy|guarantee|refund)\w*\b", "Pricing and purchase"),
+        (r"\b(review|reddit|trustpilot|amazon|testimonial|real user|before and after)\w*\b", "Reviews and evidence"),
+        (r"\b(vs|versus|compare|comparison|alternative)\w*\b", "Comparisons and alternatives"),
+        (r"\b(australia|indonesia|zealand|regional|country|countries)\b|\bnz\b", "Regional availability"),
+        (r"\b(how to use|usage|use daily|twice|dose|dosage|apply|application)\w*\b", "Usage and application"),
+        (r"\b(benefit|works|protect|receding|bleeding|bad breath|tooth decay|gum)\w*\b", "Benefits and oral-health use cases"),
         (r"\b(transit|return|cycle|period|activation)\w*\b", "Timing and transits"),
         (r"\b(compatib|synastry|relationship)\w*\b", "Relationships and compatibility"),
         (r"\b(sign|zodiac|house|placement|birth chart)\w*\b", "Signs, houses and placements"),
@@ -378,6 +438,22 @@ def _infer_category(keyword: str) -> str:
         if re.search(pattern, value):
             return category
     return "Foundational guides"
+
+
+def _is_page_target_candidate(keyword: str, primary_keyword: str) -> bool:
+    phrase_terms = clean_phrase(keyword).split()
+    core = _primary_core_terms(primary_keyword)
+    if len(core) < 2:
+        return True
+    anchor = core[:2]
+    for index in range(len(phrase_terms) - 1):
+        if phrase_terms[index:index + 2] != anchor:
+            continue
+        leading = set(phrase_terms[:index])
+        return not leading or leading <= {
+            "buy", "buying", "order", "best", "verified", "official", "where", "to",
+        }
+    return False
 
 
 def _resolve_inventory_keyword(value: str, candidates: list[str]) -> str | None:
@@ -465,8 +541,10 @@ def _repair_plan_consistency(
     master["target_keyword"] = primary
     master["ranking_role"] = "master_hub"
     master["slug"] = "/"
-    master["page_type"] = "tool"
-    master["intent_class"] = "transactional_tool"
+    master["page_type"] = "tool" if _has_tool_intent(primary) else "article"
+    master["intent_class"] = (
+        "transactional_tool" if master["page_type"] == "tool" else _infer_intent_class(primary)
+    )
     spokes = list(by_target.values())
     for spoke in spokes:
         spoke["ranking_role"] = "supporting_spoke"
@@ -487,11 +565,19 @@ def _repair_plan_consistency(
     for keyword in inventory:
         if keyword in decision_by_keyword:
             continue
-        decision = {
-            "keyword": keyword, "disposition": "discard", "assigned_to": None,
-            "placement": None,
-            "reason": "The specialist did not provide a validated topical placement for this keyword.",
-        }
+        if _is_protected_emd_entity(keyword, primary):
+            destination = _resolve_inventory_keyword(keyword, list(page_targets)) or primary
+            decision = {
+                "keyword": keyword, "disposition": "supporting", "assigned_to": destination,
+                "placement": "h2",
+                "reason": "Retained because it is explicitly anchored to the site's core EMD entity.",
+            }
+        else:
+            decision = {
+                "keyword": keyword, "disposition": "discard", "assigned_to": None,
+                "placement": None,
+                "reason": "The specialist did not provide a validated topical placement for this keyword.",
+            }
         decisions.append(decision)
         decision_by_keyword[keyword] = decision
     for decision in decisions:
@@ -503,6 +589,10 @@ def _repair_plan_consistency(
             destination = redirects[destination]
         if decision.get("disposition") == "page_target":
             decision["disposition"] = "supporting"
+        if decision.get("disposition") == "discard" and _is_protected_emd_entity(keyword, primary):
+            decision["disposition"] = "supporting"
+            decision["placement"] = "h2"
+            decision["reason"] = "Retained because it is anchored to the site's core EMD entity."
         if decision.get("disposition") == "supporting" and destination not in page_targets:
             destination = _resolve_inventory_keyword(str(destination or keyword), list(page_targets)) or primary
         if decision.get("disposition") == "supporting":
@@ -522,15 +612,101 @@ def _repair_plan_consistency(
     return plan
 
 
+def _ensure_topical_authority(
+    plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
+) -> dict[str, Any]:
+    """Promote diverse, relevant supporting terms when the model returns a one-page plan."""
+    metrics = {item["phrase"]: item for item in records}
+    decisions = plan["keyword_assignments"]
+    usable = [item for item in decisions if item.get("disposition") != "discard"]
+    minimum_pages = _minimum_authority_pages(len(usable))
+    existing_targets = {
+        plan["master_hub"]["target_keyword"],
+        *(page["target_keyword"] for page in plan["spokes"]),
+    }
+    if len(existing_targets) < minimum_pages:
+        candidates = [
+            item["keyword"] for item in usable
+            if item.get("disposition") == "supporting"
+            and item["keyword"] not in existing_targets
+            and _is_core_entity_relevant(item["keyword"], primary_keyword)
+            and _is_page_target_candidate(item["keyword"], primary_keyword)
+        ]
+        candidates.sort(key=lambda keyword: (
+            int(metrics[keyword].get("search_volume") or 0),
+            int(metrics[keyword].get("frequency") or 1),
+            len(keyword.split()),
+        ), reverse=True)
+        selected: list[str] = []
+        used_categories = {
+            page.get("spoke_category")
+            for page in [plan["master_hub"], *plan["spokes"]]
+            if page.get("spoke_category")
+        }
+        for keyword in candidates:
+            category = _infer_category(keyword)
+            if category not in used_categories:
+                selected.append(keyword)
+                used_categories.add(category)
+            if len(existing_targets) + len(selected) >= minimum_pages:
+                break
+        for keyword in candidates:
+            if keyword in selected:
+                continue
+            selected.append(keyword)
+            if len(existing_targets) + len(selected) >= minimum_pages:
+                break
+        decision_by_keyword = {item["keyword"]: item for item in decisions}
+        for target in selected:
+            page = _generated_page(target, metrics)
+            page["spoke_category"] = _infer_category(target)
+            page["ranking_role"] = "supporting_spoke"
+            plan["spokes"].append(page)
+            decision_by_keyword[target].update({
+                "disposition": "page_target", "assigned_to": target, "placement": "title",
+                "reason": "Promoted to provide the topical depth required by this keyword inventory.",
+            })
+            existing_targets.add(target)
+
+    pages = [plan["master_hub"], *plan["spokes"]]
+    target_categories = {
+        page["target_keyword"]: page.get("spoke_category") or _infer_category(page["target_keyword"])
+        for page in pages
+    }
+    target_terms = {
+        target: set(target.split()) for target in target_categories
+    }
+    for decision in decisions:
+        if decision.get("disposition") != "supporting":
+            continue
+        keyword = decision["keyword"]
+        terms = set(keyword.split())
+        category = _infer_category(keyword)
+        ranked_targets = sorted(existing_targets, key=lambda target: (
+            1 if target_categories[target] == category else 0,
+            len(terms & target_terms[target]) / max(1, len(terms | target_terms[target])),
+            int(metrics[target].get("search_volume") or 0),
+        ), reverse=True)
+        decision["assigned_to"] = ranked_targets[0]
+    return plan
+
+
 def _apply_tool_roi_rules(plan: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
     """Reserve costly spoke tools for explicit tool queries with enough measured demand."""
     threshold = _tool_volume_threshold(records)
     master = plan["master_hub"]
-    master["page_type"] = "tool"
-    master["intent_class"] = "transactional_tool"
+    master_is_tool = _has_tool_intent(master["target_keyword"])
+    master["page_type"] = "tool" if master_is_tool else "article"
+    master["intent_class"] = (
+        "transactional_tool" if master_is_tool else _infer_intent_class(master["target_keyword"])
+    )
     master["tool_economics"] = {
-        "qualifies": True,
-        "reason": "The EMD primary keyword is the site's main tool homepage.",
+        "qualifies": master_is_tool,
+        "reason": (
+            "The EMD primary keyword has direct interactive-tool intent."
+            if master_is_tool
+            else "The EMD primary keyword has content intent, so the homepage is an article/editorial hub."
+        ),
         "minimum_volume": threshold,
         "search_volume": master.get("search_volume"),
         "difficulty": master.get("difficulty"),
@@ -702,6 +878,10 @@ Likewise, entity-specific pages may coexist when each gives a complete answer ab
 Also reject retained keywords that are clearly unrelated, broken, competitor-branded, another company's
 product/domain, or navigational searches for another site. A keyword containing relevant topic words is
 still irrelevant when its real intent is reaching a competitor. Do not reject useful non-branded subtopics.
+The master target is the site's protected EMD subject. Do not reject keywords anchored to that core entity
+merely because competitor source pages also discuss or sell the same product. Product reviews, ingredients,
+side effects, buying intent, source-specific reviews, and explicit "core product vs competitor" comparisons
+remain relevant when they genuinely concern the protected EMD subject.
 Return:
 {{"passed": true, "conflicts": [], "rejections": []}}
 or
@@ -714,13 +894,18 @@ or
     if audit is None or not isinstance(audit.get("conflicts"), list):
         return [], [], ["the semantic cannibalization review returned an invalid result"]
     retained = {item["keyword"] for item in keyword_placements}
+    primary_target = plan["master_hub"]["target_keyword"]
     rejections = [
         {
             "keyword": clean_phrase(str(item.get("keyword") or "")),
             "reason": str(item.get("reason") or "Rejected by the relevance review.").strip(),
         }
         for item in audit.get("rejections") or []
-        if isinstance(item, dict) and clean_phrase(str(item.get("keyword") or "")) in retained
+        if (
+            isinstance(item, dict)
+            and clean_phrase(str(item.get("keyword") or "")) in retained
+            and not _is_protected_emd_entity(str(item.get("keyword") or ""), primary_target)
+        )
     ]
     raw_conflicts = [item for item in audit["conflicts"] if isinstance(item, dict)]
     by_target = {page["target_keyword"]: page for page in pages}
@@ -961,6 +1146,7 @@ async def build_site_architecture(
                 )
             plan = _normalize_plan(payload, normalized, main)
             plan = _repair_plan_consistency(plan, normalized, main)
+            plan = _ensure_topical_authority(plan, normalized, main)
             plan = _apply_tool_roi_rules(plan, normalized)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:

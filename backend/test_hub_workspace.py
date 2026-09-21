@@ -20,6 +20,8 @@ from nlp.hub_spoke_agent import (
     _apply_tool_roi_rules,
     _coerce_object,
     _generated_page,
+    _is_core_entity_relevant,
+    _is_protected_emd_entity,
     _normalize_plan,
     _repair_plan_consistency,
     build_site_architecture,
@@ -64,6 +66,15 @@ def specialist_payload() -> dict:
 
 
 class HubWorkspaceTests(unittest.TestCase):
+    def test_product_review_emd_keeps_product_terms_without_admitting_broad_dental_noise(self):
+        primary = "dental pro 7 reviews"
+        self.assertTrue(_is_core_entity_relevant("dental pro ingredients", primary))
+        self.assertTrue(_is_protected_emd_entity("dental pro 7 reviews reddit", primary))
+        self.assertTrue(_is_protected_emd_entity("dental pro 7 vs oramd", primary))
+        self.assertFalse(_is_core_entity_relevant("dental implants", primary))
+        self.assertFalse(_is_core_entity_relevant("amd dental clinic", primary))
+        self.assertFalse(_is_protected_emd_entity("natures smile reviews", primary))
+
     def test_provider_wrappers_and_json_strings_are_unwrapped(self):
         payload = {"master_target": "circuit diagram maker", "pages": []}
         self.assertEqual(_coerce_object({"result": json.dumps(payload)}), payload)
@@ -373,6 +384,34 @@ class HubWorkspaceTests(unittest.TestCase):
         targets = [plan["master_hub"]["target_keyword"], *(page["target_keyword"] for page in plan["spokes"])]
         self.assertEqual(len(targets), len(set(targets)))
         self.assertIn("south node meaning", targets)
+
+    def test_omitted_keywords_are_recovered_only_when_anchored_to_the_emd_entity(self):
+        primary = "dental pro 7 reviews"
+        records = normalize_keyword_records([
+            {"phrase": primary},
+            {"phrase": "dental pro ingredients"},
+            {"phrase": "dental pro 7 side effects"},
+            {"phrase": "dental implants"},
+            {"phrase": "amd dental clinic"},
+        ])
+        payload = {
+            "master_target": primary,
+            "pages": [{
+                "target_keyword": primary, "search_intent": "review dental pro 7",
+                "article_title": "Dental Pro 7 Reviews", "page_type": "article",
+            }],
+            "keyword_decisions": [
+                [primary, "page_target", primary, "title", "EMD target."],
+                ["dental pro ingredients", "discard", None, None, "Competitor-source phrase."],
+            ],
+        }
+        plan = _repair_plan_consistency(_normalize_plan(payload, records, primary), records, primary)
+        self.assertEqual(plan["master_hub"]["page_type"], "article")
+        decisions = {item["keyword"]: item for item in plan["keyword_assignments"]}
+        self.assertEqual(decisions["dental pro ingredients"]["disposition"], "supporting")
+        self.assertEqual(decisions["dental pro 7 side effects"]["disposition"], "supporting")
+        self.assertEqual(decisions["dental implants"]["disposition"], "discard")
+        self.assertEqual(decisions["amd dental clinic"]["disposition"], "discard")
 
     def test_spoke_tool_requires_enough_search_volume_for_the_effort(self):
         records = normalize_keyword_records([
