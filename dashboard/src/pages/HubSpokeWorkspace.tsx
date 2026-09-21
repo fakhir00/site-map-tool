@@ -11,7 +11,7 @@ type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[];
 type Hub = Silo & { sub_silos?: Silo[] }
 type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
 type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
-type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number }
+type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number; source_domains?: string[] }
 type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
@@ -57,6 +57,7 @@ const parseFile = (text: string) => {
   const volumeIndex = header.findIndex((cell) => cell === 'search volume' || cell === 'volume')
   const difficultyIndex = header.findIndex((cell) => cell === 'difficulty' || cell === 'keyword difficulty' || cell === 'kd')
   const typeIndex = header.findIndex((cell) => cell === 'type' || cell === 'keyword type')
+  const sourceDomainsIndex = header.findIndex((cell) => cell === 'source domains' || cell === 'source domain')
   const hasHeader = keywordIndex >= 0
   const dataRows = hasHeader ? rows.slice(1) : rows
   const seen = new Set<string>()
@@ -71,6 +72,9 @@ const parseFile = (text: string) => {
       keyword_type: typeIndex >= 0 ? row[typeIndex] || 'long-tail' : 'long-tail',
       search_volume: Number.isFinite(volume) ? volume : null,
       difficulty: Number.isFinite(difficulty) ? difficulty : null,
+      source_domains: sourceDomainsIndex >= 0
+        ? row[sourceDomainsIndex].split(';').map((value) => value.trim()).filter(Boolean)
+        : [],
     }]
   })
   return { keywords: keywordData.map((item) => item.phrase), keywordData }

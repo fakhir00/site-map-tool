@@ -23,6 +23,7 @@ class KeywordMetricInput(BaseModel):
     search_volume: int | None = None
     difficulty: float | None = None
     frequency: int = 1
+    source_domains: list[str] = Field(default_factory=list)
 
 
 class KeywordWorkspaceRequest(BaseModel):
@@ -115,6 +116,7 @@ def _keyword_records(body: KeywordWorkspaceRequest) -> list[dict[str, Any]]:
         "search_volume": metrics[phrase].search_volume if phrase in metrics else None,
         "difficulty": metrics[phrase].difficulty if phrase in metrics else None,
         "frequency": metrics[phrase].frequency if phrase in metrics else 1,
+        "source_domains": metrics[phrase].source_domains if phrase in metrics else [],
     } for phrase in _basic_clean(body.keywords)]
     return normalize_keyword_records(records, _primary_keyword_from_context(body.context))
 

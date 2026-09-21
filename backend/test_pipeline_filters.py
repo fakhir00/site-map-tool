@@ -14,7 +14,7 @@ from nlp.openrouter import (
     generate_ai_keywords_sync,
     judge_competitor_domains,
 )
-from nlp.keywords import has_past_year, is_publishable_keyword
+from nlp.keywords import has_past_year, is_publishable_keyword, looks_incomplete_search_query
 from workers.pipeline import (
     _balanced_competitor_domains,
     _crawl_limit_per_domain,
@@ -101,7 +101,14 @@ class PipelineFilterTests(TestCase):
     def test_extraction_artifacts_are_not_publishable_keywords(self):
         self.assertFalse(is_publishable_keyword("age korean age", min_words=2))
         self.assertFalse(is_publishable_keyword("traditional korean traditional", min_words=2))
+        self.assertFalse(is_publishable_keyword("what dental", min_words=2))
+        self.assertFalse(is_publishable_keyword("teeth whitening side", min_words=2))
+        self.assertFalse(is_publishable_keyword("dental pro comes", min_words=2))
+        self.assertFalse(is_publishable_keyword("reviews people saying", min_words=2))
+        self.assertFalse(is_publishable_keyword("dental pro reviewthe", min_words=2))
         self.assertTrue(is_publishable_keyword("lunar age in korea", min_words=2))
+        self.assertTrue(is_publishable_keyword("what causes gum recession", min_words=2))
+        self.assertTrue(looks_incomplete_search_query("what dental"))
 
     def test_past_year_keywords_are_not_publishable(self):
         self.assertTrue(has_past_year("best circuit software 1974", current_year=2026))

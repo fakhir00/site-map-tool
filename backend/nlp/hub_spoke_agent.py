@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from typing import Any
 from urllib.parse import urlparse
 
-from nlp.keywords import clean_phrase, is_publishable_keyword
+from nlp.keywords import clean_phrase, is_publishable_keyword, looks_incomplete_search_query
 from nlp.openrouter import _achat_json, is_ai_configured
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,9 @@ def normalize_keyword_records(records: list[dict[str, Any]], primary_keyword: st
             "search_volume": _integer_or_none(raw.get("search_volume")),
             "difficulty": _float_or_none(raw.get("difficulty")),
             "frequency": max(1, _integer_or_none(raw.get("frequency")) or 1),
+            "source_domains": [
+                str(value).strip() for value in raw.get("source_domains") or [] if str(value).strip()
+            ],
         }
         if current is None or _metric_score(candidate) > _metric_score(current):
             normalized[phrase] = candidate
@@ -79,6 +82,7 @@ def normalize_keyword_records(records: list[dict[str, Any]], primary_keyword: st
             "search_volume": None,
             "difficulty": None,
             "frequency": 1,
+            "source_domains": [],
         }
     return list(normalized.values())
 
@@ -144,11 +148,121 @@ def _has_tool_intent(keyword: str) -> bool:
     ))
 
 
+def _has_strong_tool_intent(keyword: str) -> bool:
+    return _has_tool_intent(keyword) and bool(re.search(
+        r"\b(calculator|generator|checker|converter|simulator|estimator)\b",
+        clean_phrase(keyword),
+    ))
+
+
+def _looks_incomplete_keyword(keyword: str) -> bool:
+    return looks_incomplete_search_query(keyword)
+
+
+CAUSE_INTENT_TERMS = {
+    "cause", "causes", "caused", "reason", "reasons", "why", "happen", "happens", "happening",
+}
+
+
+def _causal_topic_terms(keyword: str) -> set[str]:
+    ignored = CAUSE_INTENT_TERMS | {
+        "a", "an", "are", "does", "do", "for", "is", "it", "of", "the", "to", "what",
+    }
+    terms = []
+    for term in clean_phrase(keyword).split():
+        if term in ignored:
+            continue
+        if term.endswith("s") and len(term) > 3 and not term.endswith("ss"):
+            term = term[:-1]
+        terms.append(term)
+    return set(terms)
+
+
+def _causal_queries_overlap(left_keyword: str, right_keyword: str) -> bool:
+    left_value = clean_phrase(left_keyword)
+    right_value = clean_phrase(right_keyword)
+    if not (
+        set(left_value.split()) & CAUSE_INTENT_TERMS
+        and set(right_value.split()) & CAUSE_INTENT_TERMS
+    ):
+        return False
+    left_terms = _causal_topic_terms(left_value)
+    right_terms = _causal_topic_terms(right_value)
+    if not left_terms or not right_terms:
+        return False
+    matched_left = {
+        left
+        for left in left_terms
+        if any(left == right or SequenceMatcher(None, left, right).ratio() >= 0.72 for right in right_terms)
+    }
+    similarity = len(matched_left) / max(len(left_terms), len(right_terms))
+    return similarity >= 0.6
+
+
+def _mechanical_causal_conflicts(plan: dict[str, Any]) -> list[dict[str, str]]:
+    pages = [plan["master_hub"], *plan["spokes"]]
+    causal_pages = []
+    for page in pages:
+        target = page["target_keyword"]
+        if not (set(target.split()) & CAUSE_INTENT_TERMS):
+            continue
+        page["intent_class"] = "causal_explanation"
+        causal_pages.append((page, _causal_topic_terms(target)))
+    conflicts: list[dict[str, str]] = []
+    for index, (left, left_terms) in enumerate(causal_pages):
+        for right, right_terms in causal_pages[index + 1:]:
+            if not _causal_queries_overlap(left["target_keyword"], right["target_keyword"]):
+                continue
+            conflicts.append({
+                "page_a": left["target_keyword"],
+                "page_b": right["target_keyword"],
+                "reason": "Causes, reasons, and why-it-happens queries share one causal-explanation intent.",
+                "resolution": "Merge them into one comprehensive causes page.",
+            })
+    return conflicts
+
+
 PRIMARY_INTENT_TERMS = {
     "review", "reviews", "calculator", "checker", "generator", "tool", "software",
     "maker", "builder", "converter", "planner", "simulator", "estimator",
     "guide", "online", "free", "best", "official", "website", "site", "app",
 }
+
+THIRD_PARTY_PLATFORM_TERMS = {
+    "amazon", "ebay", "facebook", "instagram", "linkedin", "pinterest", "quora",
+    "reddit", "redit", "tiktok", "trustpilot", "twitter", "walmart", "youtube",
+}
+
+
+def _is_direct_comparison(keyword: str) -> bool:
+    return bool(re.search(
+        r"\b(vs|versus|compare|comparison|alternative|alternatives)\b",
+        clean_phrase(keyword),
+    ))
+
+
+def _contains_third_party_platform(keyword: str) -> bool:
+    terms = set(clean_phrase(keyword).split())
+    return bool(terms & THIRD_PARTY_PLATFORM_TERMS) and not _is_direct_comparison(keyword)
+
+
+def _has_unrelated_leading_brand(keyword: str, primary_keyword: str) -> bool:
+    if _is_direct_comparison(keyword):
+        return False
+    terms = clean_phrase(keyword).split()
+    core = _primary_core_terms(primary_keyword)
+    if len(core) < 2:
+        return False
+    for index in range(len(terms) - 1):
+        if terms[index:index + 2] != core[:2] or index < 2:
+            continue
+        allowed = {
+            "best", "buy", "buying", "can", "consider", "do", "does", "how", "is", "official",
+            "on", "order", "recommended", "review", "reviews", "should", "to", "verified", "what",
+            "where", "why",
+        }
+        return not set(terms[:index]) <= allowed
+    return False
 
 
 def _primary_core_terms(primary_keyword: str) -> list[str]:
@@ -174,6 +288,8 @@ def _is_core_entity_relevant(keyword: str, primary_keyword: str) -> bool:
 
 
 def _is_protected_emd_entity(keyword: str, primary_keyword: str) -> bool:
+    if _contains_third_party_platform(keyword):
+        return False
     primary_terms = set(clean_phrase(primary_keyword).split())
     core = _primary_core_terms(primary_keyword)
     entity_site = bool({"review", "reviews"} & primary_terms) or any(
@@ -224,6 +340,12 @@ Rules:
   or unsupported queries. Give a short specific reason. Never discard merely because volume is absent.
 - Discard competitor brand names, competitor domains, competitor product names, and navigational searches
   for another company unless the website context explicitly requests competitor-comparison content.
+- Discard queries containing a third-party company, app, social network, review platform, or marketplace
+  such as Reddit, Trustpilot, Amazon, YouTube, or Facebook. Keep a named brand only when the query is an
+  explicit direct-competitor comparison using "vs", "comparison", or "alternative" intent.
+- Discard incomplete, clipped, ungrammatical fragments that do not express a recognizable search intent.
+- Treat causes, reasons, "why it happens", and equivalent causal questions about the same subject as one
+  page intent. They belong as variants or sections on one comprehensive causes spoke, never separate URLs.
 - Never create two pages that would compete for the same search intent. Variants with the same user
   goal belong on one page. Similar words with different goals may remain separate pages.
 - The requested PRIMARY TOPIC is the exact-match-domain homepage. It is non-negotiable: master_target
@@ -235,9 +357,12 @@ Rules:
   relevant. Do not collapse dozens of different informational needs into the homepage or a few mega-pages.
 - Assign broad variants of the core product to the homepage, but reserve informational and educational
   queries for the most specific spoke that can satisfy them completely.
-- A spoke may be a tool only when the keyword has explicit interactive-tool intent and its supplied search
-  volume is at least {tool_threshold:,}. Building a tool has high effort. When volume is lower or unknown,
-  make that spoke a focused article/guide instead. The EMD master homepage follows its real intent: a
+- A strong standalone calculator, generator, checker, converter, simulator, or estimator query may be a
+  tool even at low volume because the SERP intent requires an interactive result. Other possible tool spokes
+  require supplied search volume of at least {tool_threshold:,}; otherwise use an article or guide.
+- For weaker tool-like terms such as software, maker, builder, planner, or generic tool queries, require
+  supplied search volume of at least {tool_threshold:,}. When volume is lower or unknown, make that spoke
+  a focused article/guide instead. The EMD master homepage follows its real intent: a
   calculator EMD is a tool, while a reviews, information, or editorial EMD is a content homepage.
 - Every page target and every keyword named in an assignment must be copied exactly from the inventory.
 - Discard only genuinely unusable or off-topic phrases. Awkward but understandable phrases can support a page.
@@ -565,7 +690,7 @@ def _repair_plan_consistency(
     for keyword in inventory:
         if keyword in decision_by_keyword:
             continue
-        if _is_protected_emd_entity(keyword, primary):
+        if _is_protected_emd_entity(keyword, primary) and not _looks_incomplete_keyword(keyword):
             destination = _resolve_inventory_keyword(keyword, list(page_targets)) or primary
             decision = {
                 "keyword": keyword, "disposition": "supporting", "assigned_to": destination,
@@ -589,7 +714,11 @@ def _repair_plan_consistency(
             destination = redirects[destination]
         if decision.get("disposition") == "page_target":
             decision["disposition"] = "supporting"
-        if decision.get("disposition") == "discard" and _is_protected_emd_entity(keyword, primary):
+        if (
+            decision.get("disposition") == "discard"
+            and _is_protected_emd_entity(keyword, primary)
+            and not _looks_incomplete_keyword(keyword)
+        ):
             decision["disposition"] = "supporting"
             decision["placement"] = "h2"
             decision["reason"] = "Retained because it is anchored to the site's core EMD entity."
@@ -614,6 +743,7 @@ def _repair_plan_consistency(
 
 def _ensure_topical_authority(
     plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
+    excluded_page_targets: set[str] | None = None,
 ) -> dict[str, Any]:
     """Promote diverse, relevant supporting terms when the model returns a one-page plan."""
     metrics = {item["phrase"]: item for item in records}
@@ -624,13 +754,19 @@ def _ensure_topical_authority(
         plan["master_hub"]["target_keyword"],
         *(page["target_keyword"] for page in plan["spokes"]),
     }
+    excluded_page_targets = excluded_page_targets or set()
     if len(existing_targets) < minimum_pages:
         candidates = [
             item["keyword"] for item in usable
             if item.get("disposition") == "supporting"
             and item["keyword"] not in existing_targets
+            and item["keyword"] not in excluded_page_targets
             and _is_core_entity_relevant(item["keyword"], primary_keyword)
             and _is_page_target_candidate(item["keyword"], primary_keyword)
+            and not any(
+                _causal_queries_overlap(item["keyword"], target)
+                for target in existing_targets
+            )
         ]
         candidates.sort(key=lambda keyword: (
             int(metrics[keyword].get("search_volume") or 0),
@@ -715,17 +851,21 @@ def _apply_tool_roi_rules(plan: dict[str, Any], records: list[dict[str, Any]]) -
         volume = int(page.get("search_volume") or 0)
         difficulty = float(page.get("difficulty") if page.get("difficulty") is not None else 100)
         explicit_tool_intent = _has_tool_intent(page["target_keyword"])
+        strong_tool_intent = _has_strong_tool_intent(page["target_keyword"])
         demand_justifies_effort = volume >= threshold and (
             difficulty <= 65 or volume >= threshold * 3
         )
-        qualifies = explicit_tool_intent and demand_justifies_effort
+        qualifies = strong_tool_intent or (explicit_tool_intent and demand_justifies_effort)
         page["page_type"] = "tool" if qualifies else "article"
         if qualifies:
             page["intent_class"] = "transactional_tool"
-            reason = (
-                f"Tool intent with volume {volume:,} meets the {threshold:,} demand threshold"
-                + (" despite high difficulty." if difficulty > 65 else ".")
-            )
+            if strong_tool_intent:
+                reason = "Strong interactive-tool intent justifies a tool even at low or unknown volume."
+            else:
+                reason = (
+                    f"Tool intent with volume {volume:,} meets the {threshold:,} demand threshold"
+                    + (" despite high difficulty." if difficulty > 65 else ".")
+                )
         else:
             page["tool_functions"] = []
             if not explicit_tool_intent:
@@ -875,9 +1015,15 @@ Find only pairs that would satisfy the same user goal with the same result type.
 because they discuss the same entity. A calculator/tool, a manual calculation guide, a definition, an
 interpretation, and a comparison serve different intents and should coexist as topical-authority spokes.
 Likewise, entity-specific pages may coexist when each gives a complete answer about a distinct entity.
+Causes, reasons, "why it happens", and equivalent causal questions about the same subject are the same
+intent and must be reported as a conflict if proposed as separate pages.
 Also reject retained keywords that are clearly unrelated, broken, competitor-branded, another company's
 product/domain, or navigational searches for another site. A keyword containing relevant topic words is
 still irrelevant when its real intent is reaching a competitor. Do not reject useful non-branded subtopics.
+Reject third-party company, app, platform, social-network, review-site, and marketplace modifiers such as
+Reddit, Trustpilot, Amazon, YouTube, or Facebook. A named company may remain only when the keyword expresses
+direct competitor-comparison intent with "vs", "comparison", or "alternative" wording.
+Reject clipped, nonsensical, or incomplete phrases that do not express a recognizable search intent.
 The master target is the site's protected EMD subject. Do not reject keywords anchored to that core entity
 merely because competitor source pages also discuss or sell the same product. Product reviews, ingredients,
 side effects, buying intent, source-specific reviews, and explicit "core product vs competitor" comparisons
@@ -895,6 +1041,16 @@ or
         return [], [], ["the semantic cannibalization review returned an invalid result"]
     retained = {item["keyword"] for item in keyword_placements}
     primary_target = plan["master_hub"]["target_keyword"]
+    def should_honor_rejection(item: dict[str, Any]) -> bool:
+        keyword = clean_phrase(str(item.get("keyword") or ""))
+        if not _is_protected_emd_entity(keyword, primary_target):
+            return True
+        reason = clean_phrase(str(item.get("reason") or ""))
+        third_party_reason = bool(set(reason.split()) & {
+            "app", "brand", "company", "marketplace", "navigational", "platform", "social",
+        })
+        return third_party_reason and not _is_direct_comparison(keyword)
+
     rejections = [
         {
             "keyword": clean_phrase(str(item.get("keyword") or "")),
@@ -904,7 +1060,7 @@ or
         if (
             isinstance(item, dict)
             and clean_phrase(str(item.get("keyword") or "")) in retained
-            and not _is_protected_emd_entity(str(item.get("keyword") or ""), primary_target)
+            and should_honor_rejection(item)
         )
     ]
     raw_conflicts = [item for item in audit["conflicts"] if isinstance(item, dict)]
@@ -971,6 +1127,78 @@ def _apply_relevance_rejections(
             )
             decision["reason"] = "Reassigned after an irrelevant destination page was removed."
     return sorted(reasons)
+
+
+def _deterministic_third_party_rejections(
+    plan: dict[str, Any], primary_keyword: str,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "keyword": item["keyword"],
+            "reason": (
+                "Contains a third-party platform or marketplace name without direct competitor-comparison intent."
+                if _contains_third_party_platform(item["keyword"])
+                else "Contains an unrelated competitor/company/app name before the protected EMD entity."
+            ),
+        }
+        for item in plan.get("keyword_assignments") or []
+        if item.get("disposition") != "discard" and (
+            _contains_third_party_platform(item["keyword"])
+            or _has_unrelated_leading_brand(item["keyword"], primary_keyword)
+        )
+    ]
+
+
+def _deterministic_quality_rejections(plan: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        {
+            "keyword": item["keyword"],
+            "reason": "Incomplete or clipped phrase without a complete, recognizable search intent.",
+        }
+        for item in plan.get("keyword_assignments") or []
+        if item.get("disposition") != "discard" and _looks_incomplete_keyword(item["keyword"])
+    ]
+
+
+def _source_domain_brand_rejections(
+    plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
+) -> list[dict[str, str]]:
+    record_by_keyword = {item["phrase"]: item for item in records}
+    core_compact = "".join(_primary_core_terms(primary_keyword))
+    hosted_suffixes = {"framer.ai", "webflow.io", "wordpress.com", "godaddysites.com"}
+    rejections: list[dict[str, str]] = []
+    for decision in plan.get("keyword_assignments") or []:
+        keyword = decision["keyword"]
+        if decision.get("disposition") == "discard" or _is_direct_comparison(keyword):
+            continue
+        phrase_compact = re.sub(r"[^a-z0-9]+", "", keyword.lower())
+        for raw_domain in record_by_keyword.get(keyword, {}).get("source_domains") or []:
+            domain = _clean_domain(raw_domain)
+            if not domain:
+                continue
+            labels = domain.split(".")
+            if domain in hosted_suffixes or len(labels) < 2:
+                continue
+            if any(domain.endswith(f".{suffix}") for suffix in hosted_suffixes):
+                brand_label = labels[0]
+            elif domain.endswith(".com.au") and len(labels) >= 3:
+                brand_label = labels[-3]
+            else:
+                brand_label = labels[-2]
+            brand_compact = re.sub(r"[^a-z0-9]+", "", brand_label)
+            if len(brand_compact) < 4:
+                continue
+            mentions_source_brand = brand_compact in phrase_compact or (
+                len(phrase_compact) >= 5 and phrase_compact in brand_compact
+            )
+            source_is_core_entity = bool(core_compact) and core_compact in brand_compact
+            if mentions_source_brand and not source_is_core_entity:
+                rejections.append({
+                    "keyword": keyword,
+                    "reason": f'Contains the unrelated company/app name from source domain "{domain}".',
+                })
+                break
+    return rejections
 
 
 def _merge_intent_conflicts(
@@ -1146,8 +1374,32 @@ async def build_site_architecture(
                 )
             plan = _normalize_plan(payload, normalized, main)
             plan = _repair_plan_consistency(plan, normalized, main)
+            deterministic_rejections = [
+                *_deterministic_third_party_rejections(plan, main),
+                *_deterministic_quality_rejections(plan),
+                *_source_domain_brand_rejections(plan, normalized, main),
+            ]
+            _apply_relevance_rejections(plan, deterministic_rejections)
             plan = _ensure_topical_authority(plan, normalized, main)
             plan = _apply_tool_roi_rules(plan, normalized)
+            causal_conflicts = _mechanical_causal_conflicts(plan)
+            if causal_conflicts:
+                targets_before_merge = {
+                    plan["master_hub"]["target_keyword"],
+                    *(page["target_keyword"] for page in plan["spokes"]),
+                }
+                plan, _causal_merge_notes = _merge_intent_conflicts(plan, causal_conflicts)
+                targets_after_merge = {
+                    plan["master_hub"]["target_keyword"],
+                    *(page["target_keyword"] for page in plan["spokes"]),
+                }
+                plan = _ensure_topical_authority(
+                    plan,
+                    normalized,
+                    main,
+                    excluded_page_targets=targets_before_merge - targets_after_merge,
+                )
+                plan = _apply_tool_roi_rules(plan, normalized)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
                 review_limit = min(5, len(plan["spokes"]) + 1)

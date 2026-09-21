@@ -20,10 +20,15 @@ from nlp.hub_spoke_agent import (
     _apply_tool_roi_rules,
     _coerce_object,
     _generated_page,
+    _has_unrelated_leading_brand,
     _is_core_entity_relevant,
     _is_protected_emd_entity,
+    _looks_incomplete_keyword,
+    _mechanical_causal_conflicts,
+    _merge_intent_conflicts,
     _normalize_plan,
     _repair_plan_consistency,
+    _source_domain_brand_rejections,
     build_site_architecture,
     normalize_keyword_records,
     validate_architecture,
@@ -69,11 +74,32 @@ class HubWorkspaceTests(unittest.TestCase):
     def test_product_review_emd_keeps_product_terms_without_admitting_broad_dental_noise(self):
         primary = "dental pro 7 reviews"
         self.assertTrue(_is_core_entity_relevant("dental pro ingredients", primary))
-        self.assertTrue(_is_protected_emd_entity("dental pro 7 reviews reddit", primary))
+        self.assertFalse(_is_protected_emd_entity("dental pro 7 reviews reddit", primary))
+        self.assertFalse(_is_protected_emd_entity("dental-pro-7-redit-reviews", primary))
+        self.assertFalse(_is_protected_emd_entity("dental pro 7 reviews trustpilot", primary))
+        self.assertFalse(_is_protected_emd_entity("dental pro 7 reviews amazon", primary))
         self.assertTrue(_is_protected_emd_entity("dental pro 7 vs oramd", primary))
         self.assertFalse(_is_core_entity_relevant("dental implants", primary))
         self.assertFalse(_is_core_entity_relevant("amd dental clinic", primary))
         self.assertFalse(_is_protected_emd_entity("natures smile reviews", primary))
+        self.assertTrue(_has_unrelated_leading_brand("call nature dental pro 7 reviews", primary))
+        self.assertFalse(_has_unrelated_leading_brand("best dental pro 7 reviews", primary))
+
+    def test_source_domain_brand_names_are_rejected_but_core_entity_and_comparisons_remain(self):
+        primary = "dental pro 7 reviews"
+        records = normalize_keyword_records([
+            {"phrase": primary, "source_domains": ["https://dentalpro7reviews.com"]},
+            {"phrase": "call nature dental pro 7 reviews", "source_domains": ["https://callnature.com"]},
+            {"phrase": "dental pro 7 ingredients", "source_domains": ["https://dentalpro7ingredients.com"]},
+            {"phrase": "dental pro 7 vs oramd", "source_domains": ["https://oramd.com"]},
+        ])
+        plan = {"keyword_assignments": [
+            {"keyword": item["phrase"], "disposition": "supporting"} for item in records
+        ]}
+        rejected = {
+            item["keyword"] for item in _source_domain_brand_rejections(plan, records, primary)
+        }
+        self.assertEqual(rejected, {"call nature dental pro 7 reviews"})
 
     def test_provider_wrappers_and_json_strings_are_unwrapped(self):
         payload = {"master_target": "circuit diagram maker", "pages": []}
@@ -418,6 +444,8 @@ class HubWorkspaceTests(unittest.TestCase):
             {"phrase": "widget calculator", "search_volume": 5000, "difficulty": 30},
             {"phrase": "advanced widget calculator", "search_volume": 3000, "difficulty": 35},
             {"phrase": "tiny widget calculator", "search_volume": 20, "difficulty": 10},
+            {"phrase": "tiny widget builder", "search_volume": 20, "difficulty": 10},
+            {"phrase": "linear extrapolation calculator", "search_volume": 10, "difficulty": 40},
             {"phrase": "widget calculation guide", "search_volume": 2000, "difficulty": 20},
             {"phrase": "widget calculator terms and conditions", "search_volume": 5000, "difficulty": 15},
         ])
@@ -427,6 +455,8 @@ class HubWorkspaceTests(unittest.TestCase):
             "spokes": [
                 _generated_page("advanced widget calculator", metrics),
                 _generated_page("tiny widget calculator", metrics),
+                _generated_page("tiny widget builder", metrics),
+                _generated_page("linear extrapolation calculator", metrics),
                 _generated_page("widget calculation guide", metrics),
                 _generated_page("widget calculator terms and conditions", metrics),
             ],
@@ -434,9 +464,61 @@ class HubWorkspaceTests(unittest.TestCase):
         plan = _apply_tool_roi_rules(plan, records)
         page_types = {page["target_keyword"]: page["page_type"] for page in plan["spokes"]}
         self.assertEqual(page_types["advanced widget calculator"], "tool")
-        self.assertEqual(page_types["tiny widget calculator"], "article")
+        self.assertEqual(page_types["tiny widget calculator"], "tool")
+        self.assertEqual(page_types["linear extrapolation calculator"], "tool")
+        self.assertEqual(page_types["tiny widget builder"], "article")
         self.assertEqual(page_types["widget calculation guide"], "article")
         self.assertEqual(page_types["widget calculator terms and conditions"], "article")
+
+    def test_incomplete_keyword_fragments_are_detected(self):
+        self.assertTrue(_looks_incomplete_keyword("what dental"))
+        self.assertTrue(_looks_incomplete_keyword("teeth whitening side"))
+        self.assertTrue(_looks_incomplete_keyword("dental dental"))
+        self.assertFalse(_looks_incomplete_keyword("what causes gum recession"))
+        self.assertFalse(_looks_incomplete_keyword("dental pro 7 side effects"))
+
+    def test_cause_reason_and_why_variants_merge_into_one_spoke(self):
+        records = normalize_keyword_records([
+            {"phrase": "gum health guide", "search_volume": 1000},
+            {"phrase": "what causes gum recession", "search_volume": 800},
+            {"phrase": "why gum recession happens", "search_volume": 300},
+        ])
+        metrics = {item["phrase"]: item for item in records}
+        primary = "gum health guide"
+        plan = {
+            "site_strategy": "Build complete gum-health coverage.",
+            "master_hub": _generated_page(primary, metrics),
+            "spokes": [
+                _generated_page("what causes gum recession", metrics),
+                _generated_page("why gum recession happens", metrics),
+            ],
+            "keyword_assignments": [
+                {
+                    "keyword": keyword,
+                    "disposition": "page_target",
+                    "assigned_to": keyword,
+                    "placement": "title",
+                    "reason": "Distinct proposed page.",
+                }
+                for keyword in metrics
+            ],
+        }
+
+        conflicts = _mechanical_causal_conflicts(plan)
+        self.assertEqual(len(conflicts), 1)
+        merged, notes = _merge_intent_conflicts(plan, conflicts)
+
+        self.assertEqual(
+            [page["target_keyword"] for page in merged["spokes"]],
+            ["what causes gum recession"],
+        )
+        decisions = {item["keyword"]: item for item in merged["keyword_assignments"]}
+        self.assertEqual(decisions["why gum recession happens"]["disposition"], "supporting")
+        self.assertEqual(
+            decisions["why gum recession happens"]["assigned_to"],
+            "what causes gum recession",
+        )
+        self.assertTrue(notes)
 
     def test_imported_seeds_are_preserved_in_context(self):
         context = _context_with_seed_keywords(

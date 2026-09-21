@@ -75,6 +75,11 @@ GENERIC_TOOL_TERMS = {
     "maker", "software", "tool", "tools",
 }
 
+INCOMPLETE_QUERY_ENDINGS = {
+    "a", "an", "and", "attain", "comes", "contains", "for", "know", "of",
+    "or", "saying", "side", "the", "to", "with",
+}
+
 
 def clean_phrase(phrase: str) -> str:
     """Clean and normalize a keyword phrase."""
@@ -93,6 +98,21 @@ def has_past_year(phrase: str, current_year: int | None = None) -> bool:
         1000 <= int(match) < year_limit
         for match in re.findall(r"\b\d{4}\b", str(phrase or ""))
     )
+
+
+def looks_incomplete_search_query(phrase: str) -> bool:
+    """Reject clipped extraction fragments that do not state a complete search need."""
+    cleaned = clean_phrase(phrase).replace("-", " ")
+    words = cleaned.split()
+    if not words:
+        return True
+    if len(words) <= 2 and words[0] in {"how", "what", "when", "where", "which", "why"}:
+        return True
+    if words[-1] in INCOMPLETE_QUERY_ENDINGS:
+        return True
+    if any(word in {"reviewthe"} for word in words):
+        return True
+    return len(words) >= 2 and len(set(words)) == 1
 
 
 def normalize_seed_keywords(raw_keywords: Iterable[str] | None) -> list[str]:
@@ -194,6 +214,8 @@ def is_publishable_keyword(
     if not is_valid_keyword(cleaned, min_words=min_words):
         return False
     if has_past_year(cleaned):
+        return False
+    if looks_incomplete_search_query(cleaned):
         return False
 
     words = cleaned.split()
