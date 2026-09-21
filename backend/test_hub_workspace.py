@@ -75,6 +75,26 @@ class HubWorkspaceTests(unittest.TestCase):
         content = "Here is the requested architecture:\n```json\n" + json.dumps(payload) + "\n```"
         self.assertEqual(_parse_json_payload(content), payload)
 
+    def test_valid_architecture_survives_an_unavailable_semantic_review(self):
+        records = normalize_keyword_records([
+            {"phrase": "circuit diagram maker"},
+            {"phrase": "circuit diagram online"},
+            {"phrase": "circuit diagram symbols"},
+            {"phrase": "celebrity news"},
+        ])
+        with (
+            patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
+            patch(
+                "nlp.hub_spoke_agent._achat_json",
+                new=AsyncMock(side_effect=[specialist_payload(), [{"incomplete": "audit fragment"}]]),
+            ),
+        ):
+            mapping = asyncio.run(build_site_architecture(
+                records, primary_keyword="circuit diagram maker",
+            ))
+        self.assertEqual(mapping["_semantic_audit_status"], "unavailable")
+        self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
+
     def test_keyword_metrics_survive_input_hygiene(self):
         body = KeywordWorkspaceRequest(
             keywords=["lunar age", "lunar age calculator"],

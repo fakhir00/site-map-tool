@@ -851,7 +851,11 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
         "unique_target_keywords": "Checked",
         "unique_titles": "Checked",
         "unique_slugs": "Checked",
-        "semantic_intents": "Checked by specialist agent",
+        "semantic_intents": (
+            "Checked by specialist agent"
+            if plan.get("_semantic_audit_status") == "passed"
+            else "Structural intent safeguards passed"
+        ),
         "duplicates_removed": sum(
             1 for item in plan["keyword_assignments"]
             if item["disposition"] == "supporting" and "duplicate" in item["reason"].lower()
@@ -899,11 +903,28 @@ async def build_site_architecture(
             if not last_errors:
                 review_limit = min(5, len(plan["spokes"]) + 1)
                 for _review in range(review_limit):
-                    conflicts, last_errors = await _audit_intent_cannibalization(plan, context)
+                    try:
+                        conflicts, audit_errors = await _audit_intent_cannibalization(plan, context)
+                    except Exception as exc:
+                        conflicts = []
+                        audit_errors = [str(exc) or type(exc).__name__]
+                    if audit_errors and not conflicts:
+                        logger.warning(
+                            "Semantic cannibalization review unavailable; keeping the structurally "
+                            "validated architecture: %s", "; ".join(audit_errors),
+                        )
+                        plan["_semantic_audit_status"] = "unavailable"
+                        last_errors = []
+                        break
+                    last_errors = audit_errors
                     if not conflicts:
+                        plan["_semantic_audit_status"] = "passed"
                         break
                     plan, merge_notes = _merge_intent_conflicts(plan, conflicts)
                     if not merge_notes:
+                        logger.warning("Ignoring an audit conflict that did not reference valid plan pages")
+                        plan["_semantic_audit_status"] = "invalid_conflict_ignored"
+                        last_errors = []
                         break
                     last_errors = validate_architecture(plan, normalized, main)
                     if last_errors:
