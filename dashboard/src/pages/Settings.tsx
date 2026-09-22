@@ -19,6 +19,7 @@ export function Settings() {
     queryFn: () => api.get<ProviderStatus>('/providers/apify/status'),
     retry: false,
   })
+  const apifyAvailable = apify?.available ?? apify?.authenticated
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -97,8 +98,8 @@ export function Settings() {
               </p>
             </div>
           </div>
-          <Badge variant={apify?.authenticated ? 'teal' : 'amber'}>
-            {isLoadingApify ? 'Checking' : apify?.authenticated ? 'Connected' : apify?.configured ? 'Authentication failed' : 'Not configured'}
+          <Badge variant={apifyAvailable ? 'teal' : 'amber'}>
+            {isLoadingApify ? 'Checking' : apifyAvailable ? 'Connected' : apify?.authenticated ? 'Action required' : apify?.configured ? 'Authentication failed' : 'Not configured'}
           </Badge>
         </div>
       </Card>

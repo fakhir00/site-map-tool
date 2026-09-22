@@ -31,25 +31,61 @@ def apify_account_status(force: bool = False) -> Dict[str, Any]:
         }
     else:
         try:
-            user = _get_client().user().get()
+            client = _get_client()
+            user = client.user().get()
             authenticated = isinstance(user, dict) and bool(user.get("id"))
+            plan_tier = str(((user or {}).get("plan") or {}).get("tier") or "").upper()
+            latest_actor_error = _latest_actor_dataset_error(client) if authenticated and plan_tier == "FREE" else None
             result = {
                 "configured": True,
                 "authenticated": authenticated,
+                "available": authenticated and not latest_actor_error,
                 "credential_source": "APIFY_API_TOKEN",
-                "message": "Connected to Apify." if authenticated else "Apify rejected the configured token.",
+                "message": (
+                    f"Connected, but the competitor-search actor is unavailable: {latest_actor_error}"
+                    if latest_actor_error
+                    else "Connected to Apify."
+                    if authenticated
+                    else "Apify rejected the configured token."
+                ),
             }
         except Exception as exc:
             result = {
                 "configured": True,
                 "authenticated": False,
+                "available": False,
                 "credential_source": "APIFY_API_TOKEN",
                 "message": f"Could not verify Apify: {type(exc).__name__}",
             }
     _ACCOUNT_STATUS_CACHE = (now, result)
     return dict(result)
 
-def search_google_via_apify(query: str, max_results: int = 30, country_code: str = "us") -> List[Dict[str, Any]]:
+
+def _latest_actor_dataset_error(client: ApifyClient) -> str | None:
+    """Read the last competitor run so a successful error-row run is not shown as healthy."""
+    try:
+        runs = client.actor(settings.APIFY_COMPETITOR_ACTOR_ID).runs().list(limit=1, desc=True).items
+        if not runs:
+            return None
+        dataset_id = runs[0].get("defaultDatasetId")
+        if not dataset_id:
+            return None
+        for item in client.dataset(dataset_id).iterate_items():
+            error = str(item.get("error") or "").strip() if isinstance(item, dict) else ""
+            if error:
+                return error
+            break
+    except Exception as exc:
+        logger.warning("Could not inspect latest Apify competitor run: %s", exc)
+    return None
+
+
+def search_google_via_apify(
+    query: str,
+    max_results: int = 30,
+    country_code: str = "us",
+    diagnostics: list[str] | None = None,
+) -> List[Dict[str, Any]]:
     """
     Search Google using the configured competitor discovery Actor.
     Scrapes enough pages to satisfy max_results (the Actor returns ten per page).
@@ -63,6 +99,7 @@ def search_google_via_apify(query: str, max_results: int = 30, country_code: str
     all_results: List[Dict[str, Any]] = []
     seen_urls: set[str] = set()
     pages_to_scrape = max(1, math.ceil(max_results / 10))
+    provider_failed = False
 
     for page_num in range(1, pages_to_scrape + 1):
         run_input = {
@@ -99,8 +136,21 @@ def search_google_via_apify(query: str, max_results: int = 30, country_code: str
                 continue
 
             for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+                actor_error = str(item.get("error") or "").strip() if isinstance(item, dict) else ""
+                if actor_error:
+                    logger.error("Apify SERP actor error for %r: %s", query, actor_error)
+                    if diagnostics is not None and actor_error not in diagnostics:
+                        diagnostics.append(actor_error)
+                    provider_failed = True
+                    break
                 # The actor returns {results: [...], next_page, next_start}
-                serp_results = item.get("results") or item.get("searchResults") or []
+                serp_results = (
+                    item.get("results")
+                    or item.get("searchResults")
+                    or item.get("organicResults")
+                    or item.get("organic_results")
+                    or []
+                )
                 # Handle case where results might be a JSON string
                 if isinstance(serp_results, str):
                     try:
@@ -137,9 +187,13 @@ def search_google_via_apify(query: str, max_results: int = 30, country_code: str
 
         except Exception as exc:
             logger.error("Apify SERP scraper failed for %r page %s: %s", query, page_num, exc)
+            if diagnostics is not None:
+                message = f"{type(exc).__name__}: {exc}"
+                if message not in diagnostics:
+                    diagnostics.append(message)
             continue
 
-        if len(all_results) >= max_results:
+        if provider_failed or len(all_results) >= max_results:
             break
 
     if not all_results:

@@ -75,6 +75,56 @@ class ApifyClientTests(TestCase):
         self.assertIn("keyword", first_call_input)
         self.assertNotIn("queries", first_call_input)
 
+    def test_search_reports_actor_error_rows_and_stops_pagination(self):
+        actor = MagicMock()
+        actor.call.return_value = {
+            "status": "SUCCEEDED",
+            "defaultDatasetId": "dataset-1",
+        }
+        dataset = MagicMock()
+        dataset.iterate_items.return_value = iter([{
+            "keyword": "moon nodes calculator",
+            "error": "Free tier limit reached (100 searches). An Apify paid plan is required to continue.",
+        }])
+        client = MagicMock()
+        client.actor.return_value = actor
+        client.dataset.return_value = dataset
+        diagnostics = []
+
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module._get_client", return_value=client),
+        ):
+            results = search_google_via_apify(
+                "moon nodes calculator", max_results=30, diagnostics=diagnostics,
+            )
+
+        self.assertEqual(results, [])
+        self.assertEqual(actor.call.call_count, 1)
+        self.assertIn("Free tier limit reached", diagnostics[0])
+
+    def test_account_status_exposes_latest_free_plan_actor_error(self):
+        client = MagicMock()
+        client.user.return_value.get.return_value = {
+            "id": "user-1",
+            "plan": {"tier": "FREE"},
+        }
+        client.actor.return_value.runs.return_value.list.return_value.items = [{
+            "defaultDatasetId": "dataset-1",
+        }]
+        client.dataset.return_value.iterate_items.return_value = iter([{
+            "error": "Free tier limit reached (100 searches).",
+        }])
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module._get_client", return_value=client),
+        ):
+            status = apify_account_status(force=True)
+
+        self.assertTrue(status["authenticated"])
+        self.assertFalse(status["available"])
+        self.assertIn("Free tier limit reached", status["message"])
+
     def test_keyword_research_runs_every_seed_and_merges_duplicates(self):
         actor = MagicMock()
         actor.call.side_effect = [

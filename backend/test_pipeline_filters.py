@@ -14,9 +14,17 @@ from nlp.openrouter import (
     generate_ai_keywords_sync,
     judge_competitor_domains,
 )
-from nlp.keywords import has_past_year, is_publishable_keyword, looks_incomplete_search_query
+from nlp.keywords import (
+    has_past_year,
+    has_external_platform_modifier,
+    has_unrelated_leading_entity,
+    is_publishable_keyword,
+    keyword_matches_emd_entity,
+    looks_incomplete_search_query,
+)
 from workers.pipeline import (
     _balanced_competitor_domains,
+    _build_ai_refined_accumulator,
     _crawl_limit_per_domain,
     _discover_competitor_domains,
     _discover_content_urls,
@@ -25,6 +33,7 @@ from workers.pipeline import (
     _keyword_matches_topic,
     _llm_filter_competitor_domains,
     _order_seeds_by_emd,
+    _phrase_mentions_unrelated_source_brand,
     _scan_seed_keywords,
     _search_result_urls,
     _scrape_chunk_size,
@@ -461,7 +470,7 @@ class PipelineFilterTests(TestCase):
         )
 
         self.assertEqual(seeds[0], "dentalpro 7 reviews")
-        self.assertIn("dentitox pro ingredients label", seeds)
+        self.assertNotIn("dentitox pro ingredients label", seeds)
 
     def test_coupon_platform_is_blocked_even_when_subdomain_matches_seed(self):
         project = SimpleNamespace(
@@ -534,6 +543,27 @@ class PipelineFilterTests(TestCase):
             domains = _discover_competitor_domains(project, ["dental pro 7 reviews"])
 
         self.assertEqual(domains, [])
+
+    def test_exact_seed_ranking_page_survives_over_strict_site_judge(self):
+        project = SimpleNamespace(
+            own_domain="https://linearextrapolationcalculator.com",
+            domain="https://linearextrapolationcalculator.com",
+            search_locale="us",
+            audit_summary="A focused linear extrapolation calculator",
+        )
+        results = [{
+            "url": "https://specialist.example/tools/linear-extrapolation-calculator",
+            "title": "Linear Extrapolation Calculator",
+            "snippet": "Calculate extrapolated linear values online",
+        }]
+        with (
+            patch("scraping.apify_client_module.is_apify_configured", return_value=True),
+            patch("scraping.apify_client_module.search_google_via_apify", return_value=results),
+            patch("workers.pipeline._llm_filter_competitor_domains", return_value=[]),
+        ):
+            domains = _discover_competitor_domains(project, ["linear extrapolation calculator"])
+
+        self.assertEqual(domains, ["https://specialist.example"])
 
     def test_competitor_discovery_preserves_exact_ranking_urls(self):
         project = SimpleNamespace(
@@ -685,6 +715,82 @@ class PipelineFilterTests(TestCase):
             )[0],
             "lunar age calculator",
         )
+
+    def test_emd_entity_fence_rejects_homonyms_and_broad_niche_terms(self):
+        self.assertTrue(keyword_matches_emd_entity("chinese lunar age", "lunar age calculator"))
+        self.assertTrue(keyword_matches_emd_entity("north node meaning", "moon nodes calculator"))
+        self.assertTrue(keyword_matches_emd_entity("dental pro ingredients", "dental pro 7 reviews"))
+        self.assertFalse(keyword_matches_emd_entity("lunar client", "lunar age calculator"))
+        self.assertFalse(keyword_matches_emd_entity("dental implants", "dental pro 7 reviews"))
+        self.assertTrue(has_external_platform_modifier(
+            "dental pro 7 reviews reddit", "dental pro 7 reviews",
+        ))
+        self.assertTrue(has_unrelated_leading_entity(
+            "call nature dental pro 7 reviews", "dental pro 7 reviews",
+        ))
+        self.assertFalse(has_unrelated_leading_entity(
+            "best dental pro 7 reviews", "dental pro 7 reviews",
+        ))
+
+    def test_provider_keywords_cannot_pass_with_external_platform_or_prefixed_company(self):
+        topic_terms = {"dental", "pro", "reviews", "ingredients"}
+        seeds = ["dental pro 7 reviews"]
+        self.assertFalse(_keyword_matches_topic(
+            "dental pro 7 reviews reddit", seeds, topic_terms, set(),
+        ))
+        self.assertFalse(_keyword_matches_topic(
+            "call nature dental pro 7 reviews", seeds, topic_terms, set(),
+        ))
+        self.assertTrue(_keyword_matches_topic(
+            "dental pro 7 ingredients", seeds, topic_terms, set(),
+        ))
+
+    def test_scan_seeds_cannot_redefine_the_emd_topic(self):
+        seeds = _scan_seed_keywords(
+            ["lunar client", "chinese lunar age", "lunar age calculator", "advent calendar"],
+            "https://lunaragecalculator.com",
+            json.dumps({"primary_keyword": "lunar age calculator"}),
+        )
+
+        self.assertEqual(seeds[0], "lunar age calculator")
+        self.assertIn("chinese lunar age", seeds)
+        self.assertNotIn("lunar client", seeds)
+        self.assertNotIn("advent calendar", seeds)
+
+    def test_source_domain_brands_are_removed_before_gap_ai(self):
+        primary = "dental pro 7 reviews"
+        self.assertTrue(_phrase_mentions_unrelated_source_brand(
+            "call nature dental pro 7 reviews", ["https://callnature.com"], primary,
+        ))
+        self.assertTrue(_phrase_mentions_unrelated_source_brand(
+            "amd dental clinic", ["https://amddentalclinic.com"], primary,
+        ))
+        self.assertFalse(_phrase_mentions_unrelated_source_brand(
+            "dental pro 7 ingredients", ["https://dentalpro7ingredients.com"], primary,
+        ))
+        self.assertFalse(_phrase_mentions_unrelated_source_brand(
+            "dental pro 7 vs oramd", ["https://oramd.com"], primary,
+        ))
+
+    def test_gap_ai_cannot_rewrite_a_relevant_source_into_an_unrelated_homonym(self):
+        refined = _build_ai_refined_accumulator(
+            {
+                "lunar age guide": {
+                    "count": 1,
+                    "url_ids": {uuid.uuid4()},
+                },
+            },
+            [{
+                "source_phrase": "lunar age guide",
+                "phrase": "lunar client",
+                "type": "primary",
+            }],
+            ["lunar age calculator"],
+            {"lunar", "age", "client"},
+            set(),
+        )
+
+        self.assertEqual(refined, {})
 
     def test_search_result_urls_stops_after_google_has_enough_results(self):
         with (

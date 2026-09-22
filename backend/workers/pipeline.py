@@ -831,6 +831,33 @@ def _process_competitor_keyword_gaps(
         )
     ]
     filtered = _with_source_url_ids(filtered, extracted)
+    source_ids = {
+        url_id
+        for item in filtered
+        for url_id in _coerce_uuid_set(item.get("url_ids", []))
+    }
+    source_domain_by_id: dict[uuid.UUID, str] = {}
+    if source_ids:
+        for url_id, source_domain, url in db.execute(
+            select(Url.id, Url.source_domain, Url.url).where(
+                Url.project_id == project_id,
+                Url.id.in_(source_ids),
+            )
+        ).all():
+            source_domain_by_id[url_id] = source_domain or _origin(url) or ""
+    primary_seed = seed_keywords[0] if seed_keywords else ""
+    filtered = [
+        item for item in filtered
+        if not _phrase_mentions_unrelated_source_brand(
+            str(item.get("phrase") or ""),
+            [
+                source_domain_by_id[url_id]
+                for url_id in _coerce_uuid_set(item.get("url_ids", []))
+                if source_domain_by_id.get(url_id)
+            ],
+            primary_seed,
+        )
+    ]
     logger.info(
         "Competitor keyword filter retained %s of %s extracted phrases",
         len(filtered),
@@ -1214,6 +1241,7 @@ def _discover_competitor_domains(
     competitor_roots: set[str] = set()
     candidate_signals: dict[str, dict[str, Any]] = {}
     apify_result_count = 0
+    apify_diagnostics: list[str] = []
     fallback_result_count = 0
     
     from scraping.apify_client_module import search_google_via_apify, is_apify_configured
@@ -1276,7 +1304,12 @@ def _discover_competitor_domains(
         # 1. Primary explicit search for this specific keyword
         primary_results_added = False
         if is_apify_configured():
-            apify_results = search_google_via_apify(kw, max_results=serp_limit, country_code=search_locale)
+            apify_results = search_google_via_apify(
+                kw,
+                max_results=serp_limit,
+                country_code=search_locale,
+                diagnostics=apify_diagnostics,
+            )
             apify_result_count += len(apify_results)
             logger.info("Apify returned %s organic results for exact seed %r", len(apify_results), kw)
             for rank, res in enumerate(apify_results, start=1):
@@ -1353,21 +1386,31 @@ def _discover_competitor_domains(
             return result
         if evidence_fallback:
             logger.warning(
-                "Competitor judge rejected every candidate; retained %s registered-domain EMD matches",
+                "Competitor judge rejected every candidate; retained %s exact-seed evidence matches",
                 len(evidence_fallback),
             )
             result = selected(evidence_fallback)
             if diagnostics_out is not None:
                 diagnostics_out.append(
-                    f"Apify returned {apify_result_count} organic results; "
-                    f"the AI judge selected none; {len(result)} EMD-matched competitors rescued"
+                    (
+                        f"Apify competitor search failed: {apify_diagnostics[-1]}; "
+                        if apify_diagnostics
+                        else f"Apify returned {apify_result_count} organic results; "
+                    )
+                    + f"the AI judge selected none; {len(result)} exact-seed competitors rescued"
                 )
             return result
         if diagnostics_out is not None:
-            diagnostics_out.append(
-                f"Apify returned {apify_result_count} organic results; "
-                f"{len(balanced_domains)} candidate sites; none matched the direct-site boundary"
-            )
+            if apify_diagnostics:
+                diagnostics_out.append(
+                    f"Apify competitor search failed: {apify_diagnostics[-1]}; "
+                    f"fallback search found {len(balanced_domains)} candidate sites, but none had enough direct-page evidence"
+                )
+            else:
+                diagnostics_out.append(
+                    f"Apify returned {apify_result_count} organic results; "
+                    f"{len(balanced_domains)} candidate sites; none matched the direct-site boundary"
+                )
         return []
 
     result = selected(balanced_domains[:competitor_limit])
@@ -1385,7 +1428,7 @@ def _high_confidence_competitor_fallback(
     seed_keywords: list[str],
     limit: int,
 ) -> list[str]:
-    """Rescue only focused domains whose registered name matches an exact seed."""
+    """Rescue EMD sites and domains with an exact-seed ranking page after an over-strict AI verdict."""
     accepted: list[str] = []
     for domain in domains:
         signal = signals.get(domain) or {}
@@ -1395,6 +1438,17 @@ def _high_confidence_competitor_fallback(
                 continue
             if _domain_matches_seed_scope(domain, seed):
                 accepted.append(domain)
+                break
+            seed_terms = _search_ranking_terms([seed])
+            if len(seed_terms) < 2:
+                continue
+            for sample_url in signal.get("sample_urls") or []:
+                path_terms = set(re.findall(r"[a-z0-9]{2,}", unquote(urlparse(sample_url).path.lower())))
+                overlap = seed_terms & path_terms
+                if len(overlap) >= 2 and len(overlap) / len(seed_terms) >= 0.67:
+                    accepted.append(domain)
+                    break
+            if domain in accepted:
                 break
         if len(accepted) >= limit:
             break
@@ -1712,7 +1766,7 @@ def _scan_seed_keywords(
 ) -> list[str]:
     """Build a bounded, EMD-first seed set and repair stale legacy projects."""
     import json
-    from nlp.keywords import clean_phrase
+    from nlp.keywords import clean_phrase, keyword_matches_emd_entity
 
     seeds = list(dict.fromkeys(_clean_seed_keywords(stored_keywords)))
     audit_primary = ""
@@ -1729,7 +1783,11 @@ def _scan_seed_keywords(
 
     ordered = _order_seeds_by_emd(seeds, domain)
     if any(_domain_matches_seed_scope(domain or "", seed) for seed in ordered):
-        return ordered[:5]
+        primary = ordered[0]
+        return [
+            seed for seed in ordered
+            if seed == primary or keyword_matches_emd_entity(seed, primary)
+        ][:5]
 
     # A legacy project can contain a stale AI seed unrelated to its EMD. A
     # descriptive TLD supplies a safe recovery query without trying to invent
@@ -1745,6 +1803,10 @@ def _scan_seed_keywords(
             recovery_seed = clean_phrase(f"{label} {suffix}")
             if recovery_seed and recovery_seed not in ordered:
                 ordered.insert(0, recovery_seed)
+                return [
+                    seed for seed in _order_seeds_by_emd(ordered, domain)
+                    if seed == recovery_seed or keyword_matches_emd_entity(seed, recovery_seed)
+                ][:5]
 
     return _order_seeds_by_emd(ordered, domain)[:5]
 
@@ -2553,6 +2615,8 @@ def _ensure_minimum_keyword_count(
         clean_phrase(row[0])
         for row in db.execute(select(Keyword.phrase).where(Keyword.project_id == project_id)).all()
     }
+    if len(existing) >= target:
+        return len(existing)
     own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     excluded = existing | own_phrases
     ai_url_str, ai_source_domain = ai_generated_source()
@@ -2575,12 +2639,10 @@ def _ensure_minimum_keyword_count(
         .join(KeywordUrl, KeywordUrl.keyword_id == Keyword.id)
         .where(Keyword.project_id == project_id, KeywordUrl.url_id == ai_url.id)
     ).scalars().all())
-    # Always add 60 audit-supported easy wins even when paid/scraped sources
-    # already bring the project above the overall keyword target.
-    minimum_ai_keywords = 60
-
     for batch_number in range(max(1, int(settings.AI_KEYWORD_GENERATION_MAX_BATCHES))):
-        missing = max(target - len(existing), minimum_ai_keywords - len(ai_existing))
+        # AI fills a real research shortfall. Forcing a separate AI quota after
+        # evidence-backed sources reach the goal encourages padded variants.
+        missing = target - len(existing)
         if missing <= 0:
             break
         requested = min(max(5, int(settings.AI_KEYWORD_GENERATION_BATCH_SIZE)), max(missing + 10, 20))
@@ -2684,7 +2746,9 @@ def _refine_keyword_gap_recommendations(
     if not accumulator:
         return accumulator
 
-    candidate_rows = _keyword_gap_candidate_rows(db, project_id, accumulator, topic_terms, negative_terms)
+    candidate_rows = _keyword_gap_candidate_rows(
+        db, project_id, accumulator, seed_keywords, topic_terms, negative_terms,
+    )
     if not candidate_rows:
         return {}
 
@@ -2705,6 +2769,7 @@ def _refine_keyword_gap_recommendations(
         refined = _build_ai_refined_accumulator(
             accumulator,
             ai_recommendations,
+            seed_keywords,
             topic_terms,
             negative_terms,
         )
@@ -2724,6 +2789,7 @@ def _keyword_gap_candidate_rows(
     db: Session,
     project_id: uuid.UUID,
     accumulator: dict[str, dict[str, Any]],
+    seed_keywords: list[str],
     topic_terms: set[str] | None,
     negative_terms: set[str] | None,
 ) -> list[dict[str, Any]]:
@@ -2746,12 +2812,16 @@ def _keyword_gap_candidate_rows(
 
     candidates: list[dict[str, Any]] = []
     for phrase, data in accumulator.items():
+        if not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
+            continue
         url_ids = data.get("url_ids", set())
         domains = sorted({
             domain_by_url_id[url_id]
             for url_id in url_ids
             if url_id in domain_by_url_id
         })
+        if _phrase_mentions_unrelated_source_brand(phrase, domains, seed_keywords[0]):
+            continue
         score = _gap_candidate_score(phrase, data, domains, topic_terms, negative_terms)
         candidates.append({
             "phrase": phrase,
@@ -2772,6 +2842,46 @@ def _keyword_gap_candidate_rows(
         reverse=True,
     )
     return candidates
+
+
+def _phrase_mentions_unrelated_source_brand(
+    phrase: str,
+    source_domains: list[str],
+    primary_keyword: str,
+) -> bool:
+    """Reject navigational company/app phrases while preserving the EMD and explicit comparisons."""
+    from nlp.keywords import clean_phrase, emd_entity_terms
+
+    cleaned = clean_phrase(phrase)
+    if re.search(r"\b(vs|versus|compare|comparison|alternative|alternatives)\b", cleaned):
+        return False
+    phrase_compact = re.sub(r"[^a-z0-9]", "", cleaned)
+    primary_compact = re.sub(r"[^a-z0-9]", "", "".join(emd_entity_terms(primary_keyword)))
+    hosted_suffixes = {"framer.ai", "webflow.io", "wordpress.com", "godaddysites.com"}
+    for raw_domain in source_domains:
+        origin = _origin(raw_domain)
+        host = (urlparse(origin).hostname or "").lower() if origin else ""
+        if not host:
+            continue
+        labels = host.removeprefix("www.").split(".")
+        root = _registered_domain(origin) or ""
+        if any(host.endswith(f".{suffix}") for suffix in hosted_suffixes):
+            brand_label = labels[0]
+        else:
+            root_labels = root.split(".")
+            brand_label = root_labels[0] if root_labels else ""
+        brand_compact = re.sub(r"[^a-z0-9]", "", brand_label)
+        if len(brand_compact) < 4:
+            continue
+        mentions_brand = brand_compact in phrase_compact or (
+            len(phrase_compact) >= 5 and phrase_compact in brand_compact
+        )
+        source_is_emd = bool(primary_compact) and (
+            primary_compact in brand_compact or brand_compact in primary_compact
+        )
+        if mentions_brand and not source_is_emd:
+            return True
+    return False
 
 
 def _gap_candidate_score(
@@ -2800,6 +2910,7 @@ def _gap_candidate_score(
 def _build_ai_refined_accumulator(
     accumulator: dict[str, dict[str, Any]],
     ai_recommendations: list[dict[str, Any]],
+    seed_keywords: list[str],
     topic_terms: set[str] | None,
     negative_terms: set[str] | None,
 ) -> dict[str, dict[str, Any]]:
@@ -2819,7 +2930,13 @@ def _build_ai_refined_accumulator(
             source_phrase = phrase
             
         source_data = source_lookup.get(source_phrase)
-        if not source_data or not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+        if (
+            not source_data
+            or not is_publishable_keyword(
+                phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms,
+            )
+            or not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms)
+        ):
             continue
 
         # Check against all previously seen phrases for cannibalization (subsets or high jaccard)

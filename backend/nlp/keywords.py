@@ -75,6 +75,17 @@ GENERIC_TOOL_TERMS = {
     "maker", "software", "tool", "tools",
 }
 
+EMD_INTENT_MODIFIERS = {
+    "alternative", "alternatives", "best", "buy", "comparison", "cost", "free",
+    "guide", "online", "price", "pricing", "rating", "ratings", "review", "reviews",
+    "site", "versus", "vs", "website",
+} | GENERIC_TOOL_TERMS
+
+THIRD_PARTY_PLATFORM_TERMS = {
+    "amazon", "ebay", "facebook", "instagram", "linkedin", "pinterest", "quora",
+    "reddit", "redit", "tiktok", "trustpilot", "twitter", "walmart", "youtube",
+}
+
 INCOMPLETE_QUERY_ENDINGS = {
     "a", "an", "and", "attain", "comes", "contains", "for", "know", "of",
     "or", "saying", "side", "the", "to", "with",
@@ -180,6 +191,97 @@ def seed_keyword_terms(raw_keywords: Iterable[str] | None) -> set[str]:
     return terms
 
 
+def emd_entity_terms(primary_keyword: str) -> list[str]:
+    """Return the stable entity/subject words after removing search-intent modifiers."""
+    return [
+        word for word in clean_phrase(primary_keyword).replace("-", " ").split()
+        if word not in STOPWORDS and word not in EMD_INTENT_MODIFIERS
+    ]
+
+
+def keyword_matches_emd_entity(phrase: str, primary_keyword: str) -> bool:
+    """Keep a seed inside the EMD entity without requiring every useful modifier."""
+    cleaned = clean_phrase(phrase).replace("-", " ")
+    primary = clean_phrase(primary_keyword).replace("-", " ")
+    if not cleaned or not primary:
+        return False
+    if cleaned == primary:
+        return True
+
+    def normalized(word: str) -> str:
+        if len(word) > 4 and word.endswith("s") and not word.endswith("ss"):
+            return word[:-1]
+        return word
+
+    phrase_words = cleaned.split()
+    phrase_terms = {normalized(word) for word in phrase_words}
+    core = emd_entity_terms(primary)
+    normalized_core = [normalized(word) for word in core]
+    if not normalized_core:
+        return primary in cleaned
+    if len(normalized_core) == 1:
+        core_match = normalized_core[0] in phrase_terms
+        primary_modifiers = set(primary.split()) & EMD_INTENT_MODIFIERS
+        return core_match and (not primary_modifiers or bool(set(phrase_words) & primary_modifiers))
+
+    for index in range(len(phrase_words) - 1):
+        if [normalized(word) for word in phrase_words[index:index + 2]] == normalized_core[:2]:
+            return True
+    if set(normalized_core).issubset(phrase_terms):
+        return True
+    # The terminal subject distinguishes homonyms: lunar *age* is separate
+    # from Lunar Client, while north *node* remains inside moon nodes.
+    return normalized_core[-1] in phrase_terms and len(phrase_terms) >= 2
+
+
+def has_emd_anchor_pair(phrase: str, primary_keyword: str) -> bool:
+    """Return true when the phrase preserves the EMD's leading multiword entity."""
+    words = clean_phrase(phrase).replace("-", " ").split()
+    core = emd_entity_terms(primary_keyword)
+    if len(core) < 2:
+        return False
+    anchor = core[:2]
+    return any(words[index:index + 2] == anchor for index in range(len(words) - 1))
+
+
+def has_external_platform_modifier(phrase: str, primary_keyword: str) -> bool:
+    """Reject third-party navigational modifiers unless that platform is the EMD subject."""
+    phrase_terms = set(clean_phrase(phrase).replace("-", " ").split())
+    primary_terms = set(clean_phrase(primary_keyword).replace("-", " ").split())
+    return bool((phrase_terms & THIRD_PARTY_PLATFORM_TERMS) - primary_terms)
+
+
+def is_protected_product_emd(primary_keyword: str) -> bool:
+    words = clean_phrase(primary_keyword).replace("-", " ").split()
+    return bool({"review", "reviews"} & set(words)) or any(
+        any(character.isdigit() for character in word) for word in words
+    )
+
+
+def has_unrelated_leading_entity(phrase: str, primary_keyword: str) -> bool:
+    """Catch company/app names prefixed to an otherwise relevant EMD phrase."""
+    cleaned = clean_phrase(phrase).replace("-", " ")
+    if not is_protected_product_emd(primary_keyword):
+        return False
+    if re.search(r"\b(vs|versus|compare|comparison|alternative|alternatives)\b", cleaned):
+        return False
+    words = cleaned.split()
+    core = emd_entity_terms(primary_keyword)
+    if len(core) < 2:
+        return False
+    anchor = core[:2]
+    for index in range(len(words) - 1):
+        if words[index:index + 2] != anchor or index == 0:
+            continue
+        allowed_prefix = {
+            "best", "buy", "buying", "can", "consider", "do", "does", "how", "is",
+            "official", "on", "order", "recommended", "review", "reviews", "should",
+            "to", "verified", "what", "where", "why",
+        }
+        return not set(words[:index]) <= allowed_prefix
+    return False
+
+
 def site_scope_terms(primary_seed: str, audit_data: dict | None = None) -> set[str]:
     """Extract function/subject terms from the EMD seed and positive audit fields."""
     primary_words = set(clean_phrase(primary_seed).split())
@@ -256,6 +358,17 @@ def is_topic_relevant_keyword(
 ) -> bool:
     """Keep candidates inside the primary entity and functional site scope."""
     cleaned = clean_phrase(phrase)
+    normalized_seeds = normalize_seed_keywords(seed_keywords)
+    primary_seed = normalized_seeds[0] if normalized_seeds else ""
+    if primary_seed and (
+        has_external_platform_modifier(cleaned, primary_seed)
+        or has_unrelated_leading_entity(cleaned, primary_seed)
+        or (
+            is_protected_product_emd(primary_seed)
+            and not keyword_matches_emd_entity(cleaned, primary_seed)
+        )
+    ):
+        return False
     phrase_terms = keyword_terms(cleaned, min_len=2)
     raw_terms = set(cleaned.split()) - STOPWORDS
     if not phrase_terms or (negative_terms and phrase_terms & negative_terms):
@@ -266,7 +379,8 @@ def is_topic_relevant_keyword(
             for seed in normalize_seed_keywords(seed_keywords)
             if clean_phrase(seed)
         ) and not (negative_terms and set(cleaned.split()) & negative_terms)
-    normalized_seeds = normalize_seed_keywords(seed_keywords)
+    if primary_seed and has_emd_anchor_pair(cleaned, primary_seed):
+        return True
     if any(re.search(rf"\b{re.escape(seed)}\b", cleaned) for seed in normalized_seeds):
         return True
 
@@ -302,9 +416,9 @@ def is_topic_relevant_keyword(
         if not seed_scope and seed_anchors and seed_anchors.issubset(phrase_terms):
             return True
 
-    primary_seed = normalized_seeds[:1]
-    primary_anchors = seed_keyword_terms(primary_seed) - BROAD_TOPIC_TERMS
-    primary_scope = site_scope_terms(primary_seed[0]) if primary_seed else set()
+    primary_seeds = normalized_seeds[:1]
+    primary_anchors = seed_keyword_terms(primary_seeds) - BROAD_TOPIC_TERMS
+    primary_scope = site_scope_terms(primary_seeds[0]) if primary_seeds else set()
     semantic_anchors = {
         term.removeprefix("__anchor__")
         for term in (topic_terms or set())

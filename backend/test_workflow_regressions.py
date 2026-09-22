@@ -343,7 +343,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(imported_context['seed_keywords'], ['circuit diagram'])
         self.assertEqual(imported.json()['project_id'], pid)
 
-    def test_every_scan_adds_ai_keywords_even_when_other_sources_reach_target(self):
+    def test_scan_does_not_pad_with_ai_when_evidence_sources_reach_target(self):
         pid = uuid.UUID(self.project())
         generated = [
             {"phrase": f"circuit diagram easy win {index}", "type": "long-tail"}
@@ -373,9 +373,8 @@ class WorkflowTests(unittest.TestCase):
             )
             db.commit()
 
-        self.assertEqual(total, 160)
-        generator.assert_called_once()
-        self.assertIn("audit_summary", generator.call_args.kwargs)
+        self.assertEqual(total, 100)
+        generator.assert_not_called()
 
     def test_bulk_keyword_delete_cannot_touch_another_project(self):
         first_project_id = uuid.UUID(self.project())

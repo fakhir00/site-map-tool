@@ -28,6 +28,7 @@ export type User = {
 export type ProviderStatus = {
   configured: boolean
   authenticated: boolean
+  available?: boolean
   credential_source: string | null
   message: string
 }
