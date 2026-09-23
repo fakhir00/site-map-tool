@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     SCRAPE_DELAY_MIN: float = 0.05
     SCRAPE_DELAY_MAX: float = 0.2
     REQUEST_TIMEOUT: int = 5
+    SEARCH_REQUEST_TIMEOUT: int = 15
     MAX_RETRIES: int = 1
     ENABLE_KEYBERT: bool = False
     ENABLE_SPACY: bool = False

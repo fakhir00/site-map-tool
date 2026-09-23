@@ -1580,13 +1580,21 @@ def _is_relevant_result_url(url: str | None, required_terms: set[str], negative_
     """Filter competitor discovery URLs. Trust Google rankings but block obviously irrelevant URLs."""
     if not url:
         return False
-    lowered = unquote(urlparse(url).path).lower()
+    parsed = urlparse(url)
+    lowered = unquote(parsed.path).lower()
     # Block URLs whose path contains negative terms from the audit
     if negative_terms:
         path_words = set(re.findall(r'[a-z]{3,}', lowered))
         if path_words & negative_terms:
             return False
-    # Trust Google's ranking — if it returned this result for our seed query, accept it
+    # Minimal sanity check: at least one seed term (4+ chars) must appear
+    # in the domain name or URL path. This prevents completely irrelevant
+    # domains from wasting scraping budget.
+    if required_terms:
+        domain_and_path = (parsed.netloc + lowered).lower()
+        long_terms = {term for term in required_terms if len(term) >= 4}
+        if long_terms and not any(term in domain_and_path for term in long_terms):
+            return False
     return True
 
 
@@ -1632,7 +1640,7 @@ def _search_google_result_urls(query: str, max_results: int = 10, locale: str = 
                 ),
                 "Accept-Language": "en-US,en;q=0.8",
             },
-            timeout=settings.REQUEST_TIMEOUT,
+            timeout=settings.SEARCH_REQUEST_TIMEOUT,
             verify=False,
         )
         if response.status_code >= 400:
@@ -1711,7 +1719,7 @@ def _search_bing_result_urls(query: str) -> list[str]:
             "https://www.bing.com/search",
             params={"q": query},
             headers={"User-Agent": "Mozilla/5.0"},
-            timeout=settings.REQUEST_TIMEOUT,
+            timeout=settings.SEARCH_REQUEST_TIMEOUT,
             verify=False,
         )
         if response.status_code >= 400:
@@ -1734,7 +1742,7 @@ def _search_duckduckgo_html_urls(query: str) -> list[str]:
             "https://html.duckduckgo.com/html/",
             params={"q": query},
             headers={"User-Agent": "Mozilla/5.0"},
-            timeout=settings.REQUEST_TIMEOUT,
+            timeout=settings.SEARCH_REQUEST_TIMEOUT,
             verify=False,
         )
         if response.status_code >= 400:
@@ -2998,8 +3006,6 @@ def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, d
     from app.models import Keyword, KeywordUrl
 
     for phrase, data in accumulator.items():
-        if data.get("source") not in {"sitemap", "sitemap_ai"} and data["count"] < 2 and data["type"] in {"primary", "lsi", "heading"}:
-            continue
         try:
             keyword = db.execute(
                 select(Keyword).where(Keyword.project_id == project_id, Keyword.phrase == phrase)

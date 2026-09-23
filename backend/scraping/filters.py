@@ -84,11 +84,19 @@ def is_blog_url(url: str, patterns: List[str] = None) -> bool:
     segments = [s for s in path.split("/") if s]
     if len(segments) >= 1:
         last = segments[-1]
-        # Slug-like: contains hyphens, at least 15 chars, looks like a title
-        if len(last) > 15 and "-" in last and not last.endswith((".html", ".php")):
+        # Remove file extension for analysis
+        base = re.sub(r'\.(html?|php|aspx?)$', '', last)
+        # Slug-like: contains hyphens and is meaningful length
+        if len(base) > 8 and "-" in base:
             return True
-        # .html or .php pages with meaningful slug
-        if last.endswith((".html", ".php")) and len(last) > 20 and "-" in last:
+        # .html/.htm/.php pages with any meaningful slug (relaxed from 20 to 8 chars)
+        if last.endswith((".html", ".htm", ".php", ".aspx")) and len(base) > 8:
+            return True
+        # CamelCase pages (e.g., ChineseBabyCalendar.htm) — common on non-blog sites
+        if len(base) > 10 and re.search(r'[a-z][A-Z]', last):
+            return True
+        # Multi-segment paths are likely content, not navigation
+        if len(segments) >= 2 and len(base) > 5 and not base.isdigit():
             return True
 
     return False

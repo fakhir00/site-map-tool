@@ -862,6 +862,13 @@ def extract_keywords_from_urls_ai(
             for phrase in kw_result.heading_keywords:
                 candidates.append((phrase, "heading"))
 
+            # Statistical n-gram keywords as supplementary extraction when
+            # KeyBERT and spaCy are disabled (which leaves LSI/entities empty).
+            if not kw_result.lsi and not kw_result.entities:
+                from nlp.keywords import extract_statistical_keywords
+                for phrase, score in extract_statistical_keywords(u.scraped_text, max_keywords=30):
+                    candidates.append((phrase, "lsi"))
+
             # Exact SERP result slugs are strong keyword evidence. Preserve
             # natural slug phrases when page chrome dominates RAKE's ranking.
             path = unquote(urlparse(str(getattr(u, "url", "") or "")).path)
@@ -1060,7 +1067,7 @@ Candidates:
             system_prompt="You output only valid JSON arrays.",
             user_prompt=prompt,
             temperature=0.1,
-            max_tokens=2500,
+            max_tokens=max(3500, max_keywords * 80),
         )
         if isinstance(payload, dict) and "keywords" in payload:
             payload = payload["keywords"]

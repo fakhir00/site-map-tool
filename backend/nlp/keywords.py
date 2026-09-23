@@ -325,8 +325,14 @@ def is_publishable_keyword(
     # "age korean age". Repeated meaningful terms in a short phrase are a
     # strong signal that this is an extraction artifact, not a search query.
     meaningful_words = [word for word in words if word not in STOPWORDS]
-    if len(meaningful_words) != len(set(meaningful_words)):
-        return False
+    unique_meaningful = set(meaningful_words)
+    # Only reject when repeated words dominate a short phrase — a strong signal
+    # of an extraction artifact like "age korean age". Longer compound queries
+    # such as "chinese baby gender chinese calendar" are legitimate.
+    if len(meaningful_words) <= 4 and len(unique_meaningful) < len(meaningful_words):
+        repeat_ratio = 1 - len(unique_meaningful) / len(meaningful_words)
+        if repeat_ratio >= 0.5:
+            return False
     if len(words) > 8:
         return False
         
