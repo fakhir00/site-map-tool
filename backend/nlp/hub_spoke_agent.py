@@ -138,7 +138,7 @@ def _has_tool_intent(keyword: str) -> bool:
     if re.search(
         r"\b(terms(?: and conditions)?|privacy(?: policy)?|disclaimer|about us|contact us|cookie policy|"
         r"refund policy|editorial policy|accessibility|legal|support|faq|guide|tutorial|meaning|"
-        r"interpretation|review|comparison|alternatives|article|history|how to)\b|\bvs\b",
+        r"interpretation|review|comparison|alternatives|article|history|accuracy|errors|mistakes|troubleshooting|how to)\b|\bvs\b",
         value,
     ):
         return False
@@ -251,7 +251,14 @@ def _has_unrelated_leading_brand(keyword: str, primary_keyword: str) -> bool:
         return False
     terms = clean_phrase(keyword).split()
     core = _primary_core_terms(primary_keyword)
-    if len(core) < 2:
+    # This heuristic identifies prefixed brands for product/review EMDs.
+    # On generic topics it falsely treats instructional verbs as brand names
+    # (for example, "how to calculate lunar age").
+    primary_terms = set(clean_phrase(primary_keyword).split())
+    protected_product = bool(primary_terms & {"review", "reviews"}) or any(
+        any(char.isdigit() for char in term) for term in core
+    )
+    if not protected_product or len(core) < 2:
         return False
     for index in range(len(terms) - 1):
         if terms[index:index + 2] != core[:2] or index < 2:
@@ -309,9 +316,19 @@ def _is_protected_emd_entity(keyword: str, primary_keyword: str) -> bool:
     return bool(meaningful - vague_fragments)
 
 
-def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str) -> str:
+def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str, target_spokes: int | None = None) -> str:
     authority_floor = _minimum_authority_pages(len(records))
     tool_threshold = _tool_volume_threshold(records)
+    planning_goal = (
+        f"Plan one homepage plus {target_spokes - 5}–{target_spokes + 5} distinct spokes, aiming for {target_spokes}. "
+        "This is a planning goal, never a quota. If evidence supports fewer, return fewer and explain the missing coverage. "
+        "Editorial proposals are unverified ideas: assess their relevance and distinct intent before accepting them. "
+        "Preserve existing owned pages in the architecture, set existing_url to their exact supplied URL, and plan an update. "
+        "A brief mention or homepage summary does not exhaust a deeper instructional intent. Do not duplicate a fully served task. "
+        "Set existing_url to null for new pages. Never assign multiple pages to one existing URL. "
+        "State an exclusive scope and concrete reader outcome for each page, and useful internal links."
+        if target_spokes else f"Aim for at least {authority_floor} pages when distinct intents support them."
+    )
     return f"""
 Act as a senior technical SEO architect whose specialty is hub-and-spoke information architecture.
 You own the complete decision. Study the website context and every supplied keyword, then create a
@@ -328,6 +345,9 @@ PRIMARY TOPIC
 
 KEYWORD INVENTORY (metrics are evidence, never invent replacements)
 {json.dumps(records, ensure_ascii=False)}
+
+PLANNING GOAL
+{planning_goal}
 
 Rules:
 - Evaluate every exact keyword. Do not omit one.
@@ -353,8 +373,8 @@ Rules:
 - Build topical authority around that homepage. Create distinct spokes for meaningful subtopics, entities,
   methods, interpretations, use cases, comparisons, accuracy questions, and advanced concepts supported
   by this inventory. A tool page, a manual how-to guide, and an explanatory article have different intent.
-- This inventory size normally requires at least {authority_floor} indexable pages when enough keywords are
-  relevant. Do not collapse dozens of different informational needs into the homepage or a few mega-pages.
+- Do not collapse distinct informational needs into the homepage or a few mega-pages.
+  Related wording is not sufficient reason to merge pages with different reader outcomes.
 - Assign broad variants of the core product to the homepage, but reserve informational and educational
   queries for the most specific spoke that can satisfy them completely.
 - A strong standalone calculator, generator, checker, converter, simulator, or estimator query may be a
@@ -377,7 +397,8 @@ Keep the response compact. Do not write full article outlines. Return only one J
     "target_keyword": "exact inventory keyword", "search_intent": "specific unique intent",
     "intent_class": "transactional_tool/informational_guide/definition/interpretation/comparison/troubleshooting/reference",
     "spoke_category": "meaningful topical silo", "article_title": "...", "page_type": "article or tool",
-    "content_brief": "one or two sentences explaining the page's exclusive scope"
+    "content_brief": "one or two sentences explaining the page's exclusive scope",
+    "existing_url": null, "internal_links": ["exact related page target"]
   }}],
   "keyword_decisions": [
     ["exact keyword", "page_target", "same exact keyword", "title", "short reason"],
@@ -461,6 +482,7 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
         "search_volume": metric.get("search_volume"),
         "difficulty": metric.get("difficulty"),
         "slug": _slug(target),
+        "existing_url": str(raw.get("existing_url") or "").strip() or None,
         "page_type": page_type,
         "word_count_suggestion": max(500, min(6000, _integer_or_none(raw.get("word_count_suggestion")) or 1800)),
         "content_brief": str(raw.get("content_brief") or "").strip(),
@@ -949,7 +971,7 @@ def validate_architecture(
 
     usable = [item for item in assignments if item.get("disposition") != "discard"]
     minimum_pages = _minimum_authority_pages(len(usable))
-    if len(pages) < minimum_pages:
+    if not plan.get("_authority_target") and len(pages) < minimum_pages:
         errors.append(
             f"topical authority is too shallow: {len(usable)} usable keywords require at least "
             f"{minimum_pages} distinct intent pages, but only {len(pages)} were created"
@@ -963,7 +985,7 @@ def validate_architecture(
         categories.discard("strategic topic")
         if len(categories) < 3:
             errors.append("topical authority needs at least three meaningful spoke categories")
-    if len(usable) >= 30:
+    if not plan.get("_authority_target") and len(usable) >= 30:
         assignment_counts = {
             target: sum(1 for item in usable if item.get("assigned_to") == target)
             for target in page_targets
@@ -1346,6 +1368,7 @@ async def build_site_architecture(
     context: str = "",
     primary_keyword: str = "",
     site_domain: str = "",
+    target_spokes: int | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_keyword_records(records, primary_keyword)
     if not normalized:
@@ -1354,7 +1377,13 @@ async def build_site_architecture(
         raise ArchitectureAgentError("The SEO architecture agent is unavailable because no AI provider is configured.")
 
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
-    prompt = _prompt(normalized, context, main)
+    discovery_status = "not_requested"
+    if target_spokes is not None:
+        if not 10 <= target_spokes <= 50:
+            raise ArchitectureAgentError("The spoke target must be between 10 and 50.")
+        from nlp.authority import expand_inventory
+        normalized, discovery_status = await expand_inventory(normalized, context, main, target_spokes, _achat_json)
+    prompt = _prompt(normalized, context, main, target_spokes)
     last_errors: list[str] = []
     for attempt in range(3):
         try:
@@ -1374,13 +1403,16 @@ async def build_site_architecture(
                 )
             plan = _normalize_plan(payload, normalized, main)
             plan = _repair_plan_consistency(plan, normalized, main)
+            if target_spokes:
+                plan["_authority_target"] = target_spokes
             deterministic_rejections = [
                 *_deterministic_third_party_rejections(plan, main),
                 *_deterministic_quality_rejections(plan),
                 *_source_domain_brand_rejections(plan, normalized, main),
             ]
             _apply_relevance_rejections(plan, deterministic_rejections)
-            plan = _ensure_topical_authority(plan, normalized, main)
+            if not target_spokes:
+                plan = _ensure_topical_authority(plan, normalized, main)
             plan = _apply_tool_roi_rules(plan, normalized)
             causal_conflicts = _mechanical_causal_conflicts(plan)
             if causal_conflicts:
@@ -1393,12 +1425,13 @@ async def build_site_architecture(
                     plan["master_hub"]["target_keyword"],
                     *(page["target_keyword"] for page in plan["spokes"]),
                 }
-                plan = _ensure_topical_authority(
-                    plan,
-                    normalized,
-                    main,
-                    excluded_page_targets=targets_before_merge - targets_after_merge,
-                )
+                if not target_spokes:
+                    plan = _ensure_topical_authority(
+                        plan,
+                        normalized,
+                        main,
+                        excluded_page_targets=targets_before_merge - targets_after_merge,
+                    )
                 plan = _apply_tool_roi_rules(plan, normalized)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
@@ -1442,6 +1475,21 @@ async def build_site_architecture(
                         break
             if not last_errors:
                 plan["site_domain"] = _clean_domain(site_domain) or _domain_from_context(context)
+                if target_spokes:
+                    from nlp.authority import finish_authority_plan
+                    plan = finish_authority_plan(plan, normalized, context, target_spokes, discovery_status)
+                    final_errors = validate_architecture(plan, normalized, main)
+                    if final_errors:
+                        raise ValueError("; ".join(final_errors))
+                    if (attempt == 0 and plan["authority_coverage"]["status"] == "needs_research"
+                            and len(normalized) >= target_spokes):
+                        prompt += (
+                            f"\nThe first map had only {len(plan['spokes'])} spokes. Review whether distinct "
+                            "instructional, comparison, reference or tool intents were overlooked. "
+                            "Return a complete revised map; keep fewer pages if the remaining inventory "
+                            "does not justify more. Do not split same-intent variants to fill the target."
+                        )
+                        continue
                 return _apply_assignments(plan)
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))
         except Exception as exc:

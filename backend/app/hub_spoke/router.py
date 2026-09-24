@@ -31,6 +31,7 @@ class KeywordWorkspaceRequest(BaseModel):
     keyword_data: list[KeywordMetricInput] = Field(default_factory=list, max_length=5000)
     context: str = Field(default="", max_length=12000)
     project_id: uuid.UUID | None = None
+    target_spokes: int = Field(default=25, ge=10, le=50)
 
 
 class HubSpokeHistorySummary(BaseModel):
@@ -132,25 +133,28 @@ async def build_uploaded_hub_spoke(
         if owned.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="Project not found")
     context = _hub_spoke_context(body.context)
+    if body.project_id:
+        from app.hub_spoke.context import context_with_owned_pages
+        context = await context_with_owned_pages(db, body.project_id, context)
     records = _keyword_records(body)
     if not records:
         raise HTTPException(status_code=422, detail="Upload at least one readable keyword.")
     primary = _primary_keyword_from_context(context) or records[0]["phrase"]
     try:
-        mapping = await build_site_architecture(records, context=context, primary_keyword=primary)
+        mapping = await build_site_architecture(records, context=context, primary_keyword=primary, target_spokes=body.target_spokes)
     except ArchitectureAgentError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     kept = usable_keywords(mapping)
     title = str(mapping["master_hub"].get("article_title") or primary.title())[:255]
     history = HubSpokeHistory(
-        user_id=current_user.id, project_id=body.project_id, title=title, context=context,
+        user_id=current_user.id, project_id=body.project_id, title=title, context=_hub_spoke_context(body.context),
         keywords=[item["phrase"] for item in records], cleaned_keywords=kept, mapping_data=mapping,
     )
     db.add(history)
     await db.flush()
     await db.refresh(history)
-    return {"keywords": kept, "keyword_data": records, "count": len(kept), "clusters": mapping, "history_id": history.id}
+    return {"keywords": kept, "keyword_data": mapping.get("_keyword_metrics", records), "count": len(kept), "clusters": mapping, "history_id": history.id}
 
 
 @router.get("/project-import/{project_id}")

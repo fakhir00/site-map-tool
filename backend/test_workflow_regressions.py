@@ -272,6 +272,33 @@ class WorkflowTests(unittest.TestCase):
         mapping = response.json()['clusters']
         self.assertEqual(len(mapping['hubs']), 1)
         self.assertEqual(len(architect.await_args.args[0]), 21)
+        self.assertEqual(architect.await_args.kwargs['target_spokes'], 25)
+
+    def test_authority_build_receives_owned_pages_and_requested_target(self):
+        pid = self.project()
+        with self.sessions() as db:
+            db.add(Url(project_id=uuid.UUID(pid), url='https://own.example/existing-tool/',
+                       source_type='own', status='scraped', h1='Existing Tool',
+                       scraped_text='A working circuit tool already exists.'))
+            db.commit()
+        mapping = {
+            'master_hub': {'article_title': 'Circuit Diagram', 'target_keyword': 'circuit diagram'},
+            'spokes': [], 'keyword_assignments': [],
+            '_keyword_metrics': [{'phrase': 'circuit diagram'},
+                                 {'phrase': 'circuit troubleshooting', 'evidence_type': 'editorial_proposal'}],
+        }
+        with patch('app.hub_spoke.router.build_site_architecture', new=AsyncMock(return_value=mapping)) as architect:
+            response = self.client.post('/api/hub-spoke/build', json={
+                'keywords': ['circuit diagram'], 'project_id': pid, 'target_spokes': 25,
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(architect.await_args.kwargs['target_spokes'], 25)
+        context = json.loads(architect.await_args.kwargs['context'])
+        self.assertEqual(context['owned_pages'][0]['url'], 'https://own.example/existing-tool/')
+        self.assertIn('already exists', context['owned_pages'][0]['text_excerpt'])
+        self.assertEqual(len(response.json()['keyword_data']), 2)
+        invalid = self.client.post('/api/hub-spoke/build', json={'keywords': ['circuit diagram'], 'target_spokes': 500})
+        self.assertEqual(invalid.status_code, 422)
 
     def test_standalone_hub_workspace_builds_and_saves_specialist_plan(self):
         keywords = ['circuit diagram maker', 'circuit diagram symbols', 'celebrity news']

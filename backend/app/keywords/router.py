@@ -380,11 +380,14 @@ async def generate_hub_spoke(
     if not records:
         raise HTTPException(status_code=400, detail="This project has no keywords to architect.")
     main_kw = (project.target_keywords or [project.name])[0]
+    from app.hub_spoke.context import context_with_owned_pages
+    architecture_context = await context_with_owned_pages(db, project.id, project.audit_summary or "")
     try:
         clusters = await build_site_architecture(
             records,
-            context=project.audit_summary or "",
+            context=architecture_context,
             primary_keyword=main_kw,
+            target_spokes=25,
             site_domain=project.own_domain or project.domain,
         )
     except ArchitectureAgentError as exc:

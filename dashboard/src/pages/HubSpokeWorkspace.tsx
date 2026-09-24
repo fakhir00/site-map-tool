@@ -12,11 +12,11 @@ type Hub = Silo & { sub_silos?: Silo[] }
 type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
 type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
 type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number; source_domains?: string[] }
-type PageDetail = { article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
+type PageDetail = { action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
 type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
 type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
-type Mapping = { hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
+type Mapping = { authority_coverage?: { target_spokes: number; minimum_spokes: number; maximum_spokes: number; actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
 type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
 type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
@@ -92,15 +92,18 @@ const downloadText = (name: string, content: string) => {
 const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
   const lines = ['# GRAND WEBSITE ARCHITECTURE BUILD PROMPT', '', 'Build the complete website architecture below. Follow every page specification and preserve the assigned keyword placements.', '']
   if (context.trim()) lines.push('## Website context', context.trim(), '')
-  if (mapping._deduplication_check) lines.push('## Mechanical SEO validation', `- Duplicate targets, titles, slugs, and semantic intents: checked`, `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
+  if (mapping._deduplication_check) lines.push('## Architecture validation', `- Semantic review: ${mapping._semantic_audit_status || 'not recorded'}`,  `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
   lines.push('## Global writing standards')
   ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
   lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, FAQ schema, and internal links.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', '- Treat the suggested word count as a useful depth target; satisfy intent without padding.', '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
+
+  if (mapping.authority_coverage) lines.push('## Coverage target', `${mapping.authority_coverage.actual_spokes} spokes; target ${mapping.authority_coverage.minimum_spokes}–${mapping.authority_coverage.maximum_spokes}. ${mapping.authority_coverage.message}`, '')
 
   const addPage = (label: string, page: PageDetail) => {
     const target = page.target_keyword || ''
     const heading = label === 'MASTER HUB' ? `MASTER HUB: ${mapping.site_domain || page.article_title || target}` : `${label}: ${page.article_title || target}`
     lines.push(`## ${heading}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- ${label === 'MASTER HUB' ? 'Primary keyword' : 'Target keyword'}: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
+    lines.push(`- Action: ${page.action || 'review'}${page.existing_url ? ` existing page ${page.existing_url}; preserve its URL` : ''}`, `- Evidence: ${page.evidence_type === 'editorial_proposal' ? 'Editorial proposal; validate demand before publishing' : 'Supplied keyword; demand may be unknown'}`)
     if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
     if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
     if (page.h2_sections?.length) { lines.push('- H2 plan:'); page.h2_sections.forEach((section) => lines.push(`  - ${section.h2_heading}: ${section.section_definition || 'Cover this section directly.'}${section.targeted_keywords_placed_here?.length ? ` Keywords: ${section.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
@@ -125,6 +128,7 @@ export function HubSpokeWorkspace() {
   const [searchParams] = useSearchParams()
   const inputRef = useRef<HTMLInputElement>(null)
   const importedKeyRef = useRef('')
+  const [targetSpokes, setTargetSpokes] = useState(25)
   const [keywords, setKeywords] = useState<string[]>([])
   const [keywordData, setKeywordData] = useState<KeywordMetric[]>([])
   const [cleaned, setCleaned] = useState<string[]>([])
@@ -218,6 +222,7 @@ export function HubSpokeWorkspace() {
       const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
         keywords,
         keyword_data: keywordData,
+        target_spokes: targetSpokes,
         context,
         project_id: sourceProjectId,
       })
@@ -241,6 +246,7 @@ export function HubSpokeWorkspace() {
       setContext(saved.context)
       setContextOpen(Boolean(saved.context))
       setMapping(saved.clusters)
+      setTargetSpokes(saved.clusters?.authority_coverage?.target_spokes || 25)
       setSourceProjectId(saved.project_id)
       setActiveHistoryId(saved.id)
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -270,12 +276,13 @@ export function HubSpokeWorkspace() {
             <span className="mt-0.5 block text-xs text-slate-500">Target: {page.target}</span>
             <span className="mt-0.5 block font-mono text-xs text-emerald-700 dark:text-emerald-400">Slug: {pageSlug(page.target, detail?.slug)}</span>
             {(detail?.search_volume != null || detail?.difficulty != null) && <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold"><span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Volume {detail.search_volume?.toLocaleString() ?? '—'}</span><span className="rounded-full bg-violet-100 px-2 py-1 text-violet-800 dark:bg-violet-950 dark:text-violet-300">KD {detail.difficulty != null ? Math.round(detail.difficulty) : '—'}</span>{detail.ranking_role === 'easy_win_spoke' && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Easy-win spoke</span>}</span>}
+            {detail?.action && <span className="mt-2 block text-xs font-semibold">{detail.action === 'update' ? `Improve existing page: ${detail.existing_url}` : 'New page'}{detail.evidence_type === 'editorial_proposal' ? ' · Topic proposal — demand unverified' : ''}</span>}
             {detail?.content_brief && <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{detail.content_brief}</span>}
             {detail?.tool_economics?.reason && <span className="mt-2 block text-xs text-slate-500">Format decision: {detail.tool_economics.reason}</span>}
             {(detail?.word_count_suggestion || detail?.h2_sections?.length) && <span className="mt-2 block text-xs text-slate-400">{detail.word_count_suggestion?.toLocaleString()} words{detail.h2_sections?.length ? ` • ${detail.h2_sections.length} planned sections` : ''}</span>}
             {page.included.length > 0 && <span className="mt-3 block rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><strong>Includes:</strong> {page.included.join(' • ')}</span>}
           </span>
-          <span className="flex items-center gap-1 text-xs font-semibold text-cyan-700 opacity-70 group-hover:opacity-100 dark:text-cyan-300">{isTool ? 'Build tool' : 'Write page'}<ArrowRight className="h-3.5 w-3.5" /></span>
+          <span className="flex items-center gap-1 text-xs font-semibold text-cyan-700 opacity-70 group-hover:opacity-100 dark:text-cyan-300">{detail?.action === 'update' ? 'Improve page' : isTool ? 'Build tool' : 'Write page'}<ArrowRight className="h-3.5 w-3.5" /></span>
         </div>
       </button>
     )
@@ -353,9 +360,14 @@ export function HubSpokeWorkspace() {
 
         {keywords.length > 0 && <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Loaded {keywords.length.toLocaleString()} keywords{sourceProjectId ? ' from Gap Hunter' : ''}</p>}
 
+        <label className="block text-sm font-medium">
+          Target spokes (blogs and tools, excluding the homepage)
+          <input aria-label="Target spokes" type="number" min={10} max={50} value={targetSpokes} onChange={(event) => setTargetSpokes(Number(event.target.value))} className="ml-3 w-20 rounded border border-slate-300 bg-transparent p-2" />
+          <span className="mt-1 block text-xs text-slate-500">Default: 20–30 distinct spokes. Existing pages can be improved; new ideas are labeled for research.</span>
+        </label>
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={() => setContextOpen((value) => !value)}><Sparkles className="h-4 w-4" />Add context</Button>
-          <Button disabled={!keywords.length || busy !== null} onClick={build}><Network className="h-4 w-4" />{busy === 'build' ? 'SEO specialist is planning…' : 'Build specialist architecture'}</Button>
+          <Button disabled={!keywords.length || busy !== null || targetSpokes < 10 || targetSpokes > 50 || !Number.isInteger(targetSpokes)} onClick={build}><Network className="h-4 w-4" />{busy === 'build' ? 'SEO specialist is planning…' : 'Build specialist architecture'}</Button>
         </div>
 
         {contextOpen && (
@@ -389,6 +401,12 @@ export function HubSpokeWorkspace() {
             <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Includes are reserved for true same-intent variants; valuable easy wins stay as separate spokes.</p>{mapping._deduplication_check && <p className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">{mapping._semantic_audit_status === 'passed' ? 'Cannibalization check passed' : 'Architecture safeguards passed'}{mapping._deduplication_check.duplicates_removed ? ` • ${mapping._deduplication_check.duplicates_removed} duplicates merged` : ''}</p>}{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
             <Button onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, context))}><Download className="h-4 w-4" />Download architecture prompt</Button>
           </div>
+          {mapping.authority_coverage && <Card className="p-4">
+            <p className="font-semibold">{mapping.authority_coverage.actual_spokes} spokes · target {mapping.authority_coverage.minimum_spokes}–{mapping.authority_coverage.maximum_spokes}</p>
+            <p className="mt-1 text-sm">{mapping.authority_coverage.new_spokes} new pages · {mapping.authority_coverage.existing_spokes} existing pages to improve</p>
+            <p className="mt-1 text-sm text-slate-500">{mapping.authority_coverage.message}</p>
+            {mapping.authority_coverage.discovery_status === 'unavailable' && <p className="mt-1 text-sm text-amber-700">Topic discovery was unavailable; this map uses the supplied inventory.</p>}
+          </Card>}
           {mapping.hubs.map((hub) => (
             <Card key={hub.target_keyword} className="overflow-hidden p-0">
               <button type="button" onClick={() => openTarget(hub.target_keyword, hub.h2_keywords, mapping.master_hub?.page_type)} className="group flex w-full items-start gap-4 bg-gradient-to-r from-cyan-700 to-blue-700 p-6 text-left text-white">
