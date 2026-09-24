@@ -347,7 +347,7 @@ def is_publishable_keyword(
     # such as "chinese baby gender chinese calendar" are legitimate.
     if len(meaningful_words) <= 4 and len(unique_meaningful) < len(meaningful_words):
         repeat_ratio = 1 - len(unique_meaningful) / len(meaningful_words)
-        if repeat_ratio >= 0.5:
+        if repeat_ratio >= 1 / 3:
             return False
     if len(words) > 8:
         return False
@@ -503,19 +503,19 @@ def extract_rake_keywords(text: str, max_keywords: int = 20) -> List[Tuple[str, 
 
 def extract_statistical_keywords(text: str, max_keywords: int = 20) -> List[Tuple[str, float]]:
     """Dependency-free keyword fallback based on frequent clean n-grams."""
-    cleaned = clean_phrase(text)
-    words = [
-        word
-        for word in cleaned.split()
-        if word not in STOPWORDS and len(word) > 2 and not word.isdigit()
-    ]
     candidates: Counter[str] = Counter()
-
-    for size in (3, 2, 1):
-        for i in range(0, max(0, len(words) - size + 1)):
-            phrase = " ".join(words[i : i + size])
-            if is_valid_keyword(phrase, min_words=1):
-                candidates[phrase] += size
+    # Preserve adjacency and sentence boundaries. Removing stopwords first
+    # invents phrases that never occurred in the source page.
+    for sentence in re.split(r"[.!?;:\n]+", text):
+        words = clean_phrase(sentence).split()
+        for size in (3, 2, 1):
+            for i in range(max(0, len(words) - size + 1)):
+                window = words[i:i + size]
+                if window[0] in STOPWORDS or window[-1] in STOPWORDS:
+                    continue
+                phrase = " ".join(window)
+                if is_publishable_keyword(phrase, min_words=1):
+                    candidates[phrase] += size
 
     return [(phrase, float(score)) for phrase, score in candidates.most_common(max_keywords)]
 

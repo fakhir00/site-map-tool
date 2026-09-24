@@ -474,11 +474,11 @@ async def export_keywords(
         writer.writerow([
             kw.phrase,
             kw.keyword_type,
-            kw.frequency,
+            len({source.url for source in sources if source.source_type == "competitor"}),
             "; ".join(source_domains),
             "; ".join(source.url for source in sources),
-            kw.search_volume or "",
-            kw.difficulty or "",
+            kw.search_volume if kw.search_volume is not None else "",
+            kw.difficulty if kw.difficulty is not None else "",
         ])
 
     output.seek(0)

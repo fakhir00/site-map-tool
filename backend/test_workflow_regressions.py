@@ -412,6 +412,7 @@ class WorkflowTests(unittest.TestCase):
                 phrase='circuit design software',
                 frequency=3,
                 search_volume=500,
+                difficulty=0,
             )
             low_volume_keyword = Keyword(
                 project_id=project_id,
@@ -451,6 +452,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(exported.headers['content-type'].startswith('text/csv'))
         self.assertIn('circuit design software', exported.text)
         self.assertIn('https://competitor.example/circuit-design', exported.text)
+        import csv
+        import io
+        rows = list(csv.DictReader(io.StringIO(exported.text.lstrip('\ufeff'))))
+        self.assertEqual(rows[0]['Competitor Pages'], '1')
+        self.assertEqual(float(rows[0]['Difficulty']), 0)
+        self.assertEqual(rows[1]['Competitor Pages'], '0')
+
 
 if __name__ == '__main__':
     unittest.main()

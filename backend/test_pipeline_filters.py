@@ -43,6 +43,63 @@ from workers.pipeline import (
 
 
 class PipelineFilterTests(TestCase):
+    def test_statistical_extraction_preserves_source_adjacency(self):
+        from nlp.keywords import extract_statistical_keywords
+        phrases = dict(extract_statistical_keywords(
+            "Chinese age increases on your birthday. Nominal age matters.", 100
+        ))
+        self.assertIn("nominal age", phrases)
+        self.assertNotIn("chinese age increases birthday", phrases)
+        self.assertNotIn("birthday nominal age", phrases)
+        self.assertNotIn("increases birthday", phrases)
+
+    def test_extensions_and_multiple_extractors_do_not_create_false_evidence(self):
+        page = SimpleNamespace(
+            id=uuid.uuid4(), url="https://example.com/chinese-age-calculator.php",
+            h1="Chinese age calculator", scraped_text="Chinese age calculator",
+        )
+        extracted = SimpleNamespace(
+            primary=[("chinese age calculator", 1)],
+            lsi=[("chinese age calculator", 1)], entities=[],
+            heading_keywords=["chinese age calculator"],
+        )
+        with patch("nlp.keywords.extract_keywords_from_page", return_value=extracted):
+            results = extract_keywords_from_urls_ai(["chinese age calculator"], [page, page])
+        self.assertEqual([r["phrase"] for r in results], ["chinese age calculator"])
+        self.assertEqual(results[0]["frequency"], 1)
+
+    def test_full_own_slug_is_covered(self):
+        from workers.pipeline import _url_keyword_candidates, _remove_covered_keywords
+        phrase = "chinese age calculator gender predictor"
+        own = _url_keyword_candidates(
+            "https://example.com/chinese-age-calculator-gender-predictor/",
+            {"chinese", "age", "gender"}, set(), True,
+        )
+        candidates = {phrase: {"count": 1}}
+        _remove_covered_keywords(candidates, own)
+        self.assertEqual(candidates, {})
+
+    def test_competitor_review_rejection_and_failure_never_publish_raw_candidates(self):
+        from unittest.mock import MagicMock
+        from workers.pipeline import _process_competitor_keyword_gaps
+        db = MagicMock()
+        db.execute.return_value.scalar.return_value = 1
+        page = SimpleNamespace(url="https://own.example/tool", h1="Own tool", scraped_text="Existing answer")
+        db.execute.return_value.scalars.return_value.all.return_value = [page]
+        extracted = [{"phrase": "lunar age calculator", "url_ids": [str(uuid.uuid4())]}]
+        for verdict in ([], None):
+            review = MagicMock(return_value=verdict)
+            with patch("workers.pipeline._store_keywords") as store:
+                args = (db, uuid.uuid4(), ["lunar age calculator"], {"lunar", "age"}, set(),
+                        "Site scope", MagicMock(return_value=extracted), review, MagicMock(), MagicMock())
+                if verdict is None:
+                    with self.assertRaisesRegex(RuntimeError, "quality review unavailable"):
+                        _process_competitor_keyword_gaps(*args)
+                else:
+                    self.assertEqual(_process_competitor_keyword_gaps(*args), 0)
+                store.assert_not_called()
+                self.assertIn("Existing answer", review.call_args.kwargs["audit_summary"])
+
     def test_resume_queues_new_competitors_when_only_own_urls_exist(self):
         queued = _domains_to_discover(
             "https://own.example",
@@ -191,7 +248,7 @@ class PipelineFilterTests(TestCase):
             "type": "long-tail",
         }])
 
-    def test_empty_second_ai_filter_does_not_erase_valid_generated_keywords(self):
+    def test_empty_second_ai_filter_respects_rejection(self):
         payload = [{
             "phrase": "lunar age calculator by birth date",
             "type": "long-tail",
@@ -208,7 +265,7 @@ class PipelineFilterTests(TestCase):
                 apply_gap_filter=True,
             )
 
-        self.assertEqual(result[0]["phrase"], "lunar age calculator by birth date")
+        self.assertEqual(result, [])
 
     def test_ai_generation_repairs_a_fully_rejected_first_response(self):
         invalid = [{
