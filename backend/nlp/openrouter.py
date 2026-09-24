@@ -1192,18 +1192,27 @@ Primary keyword set:
 Candidate competitors:
 {json.dumps(candidates, ensure_ascii=True)}
 
-Choose only domains that are direct business and topical competitors for the target site.
+Choose only domains that are DIRECT, NARROW competitors for the target site.
 Every candidate came from an organic result for an exact seed. The `queries`
 field names those seeds, `best_rank` is its highest position, and
 `titles`/`snippets` provide SERP evidence.
 First infer the target's exact site model from its EMD, audit, and seeds: focused tool, product-review EMD, narrow publisher, or service.
 Evaluate based on page match (does the ranking page target the exact seed?) and site-scope match.
-- Reject dictionaries, coupon/deal portals, marketplaces, retailers, social networks, forums, generic publishers, broad news/health/education sites, unrelated docs portals, and domains that only mention the topic on one incidental page.
-- For a focused tool, accept sites offering the same tool/action to the same audience. A general tool directory or broad publisher is not direct competition.
-- For a product-review EMD, accept sites substantially focused on the same product or exact narrow product category and evaluation intent. Reject generic coupon sites and broad health/review publishers even when one page ranks.
-- For a narrow content site, accept sites with sustained coverage of the same narrow subject, not a general site with one matching article.
-- Ranking for a seed proves SERP presence; it does not by itself prove direct site-level competition.
-- Do not force a minimum count. Returning two direct competitors is better than adding eight general sites.
+
+STRICT REJECTION RULES (apply these FIRST):
+- Reject dictionaries, coupon/deal portals, marketplaces, retailers, social networks, forums, generic publishers, broad news/health/education sites.
+- Reject MULTI-PURPOSE TOOL SITES that happen to have one calculator/tool in our niche but primarily serve a different audience (e.g., a dating site with one age calculator, a baby products store with a gender predictor, a tax site with one unrelated calculator).
+- Reject BABY/PREGNANCY/PARENTING sites (babycenter, thebump, huggies, momcozy, rforrabbit, baby-chick, etc.) unless the target site itself is a baby/pregnancy site.
+- Reject DATING/SOCIAL sites unless the target site is also a dating site.
+- Reject GOVERNMENT/INSTITUTIONAL sites (observatories, .gov, .edu) unless they are a direct content competitor.
+- Reject any domain whose PRIMARY business/purpose is completely different from the target, even if one page ranks for a seed.
+- A site must have its PRIMARY focus or a MAJOR section dedicated to the same narrow topic. Having one calculator or one article is NOT enough.
+
+ACCEPTANCE CRITERIA:
+- For a focused tool: accept ONLY sites offering the SAME type of tool to the SAME audience. A general calculator directory qualifies only if it has multiple pages in the same niche.
+- For a narrow content site: accept sites with sustained coverage of the same narrow subject.
+- Ranking for a seed proves SERP presence; it does NOT prove direct site-level competition.
+- Quality over quantity: returning 3-5 true competitors is far better than 15 broad sites. Do not force a minimum count.
 - Never return a domain absent from Candidate competitors.
 
 Return ONLY a JSON array with up to {max_domains} objects.
@@ -1211,7 +1220,7 @@ Each object must include:
 - "domain": accepted candidate domain
 - "verdict": "accept" or "reject"
 - "page_match": boolean; true only if the ranking page directly targets a supplied seed
-- "site_scope_match": boolean; true only if the domain/site itself competes in the same narrow topic and site model
+- "site_scope_match": boolean; true only if the domain's PRIMARY purpose/section competes in the same narrow topic
 - "confidence": integer from 0 to 100
 - "reason": short string
 """
@@ -1221,7 +1230,7 @@ Each object must include:
             system_prompt="You output only valid JSON arrays.",
             user_prompt=prompt,
             temperature=0.1,
-            max_tokens=1200,
+            max_tokens=max(1500, len(candidates) * 60),
         )
         if not isinstance(payload, list):
             return None

@@ -87,8 +87,21 @@ THIRD_PARTY_PLATFORM_TERMS = {
 }
 
 INCOMPLETE_QUERY_ENDINGS = {
-    "a", "an", "and", "attain", "comes", "contains", "for", "know", "of",
-    "or", "saying", "side", "the", "to", "with",
+    "a", "an", "and", "attain", "based", "between", "comes", "combines",
+    "common", "contains", "determine", "displayed", "for", "from",
+    "gives", "helps", "his", "into", "its", "know", "much", "of",
+    "once", "or", "per", "saying", "side", "single", "switched",
+    "the", "their", "to", "whether", "with", "years",
+}
+
+# Phrases beginning with these words are usually clipped sentence fragments
+# from RAKE, not queries a human would type into a search engine.
+INCOMPLETE_QUERY_BEGINNINGS = {
+    "according", "also", "another", "becomes", "between", "borrowed",
+    "calculated", "changes", "comes", "contains", "dates", "determine",
+    "displayed", "estimate", "gives", "helps", "his", "its", "loved",
+    "major", "much", "name", "observed", "observatory", "older", "once",
+    "per", "predicted", "printed", "represented", "switched", "whether",
 }
 
 
@@ -120,6 +133,9 @@ def looks_incomplete_search_query(phrase: str) -> bool:
     if len(words) <= 2 and words[0] in {"how", "what", "when", "where", "which", "why"}:
         return True
     if words[-1] in INCOMPLETE_QUERY_ENDINGS:
+        return True
+    # Sentence fragments often start with verbs or function words
+    if len(words) >= 2 and words[0] in INCOMPLETE_QUERY_BEGINNINGS:
         return True
     if any(word in {"reviewthe"} for word in words):
         return True

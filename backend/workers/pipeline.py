@@ -1602,7 +1602,8 @@ def _is_relevant_content_url(url: str, required_terms: set[str], negative_terms:
     """Filter sitemap URLs. Accept content pages, reject junk and negatively-tagged URLs."""
     if not url:
         return False
-    lowered = urlparse(url).path.lower()
+    parsed = urlparse(url)
+    lowered = parsed.path.lower()
     
     # Filter out binary/junk extensions
     if lowered.endswith((".pdf", ".jpg", ".png", ".gif", ".zip", ".exe", ".mp3", ".mp4", ".svg")):
@@ -1613,6 +1614,19 @@ def _is_relevant_content_url(url: str, required_terms: set[str], negative_terms:
         path_words = set(re.findall(r'[a-z]{3,}', lowered))
         if path_words & negative_terms:
             return False
+
+    # For competitor pages with meaningful paths, require at least one
+    # seed-related term in the URL path. This prevents scraping off-topic
+    # pages from multi-purpose sites (e.g., a dating site's tax calculator).
+    if required_terms:
+        path_words = set(re.findall(r'[a-z]{3,}', unquote(lowered)))
+        long_terms = {term for term in required_terms if len(term) >= 4}
+        # Only apply this filter to pages with clear path slugs (not homepages)
+        path_segments = [s for s in lowered.strip("/").split("/") if s]
+        if long_terms and len(path_segments) >= 1:
+            domain_and_path = (parsed.netloc + lowered).lower()
+            if not any(term in domain_and_path for term in long_terms):
+                return False
         
     return True
 
