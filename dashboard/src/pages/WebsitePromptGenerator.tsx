@@ -13,7 +13,7 @@ type IntentResponse = {
 type PromptResponse = {
   prompt: string
   attempts: number
-  audit_score: number
+  audit_score: number | null
 }
 
 export default function WebsitePromptGenerator() {
@@ -34,11 +34,9 @@ export default function WebsitePromptGenerator() {
         .map((line) => line.trim())
         .filter(Boolean)
 
-      return api.post<IntentResponse>('/website-prompts/analyze-intent', {
+      return api.postAI<IntentResponse>('/website-prompts/analyze-intent', {
         keyword,
         manual_competitors: competitorsList.length > 0 ? competitorsList : undefined,
-      }, {
-        timeoutMs: 120_000 // up to 2 mins for scraping
       })
     },
     onSuccess: (data) => {
@@ -50,12 +48,10 @@ export default function WebsitePromptGenerator() {
 
   const generatePromptMutation = useMutation({
     mutationFn: async () => {
-      return api.post<PromptResponse>('/website-prompts/generate', {
+      return api.postAI<PromptResponse>('/website-prompts/generate', {
         keyword,
         intent,
         competitors: analyzedCompetitors,
-      }, {
-        timeoutMs: 300_000 // 5 minutes max
       })
     },
     onSuccess: (data) => {
@@ -237,7 +233,7 @@ export default function WebsitePromptGenerator() {
         <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 px-4 py-3 shadow-sm">
           <p className="text-slate-500 dark:text-slate-400">Verdict</p>
           <p className="text-base font-bold text-slate-950 dark:text-slate-50">
-            {generatedPrompt?.audit_score && generatedPrompt.audit_score >= 80 ? 'Pass' : 'Warning'}
+            {generatedPrompt?.audit_score == null ? 'Not audited' : generatedPrompt.audit_score >= 80 ? 'Pass' : 'Review needed'}
           </p>
         </div>
       </div>

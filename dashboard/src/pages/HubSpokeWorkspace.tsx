@@ -257,6 +257,7 @@ export function HubSpokeWorkspace() {
 
   const openTarget = (keyword: string, included: string[] = [], pageType?: string) => {
     const params = new URLSearchParams({ keyword })
+    if (sourceProjectId) params.set('project_id', sourceProjectId)
     if (included.length) params.set('cluster', included.join('\n'))
     const isTool = pageType === 'tool' && !informationalIntent.test(keyword)
     navigate(`${isTool ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)

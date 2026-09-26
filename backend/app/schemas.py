@@ -263,7 +263,7 @@ class WebsitePromptGenerateRequest(BaseModel):
 class WebsitePromptGenerateResponse(BaseModel):
     prompt: str
     attempts: int
-    audit_score: int
+    audit_score: int | None
 
 
 # ── URLs ──────────────────────────────────────────────────────

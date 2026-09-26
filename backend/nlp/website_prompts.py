@@ -1,7 +1,11 @@
 import json
+import logging
 from typing import Any, Dict, List
 
 from nlp.openrouter import _chat_json, _chat_text
+from nlp.providers import ProviderUnavailableError
+
+logger = logging.getLogger(__name__)
 
 def analyze_website_intent(keyword: str, short_mode: bool = False) -> Dict[str, Any]:
     """
@@ -34,6 +38,8 @@ def analyze_website_intent(keyword: str, short_mode: bool = False) -> Dict[str, 
             max_tokens=400,
         )
         return response_json
+    except ProviderUnavailableError:
+        raise
     except Exception as e:
         logger.error(f"Failed to analyze intent and competitors: {e}")
         return {"intent": "Informational/Standard Website", "competitors": []}
@@ -82,6 +88,8 @@ def generate_website_prompt(keyword: str, intent: str, master_theme_text: str, r
         )
         combined_prompt = f"{header}{response_text.strip()}\n\n{master_theme_text}"
         return combined_prompt
+    except ProviderUnavailableError:
+        raise
     except Exception as e:
         logger.error(f"Failed to generate website prompt: {e}")
         return ""
@@ -131,6 +139,8 @@ def audit_website_prompt(prompt: str) -> Dict[str, Any]:
             
         data = json.loads(text.strip())
         return data
+    except ProviderUnavailableError:
+        raise
     except Exception as e:
         logger.error(f"Failed to audit website prompt: {e}")
         return {

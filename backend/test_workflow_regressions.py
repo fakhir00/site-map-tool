@@ -74,6 +74,43 @@ class WorkflowTests(unittest.TestCase):
             db.commit()
             return job.id
 
+    def test_provider_diagnostics_require_auth_and_status_does_not_probe(self):
+        with patch('nlp.providers.check_providers', return_value={'configured': False, 'providers': []}) as probe:
+            response = self.client.get('/api/providers/ai/status')
+            self.assertEqual(response.status_code, 200)
+            probe.assert_not_called()
+            self.assertEqual(self.client.post('/api/providers/ai/check').status_code, 200)
+            probe.assert_called_once()
+            self.client.headers.pop('Authorization')
+            self.assertEqual(self.client.get('/api/providers/ai/status').status_code, 401)
+            self.assertEqual(self.client.post('/api/providers/ai/check').status_code, 401)
+
+    def test_real_page_stats_and_invalid_pagination(self):
+        pid = self.project()
+        with self.sessions() as db:
+            for source in ['own', 'competitor', 'ai', 'provider']:
+                db.add(Url(project_id=uuid.UUID(pid), url=f'https://example.com/{source}',
+                           source_type=source, status='scraped'))
+            db.commit()
+        response = self.client.get(f'/api/projects/{pid}/stats')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['total_urls'], 2)
+        self.assertEqual(response.json()['scraped_urls'], 2)
+        for endpoint in ['urls', 'keywords']:
+            self.assertEqual(self.client.get(f'/api/projects/{pid}/{endpoint}?page_size=0').status_code, 422)
+
+    def test_unavailable_ai_returns_actionable_service_error(self):
+        from nlp.providers import ProviderUnavailableError
+        pid = self.project()
+        with patch('app.keywords.router.generate_ai_keywords', new=AsyncMock(
+            side_effect=ProviderUnavailableError('AI unavailable. DeepSeek: Insufficient balance.')
+        )), patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(
+            return_value={'core_terms': ['circuit'], 'negative_terms': []}
+        )):
+            response = self.client.post(f'/api/projects/{pid}/keywords/generate')
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertIn('Insufficient balance', response.json()['detail'])
+
     def test_registration_login_and_project_context(self):
         body = dict(email='new@example.com', password='long-password')
         self.assertEqual(self.client.post('/api/auth/register', json=body).status_code, 201)

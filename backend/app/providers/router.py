@@ -17,3 +17,15 @@ def dataforseo_status(_current_user: User = Depends(get_current_user)) -> dict:
 @router.get("/apify/status")
 def apify_status(_current_user: User = Depends(get_current_user)) -> dict:
     return apify_account_status()
+
+
+@router.get("/ai/status")
+def ai_status(_current_user: User = Depends(get_current_user)) -> dict:
+    from nlp.providers import provider_status
+    return provider_status()
+
+
+@router.post("/ai/check")
+def ai_check(_current_user: User = Depends(get_current_user)) -> dict:
+    from nlp.providers import check_providers
+    return check_providers()

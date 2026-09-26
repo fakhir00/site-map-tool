@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, Bookmark, ExternalLink, FolderKanban, LogOut, Map, Menu, Network, Plus, Settings, X, Search } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DEMO_BACKEND_ENABLED, api, auth, type Project, type User } from '../lib/api'
 import { marketingUrl } from '../lib/marketing'
 import { Badge } from './ui/Badge'
@@ -24,6 +24,7 @@ export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const websiteUrl = marketingUrl('/')
 
   const { data: user } = useQuery({
@@ -38,6 +39,7 @@ export function DashboardLayout() {
 
   const handleLogout = () => {
     auth.clear()
+    queryClient.clear()
     navigate('/login', { replace: true })
   }
 

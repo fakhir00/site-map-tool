@@ -133,8 +133,7 @@ export function ProjectDetail() {
   const isPaused = status === 'paused'
   const percent = scanStatus?.percent ?? 0
   const activeJobError = jobs[0]?.error_message
-  const hideCompletedDataForSeoWarning = status === 'complete' && Boolean(activeJobError?.toLowerCase().includes('dataforseo'))
-  const visibleJobError = hideCompletedDataForSeoWarning ? null : activeJobError
+  const visibleJobError = activeJobError
   const latestJobError = visibleJobError && visibleJobError !== dismissedError ? visibleJobError : null
   const isCompletionWarning = status === 'complete' && Boolean(latestJobError)
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error

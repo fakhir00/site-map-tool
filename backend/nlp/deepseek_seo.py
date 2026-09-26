@@ -1,8 +1,8 @@
 """
 DeepSeek-powered SEO keyword enrichment.
 
-Sends batches of keywords to the DeepSeek API to get estimated search volume,
-keyword difficulty, and AI-powered SEO recommendations.
+Uses DeepSeek for editorial recommendations only. Search volume and difficulty
+must come from measured research providers, never language-model estimates.
 """
 
 import json
@@ -51,7 +51,7 @@ def _enrich_batch(
     seed_keywords: list[str],
     niche_context: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Call DeepSeek to estimate SEO metrics for a batch of keywords."""
+    """Ask DeepSeek for editorial guidance without estimating SEO metrics."""
     seeds_str = ", ".join(seed_keywords[:5])
     context_block = ""
     if niche_context:
@@ -59,25 +59,15 @@ def _enrich_batch(
 
     keywords_json = json.dumps(keyword_phrases, indent=2)
 
-    prompt = f"""You are an SEO expert analyst. For each keyword below, estimate:
-1. **search_volume**: Estimated monthly Google search volume (integer). Use your knowledge of search trends. Be realistic — most long-tail keywords get 50-500 searches/month.
-2. **difficulty**: Keyword difficulty score from 0-100 (float). 0 = easiest to rank for, 100 = hardest. Consider domain authority of competing sites, content quality needed, and commercial intent.
-3. **recommendation**: A concise, actionable SEO recommendation (1-2 sentences) for how a website in this niche should target this keyword. Include content type suggestions (blog post, landing page, comparison article, etc.).
-
-The seed keywords for this website's niche are: {seeds_str}
+    prompt = f"""Suggest a concise editorial recommendation for each supplied keyword.
+Website seeds: {seeds_str}
 {context_block}
-Keywords to analyze:
-{keywords_json}
-
-Return ONLY a JSON array where each element has:
-{{"keyword": "...", "search_volume": 123, "difficulty": 45.0, "recommendation": "..."}}
-
-Important rules:
-- Return the EXACT same keyword strings as provided
-- search_volume must be a positive integer
-- difficulty must be a float between 0 and 100
-- recommendation must be a brief, specific, actionable string
-- Do NOT add any explanation outside the JSON array"""
+Keywords: {keywords_json}
+Return only a JSON array of objects with the exact supplied "keyword" and a
+"recommendation" (one or two sentences describing a useful content approach).
+Do not estimate search volume, difficulty, ranking probability or competitor authority.
+Do not invent facts or imply that a topic is a verified gap.
+"""
 
     try:
         model = settings.DEEPSEEK_MODEL or "deepseek-chat"
@@ -96,7 +86,7 @@ Important rules:
                 item for item in parsed
                 if isinstance(item, dict)
                 and "keyword" in item
-                and isinstance(item.get("search_volume"), (int, float))
+                and isinstance(item.get("recommendation"), str)
             ]
         return []
 
@@ -114,10 +104,10 @@ def enrich_keywords_with_seo_data(
     audit_summary: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """
-    Enrich keywords with SEO data from DeepSeek.
+    Enrich keywords with editorial guidance from DeepSeek.
 
     Returns a dict mapping keyword phrase -> {search_volume, difficulty, recommendation}.
-    Keywords not successfully enriched are omitted from the result.
+    Metric fields remain None; keywords not successfully enriched are omitted.
     """
     client = _get_deepseek_client()
     if not client:
@@ -148,11 +138,11 @@ def enrich_keywords_with_seo_data(
 
         for item in enriched:
             kw = str(item.get("keyword", "")).strip().lower()
-            if not kw:
+            if kw not in {phrase.lower() for phrase in batch}:
                 continue
             result[kw] = {
-                "search_volume": int(item.get("search_volume") or 0),
-                "difficulty": round(float(item.get("difficulty") or 0), 1),
+                "search_volume": None,
+                "difficulty": None,
                 "recommendation": str(item.get("recommendation") or "")[:500],
             }
 

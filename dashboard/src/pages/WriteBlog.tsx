@@ -47,7 +47,7 @@ export default function WriteBlog() {
 
   const manualMutation = useMutation({
     mutationFn: ({ main_keyword, keyword_cluster }: { main_keyword: string, keyword_cluster: string }) => 
-      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster }),
+      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: searchParams.get('project_id') || undefined }),
     onMutate: () => {
       setArticleError('')
     },

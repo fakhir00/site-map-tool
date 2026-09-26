@@ -1,10 +1,24 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bot, CreditCard, Database } from 'lucide-react'
 import { api, type ProviderStatus, type User } from '../lib/api'
+import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 
+type AIStatus = { configured: boolean; message: string; providers: { name: string; model: string; available: boolean | null; message: string }[] }
+
 export function Settings() {
+  const queryClient = useQueryClient()
+  const { data: aiStatus, error: aiError } = useQuery({
+    queryKey: ['provider-status', 'ai'], queryFn: () => api.get<AIStatus>('/providers/ai/status'), retry: false,
+  })
+  const { data: health } = useQuery({
+    queryKey: ['health'], queryFn: () => api.get<{ revision: string; database: string }>('/health'), retry: false,
+  })
+  const checkAI = useMutation({
+    mutationFn: () => api.postAI<AIStatus>('/providers/ai/check'),
+    onSuccess: (result) => queryClient.setQueryData(['provider-status', 'ai'], result),
+  })
   const { data: user } = useQuery({
     queryKey: ['user'],
     queryFn: () => api.get<User>('/auth/me'),
@@ -66,6 +80,21 @@ export function Settings() {
           </div>
         </Card>
       </section>
+
+      <Card>
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold">AI providers</h3>
+          <Button onClick={() => checkAI.mutate()} disabled={checkAI.isPending}>{checkAI.isPending ? 'Checking…' : 'Test AI connection'}</Button>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">{aiError ? aiError.message : aiStatus?.message || 'Loading AI status…'}</p>
+        <p className="mt-1 text-xs text-slate-500">The connection test sends a small request to each configured provider and may use API credits.</p>
+        {checkAI.error && <p role="alert" className="mt-2 text-sm text-red-600">{checkAI.error.message}</p>}
+        {aiStatus?.providers.map((provider) => <div key={provider.name} className="mt-4 flex justify-between gap-4 border-t border-slate-200 pt-3 dark:border-slate-800">
+          <div><p className="font-semibold">{provider.name} · {provider.model}</p><p className="mt-1 text-sm text-slate-500">{provider.message}</p></div>
+          <Badge variant={provider.available === true ? 'teal' : 'amber'}>{provider.available === true ? 'Available' : provider.available === false ? 'Action required' : 'Not checked'}</Badge>
+        </div>)}
+        {health && <p className="mt-4 text-xs text-slate-500">Backend revision: {health.revision} · Database: {health.database}</p>}
+      </Card>
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-4">

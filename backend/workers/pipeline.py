@@ -507,8 +507,6 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                         if kw_id:
                             db.execute(
                                 update(Keyword).where(Keyword.id == kw_id).values(
-                                    search_volume=data.get("search_volume"),
-                                    difficulty=data.get("difficulty"),
                                     seo_recommendation=data.get("recommendation"),
                                 )
                             )

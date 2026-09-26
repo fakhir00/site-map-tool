@@ -15,6 +15,7 @@ export type SavedKeywordsTableProps = {
 export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }: SavedKeywordsTableProps) {
   const queryClient = useQueryClient()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [copyMessage, setCopyMessage] = useState('')
   const availableIds = new Set(keywords.map((keyword) => keyword.id))
   const selectedVisibleIds = Array.from(selectedIds).filter((id) => availableIds.has(id))
 
@@ -64,10 +65,14 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
                 size="sm"
                 variant="secondary"
                 disabled={selectedVisibleIds.length === 0}
-                onClick={() => {
+                onClick={async () => {
                   const selectedKeywordsText = keywords.filter(k => selectedIds.has(k.id)).map(k => k.phrase).join('\n')
-                  navigator.clipboard.writeText(selectedKeywordsText)
-                  alert('Copied to clipboard!')
+                  try {
+                    await navigator.clipboard.writeText(selectedKeywordsText)
+                    setCopyMessage('Copied to clipboard.')
+                  } catch {
+                    setCopyMessage('Could not copy. Check browser clipboard permissions and try again.')
+                  }
                 }}
               >
                 <FileText className="h-4 w-4 mr-2" />
@@ -105,6 +110,8 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
         </div>
       </div>
       
+      {bulkActionMutation.error && <p role="alert" className="mb-4 text-sm text-red-600">{bulkActionMutation.error.message}</p>}
+      {copyMessage && <p role="status" className="mb-4 text-sm">{copyMessage}</p>}
       <Card className="overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-500 dark:bg-slate-900/50 dark:text-slate-400">

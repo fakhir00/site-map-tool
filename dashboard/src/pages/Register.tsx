@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Lock, Mail, Map, UserRound } from 'lucide-react'
@@ -15,6 +16,7 @@ type TokenResponse = {
 
 export function Register() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -33,6 +35,7 @@ export function Register() {
         password,
         full_name: fullName,
       })
+      queryClient.clear()
       auth.setToken(data.access_token)
       navigate('/', { replace: true })
     } catch (err) {

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 import logging
+from nlp.providers import ProviderUnavailableError
 
 from app.auth.jwt import get_current_user
 from app.models import User
@@ -32,6 +33,8 @@ async def analyze_intent(
             intent=result["intent"],
             competitors=result["competitors"]
         )
+    except ProviderUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as e:
         logger.error(f"Error in analyze_intent: {e}")
         raise HTTPException(status_code=500, detail="Failed to analyze intent")
@@ -54,6 +57,8 @@ async def generate_prompt(
             attempts=result["attempts"],
             audit_score=result["audit_score"]
         )
+    except ProviderUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as e:
         logger.error(f"Error in generate_prompt: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate website prompt")
@@ -76,6 +81,8 @@ async def generate_gap_page(
             attempts=result["attempts"],
             audit_score=result["audit_score"]
         )
+    except ProviderUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as e:
         logger.error(f"Error in generate_gap_page: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate gap page prompt")

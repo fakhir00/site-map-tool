@@ -6,7 +6,7 @@ import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
 
 export default function SavedKeywords() {
   const navigate = useNavigate()
-  const { data: keywordBank = [], isLoading } = useQuery({
+  const { data: keywordBank = [], isLoading, error } = useQuery({
     queryKey: ['keyword-bank'],
     queryFn: () => api.get<KeywordBankEntry[]>('/keyword-bank'),
   })
@@ -23,7 +23,7 @@ export default function SavedKeywords() {
         </div>
       </div>
 
-      <SavedKeywordsTable
+      {error ? <p role="alert" className="text-sm text-red-600">{error.message}</p> : <SavedKeywordsTable
         keywords={keywordBank}
         isLoading={isLoading}
         actionIcon="both"
@@ -34,7 +34,7 @@ export default function SavedKeywords() {
             navigate(`/gap-page-prompts?keyword=${encodeURIComponent(kw.phrase)}`)
           }
         }}
-      />
+      />}
     </div>
   )
 }

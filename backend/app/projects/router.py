@@ -90,7 +90,7 @@ async def project_stats(
 
     url_counts = await db.execute(
         select(Url.status, func.count(Url.id))
-        .where(Url.project_id == project_id)
+        .where(Url.project_id == project_id, ~Url.source_type.in_(["ai", "provider"]))
         .group_by(Url.status)
     )
     status_map = {row[0]: row[1] for row in url_counts.all()}
@@ -121,7 +121,7 @@ async def list_urls(
     project_id: uuid.UUID,
     status_filter: Optional[str] = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, le=200),
+    page_size: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

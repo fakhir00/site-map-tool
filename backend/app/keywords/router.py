@@ -24,7 +24,7 @@ bank_router = APIRouter(prefix="/api/keyword-bank", tags=["keywords"])
 async def list_keywords(
     project_id: uuid.UUID,
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, le=200),
+    page_size: int = Query(50, ge=1, le=200),
     sort_by: str = Query(
         "frequency",
         enum=["frequency", "phrase", "created_at", "search_volume_asc", "search_volume_desc"],

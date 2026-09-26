@@ -7,6 +7,7 @@ from typing import Any
 from openai import AsyncOpenAI, OpenAI
 
 from app.config import settings
+from nlp.providers import ProviderUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -99,36 +100,9 @@ def normalize_keyword_type(value: Any) -> str:
 
 
 def _provider_config(use_writing_model: bool = False) -> tuple[str, str, str, str]:
-    if settings.TOKENROUTER_API_KEY:
-        model = settings.TOKENROUTER_WRITING_MODEL if use_writing_model else settings.TOKENROUTER_MODEL
-        return (
-            "TokenRouter",
-            "https://api.tokenrouter.com/v1",
-            settings.TOKENROUTER_API_KEY,
-            model,
-        )
-    if settings.DEEPSEEK_API_KEY:
-        return (
-            "DeepSeek",
-            "https://api.deepseek.com",
-            settings.DEEPSEEK_API_KEY,
-            settings.DEEPSEEK_MODEL,
-        )
-    if settings.GROQ_API_KEY:
-        return (
-            "Groq",
-            "https://api.groq.com/openai/v1",
-            settings.GROQ_API_KEY,
-            settings.GROQ_MODEL,
-        )
-    if settings.OPENROUTER_API_KEY:
-        return (
-            "OpenRouter",
-            "https://openrouter.ai/api/v1",
-            settings.OPENROUTER_API_KEY,
-            settings.OPENROUTER_MODEL,
-        )
-    return "", "", "", ""
+    from nlp.providers import configured_providers
+    configs = configured_providers(use_writing_model)
+    return configs[0] if configs else ("", "", "", "")
 
 
 def is_ai_configured() -> bool:
@@ -230,7 +204,6 @@ async def _achat_json(
     max_tokens: int | None = None,
     use_writing_model: bool = False,
 ) -> Any:
-    client = _async_client(use_writing_model)
     _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
         "model": model,
@@ -242,9 +215,8 @@ async def _achat_json(
     }
     if max_tokens:
         request["max_tokens"] = max_tokens
-    response = await client.chat.completions.create(
-        **request,
-    )
+    from nlp.providers import acomplete
+    response = await acomplete(request, writing=use_writing_model)
     return _parse_json_payload(response.choices[0].message.content or "")
 
 
@@ -256,7 +228,6 @@ def _chat_json(
     max_tokens: int | None = None,
     use_writing_model: bool = False,
 ) -> Any:
-    client = _sync_client(use_writing_model)
     _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
         "model": model,
@@ -268,9 +239,8 @@ def _chat_json(
     }
     if max_tokens:
         request["max_tokens"] = max_tokens
-    response = client.chat.completions.create(
-        **request,
-    )
+    from nlp.providers import complete
+    response = complete(request, writing=use_writing_model)
     return _parse_json_payload(response.choices[0].message.content or "")
 
 
@@ -282,7 +252,6 @@ def _chat_text(
     max_tokens: int | None = None,
     use_writing_model: bool = False,
 ) -> str:
-    client = _sync_client(use_writing_model)
     _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
         "model": model,
@@ -295,20 +264,9 @@ def _chat_text(
     if max_tokens:
         request["max_tokens"] = max_tokens
 
-    try:
-        response = client.chat.completions.create(**request)
-        return response.choices[0].message.content or ""
-    except Exception as e:
-        import openai
-        if isinstance(e, openai.RateLimitError) and not use_writing_model:
-            logger.warning(f"Groq Rate limit hit. Falling back to OpenRouter for this request.")
-            # Fallback to the writing model (OpenRouter)
-            client = _sync_client(use_writing_model=True)
-            _provider, _base_url, _api_key, model = _provider_config(use_writing_model=True)
-            request["model"] = model
-            response = client.chat.completions.create(**request)
-            return response.choices[0].message.content or ""
-        raise e
+    from nlp.providers import complete
+    response = complete(request, writing=use_writing_model)
+    return response.choices[0].message.content or ""
 
 
 _semantic_cache = {}
@@ -629,6 +587,8 @@ ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse JSON from %s: %s", ai_provider_name(), exc)
         return []
+    except ProviderUnavailableError:
+        raise
     except Exception as exc:
         logger.error("Failed to generate keywords via %s: %s", ai_provider_name(), exc)
         return []
@@ -812,6 +772,8 @@ ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse JSON from %s: %s", ai_provider_name(), exc)
         return []
+    except ProviderUnavailableError:
+        raise
     except Exception as exc:
         logger.error("Failed to generate keywords via %s: %s", ai_provider_name(), exc)
         return []
@@ -1119,6 +1081,8 @@ Candidates:
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse JSON from %s gap filter: %s", ai_provider_name(), exc)
         return None
+    except ProviderUnavailableError:
+        raise
     except Exception as exc:
         logger.error("Failed to filter keyword gaps via %s: %s", ai_provider_name(), exc)
         return None

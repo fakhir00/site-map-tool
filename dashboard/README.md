@@ -27,6 +27,13 @@ To run the dashboard without the FastAPI backend, enable the browser-backed demo
 VITE_ENABLE_DEMO_BACKEND=true npm run dev
 ```
 
+## Browser regression checks
+
+Run `npm run test:browser` with Playwright Chromium installed. To use an existing
+Chrome installation, set `PLAYWRIGHT_CHROME_PATH` to its executable. Tests start
+Vite on port 4173 and mock API responses; they do not modify production accounts
+or spend provider credits. Run `npm run lint` and `npm run build` separately.
+
 ## Vercel deployment
 
 Deploy the `dashboard` directory as the Vercel project root.

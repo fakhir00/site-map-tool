@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import logging
 from typing import List, Dict, Any
 
@@ -12,7 +13,10 @@ THEME_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(o
 
 def get_master_theme_text() -> str:
     try:
-        with open(THEME_FILE_PATH, "r", encoding="utf-8") as f:
+        source = Path(THEME_FILE_PATH)
+        if not source.exists():
+            source = Path(__file__).with_name("resources") / "master-prompt-theme.txt"
+        with source.open("r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         logger.error(f"Could not read {THEME_FILE_PATH}: {e}")
@@ -69,6 +73,8 @@ def generate_prompt_flow(keyword: str, intent: str, competitors: List[str]) -> D
             
         revision_notes = audit.get("issues", [])
 
+    if not best_prompt.strip():
+        raise ValueError("The AI provider returned no usable website prompt.")
     return {
         "prompt": best_prompt,
         "audit_score": best_audit.get("score", 0),
@@ -95,6 +101,6 @@ def generate_gap_page_flow(keyword: str, intent: str, competitors: List[str]) ->
 
     return {
         "prompt": prompt,
-        "audit_score": 100,
+        "audit_score": None,
         "attempts": 1
     }

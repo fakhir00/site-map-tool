@@ -255,3 +255,12 @@ async def health():
         "database": "connected" if database_ready else "reconnecting",
         "revision": os.getenv("RENDER_GIT_COMMIT", "local")[:7],
     }
+
+
+from nlp.providers import ProviderUnavailableError
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(ProviderUnavailableError)
+async def ai_unavailable_handler(_request, exc: ProviderUnavailableError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})

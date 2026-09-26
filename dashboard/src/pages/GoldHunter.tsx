@@ -81,6 +81,8 @@ export function GoldHunter() {
 
   const createMutation = useMutation({
     mutationFn: (body: ProjectCreate) => api.post<Project>('/projects', body),
+    onMutate: () => setError(null),
+    onError: (err: Error) => setError(err.message || 'Failed to create the Gap Hunter project'),
     onSuccess: async (project: Project) => {
       try {
         await api.post(`/projects/${project.id}/scan/start`)

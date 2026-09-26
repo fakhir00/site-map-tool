@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+const contactKey = import.meta.env.PUBLIC_WEB3FORMS_ACCESS_KEY?.trim() || '';
 ---
 
 <BaseLayout
@@ -62,7 +63,7 @@ import Footer from '../components/Footer.astro';
 
         <!-- Right: form -->
         <div class="contact-form-wrapper glass-card reveal" style="animation-delay:0.1s;">
-          <form id="contact-form" novalidate>
+          <form id="contact-form" data-access-key={contactKey} novalidate>
             <div class="form-group">
               <label for="contact-name" class="form-label">Your Name</label>
               <input
@@ -289,6 +290,12 @@ import Footer from '../components/Footer.astro';
       return;
     }
 
+    const accessKey = form.dataset.accessKey;
+    if (!accessKey) {
+      showStatus('Please email us directly at hello@sitemapseo.io. The contact form is not available yet.', 'error');
+      return;
+    }
+
     submitBtn.disabled = true;
     submitLabel.textContent = 'Sending...';
     showStatus('Sending your message...', 'sending');
@@ -299,14 +306,15 @@ import Footer from '../components/Footer.astro';
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          access_key: 'YOUR_WEB3FORMS_KEY',
+          access_key: accessKey,
           name, email,
           subject: (form.elements.namedItem('subject') as HTMLSelectElement)?.value || 'Contact Form',
           message,
         }),
       });
 
-      if (res.ok) {
+      const result = await res.json();
+      if (res.ok && result.success === true) {
         showStatus('✓ Message sent! We\'ll reply within 24 hours.', 'success');
         form.reset();
       } else {
