@@ -409,6 +409,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
 
         gap_started = time.monotonic()
         competitor_evidence: list[str] = []
+        gap_diagnostics: dict[str, Any] = {}
         provider_diagnostics: list[str] = []
         apify_keyword_count = _process_apify_keywords(
             db,
@@ -443,7 +444,9 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             classify_keyword_tiers,
             verify_cluster_intent,
             evidence_out=competitor_evidence,
+            diagnostics=gap_diagnostics,
         )
+        logger.info("[%s] Competitor gap diagnostics: %s", project_id, gap_diagnostics)
         logger.info(
             "[%s] Competitor keyword gap pass stored %s keywords in %.1fs",
             project_id,
@@ -519,7 +522,6 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                 db.rollback()
             except Exception:
                 pass
-        warnings: list[str] = []
         if dataforseo_count == 0:
             logger.warning(
                 "[%s] DataForSEO enrichment unavailable (non-blocking): %s",
@@ -528,26 +530,9 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                 if provider_diagnostics
                 else "no matching keywords were stored",
             )
-        if competitor_gap_count == 0:
-            warnings.append(
-                (
-                    "no direct competitor pages were discovered ("
-                    + (
-                        competitor_diagnostics[-1]
-                        if competitor_diagnostics
-                        else "no usable seed or search-provider result was available"
-                    )
-                    + ")"
-                )
-                if not competitor_domains
-                else "the competitor pages produced no accepted scraped keywords"
-            )
-        completion_warning = None
-        if warnings:
-            completion_warning = (
-                "Scan completed with limited external research: " + "; ".join(warnings) + ". "
-                "Check the provider status cards in Settings and the Render scan logs before retrying."
-            )
+        completion_warning = _competitor_gap_completion_message(
+            competitor_gap_count, competitor_domains, gap_diagnostics, competitor_diagnostics,
+        )
         _mark_complete(db, project, job, "complete", completion_warning)
         logger.info(
             "[%s] Scan complete with %s keywords in %.1fs",
@@ -748,6 +733,35 @@ def _mark_chunk_failed(
         db.rollback()
 
 
+def _competitor_gap_completion_message(
+    gap_count: int, domains: list[str], diagnostics: dict[str, Any], discovery_notes: list[str],
+) -> str | None:
+    if gap_count:
+        return None
+    stage = diagnostics.get("outcome")
+    pages = diagnostics.get("scraped_pages", 0)
+    candidates = diagnostics.get("relevant_candidates", 0)
+    if not domains:
+        reason = discovery_notes[-1] if discovery_notes else "no usable search-provider result was available"
+        return f"Scan completed with limited competitor research: no direct competitors were discovered ({reason}). Check competitor discovery and provider status."
+    if stage == "no_scraped_pages":
+        return "Scan completed with limited competitor research: no competitor pages were successfully scraped. Check failed URLs and scrape errors before retrying."
+    if stage == "no_candidates":
+        return (f"Scan completed: {pages} competitor pages were scraped, but extraction and topic filtering "
+                "returned no relevant candidates. Check page text, seed keywords and site scope; provider failure is not established.")
+    if stage == "review_rejected":
+        return (f"Scan completed: quality review selected no new gaps from {candidates} relevant candidates "
+                f"on {pages} scraped competitor pages. Candidates may overlap existing coverage or lack a useful distinct intent. "
+                "For broader topic planning, build the Hub Spoke map from your site context.")
+    if stage == "quality_rejected":
+        return (f"Scan completed: review returned candidates from {pages} scraped competitor pages, but none passed "
+                "the final phrase, topic and source-brand checks. Check the site scope and scan diagnostics.")
+    if stage == "already_covered":
+        return (f"Scan completed: the accepted competitor candidates are already represented in your site's extracted content. "
+                "No new competitor gaps were stored. Use Hub Spoke to plan distinct topics or improvements to existing pages.")
+    return "Scan completed with no new competitor gaps. Stage diagnostics are unavailable for this run; check the scan logs before deciding whether to retry."
+
+
 def _process_competitor_keyword_gaps(
     db: Session,
     project_id: uuid.UUID,
@@ -760,8 +774,13 @@ def _process_competitor_keyword_gaps(
     classify_keyword_tiers: Any,
     verify_cluster_intent: Any,
     evidence_out: list[str] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> int:
     from app.models import Url
+
+    stats = diagnostics if diagnostics is not None else {}
+    stats.update(scraped_pages=0, relevant_candidates=0, reviewed_candidates=0,
+                 quality_candidates=0, covered_candidates=0, stored_gaps=0)
 
     base_query = (
         select(Url)
@@ -772,7 +791,9 @@ def _process_competitor_keyword_gaps(
         )
     )
     count = db.execute(select(func.count()).select_from(base_query.subquery())).scalar()
+    stats["scraped_pages"] = int(count or 0)
     if not count:
+        stats["outcome"] = "no_scraped_pages"
         return 0
 
     logger.info("Extracting keyword candidates from %s scraped competitor URLs", count)
@@ -787,15 +808,18 @@ def _process_competitor_keyword_gaps(
         topic_terms=topic_terms,
         negative_terms=negative_terms,
     )
+    stats["extracted_candidates"] = len(extracted)
     extracted = [
         item for item in extracted
         if _keyword_matches_topic(str(item.get("phrase") or ""), seed_keywords, topic_terms, negative_terms)
     ]
+    stats["relevant_candidates"] = len(extracted)
     if evidence_out is not None:
         evidence_out.extend(
             str(item.get("phrase") or "") for item in extracted if item.get("phrase")
         )
     if not extracted:
+        stats["outcome"] = "no_candidates"
         return 0
 
     own_pages = db.execute(
@@ -818,8 +842,12 @@ def _process_competitor_keyword_gaps(
     # A successful empty verdict is a rejection, not a provider failure.
     # Raw extraction is not a safe substitute for semantic validation.
     if filtered is None:
+        stats["outcome"] = "review_unavailable"
+        logger.warning("[%s] Competitor gap diagnostics: %s", project_id, stats)
         raise RuntimeError("Keyword quality review unavailable; retry the scan before publishing raw candidates")
+    stats["reviewed_candidates"] = len(filtered)
     if not filtered:
+        stats["outcome"] = "review_rejected"
         return 0
     from nlp.keywords import is_publishable_keyword
     filtered = [
@@ -869,7 +897,9 @@ def _process_competitor_keyword_gaps(
         len(filtered),
         len(extracted),
     )
+    stats["quality_candidates"] = len(filtered)
     if not filtered:
+        stats["outcome"] = "quality_rejected"
         return 0
 
     acc: dict[str, dict[str, Any]] = {}
@@ -894,11 +924,15 @@ def _process_competitor_keyword_gaps(
         acc[phrase]["count"] = len(acc[phrase]["url_ids"])
 
     own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
+    before_coverage = len(acc)
     _remove_covered_keywords(acc, own_phrases)
+    stats["covered_candidates"] = before_coverage - len(acc)
     if not acc:
+        stats["outcome"] = "already_covered"
         return 0
 
     _store_keywords(db, project_id, acc)
+    stats.update(outcome="stored", stored_gaps=len(acc))
     return len(acc)
 
 
