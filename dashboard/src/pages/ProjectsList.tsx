@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { api, type Project } from '../lib/api'
+import { projectsQuery } from '../lib/workspaceQueries'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -63,13 +64,7 @@ export function ProjectsList() {
   const [search, setSearch] = useState('')
   const [form, setForm] = useState<ProjectForm>(() => ({ ...initialProject, primary_keyword: searchParams.get('new_keyword') || '', site_url: searchParams.get('site_url') || '' }))
 
-  const { data: projects = [], isLoading, isFetching, error: projectsError, refetch: refetchProjects } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => api.get<Project[]>('/projects'),
-    retry: 3,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
-    refetchInterval: (query) => query.state.error ? 15_000 : false,
-  })
+  const { data: projects = [], isLoading, isFetching, error: projectsError, refetch: refetchProjects } = useQuery(projectsQuery)
 
   const filteredProjects = useMemo(() => {
     const normalized = search.trim().toLowerCase()
@@ -194,7 +189,7 @@ export function ProjectsList() {
         </Card>
       )}
 
-      {!projectsError && <section className="grid gap-4 md:grid-cols-3">
+      {!projectsError && !isLoading && <section className="grid gap-4 md:grid-cols-3">
         <Card>
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard</p>

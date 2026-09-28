@@ -2,7 +2,7 @@ import unittest
 import uuid
 from contextlib import nullcontext
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from sqlalchemy.exc import OperationalError
 
@@ -70,6 +70,27 @@ class PipelineDatabaseResilienceTests(unittest.TestCase):
 
 
 class ApiStartupResilienceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_health_checks_current_database_and_recovers_after_outage(self):
+        connection = AsyncMock()
+        connection.execute.side_effect = [OperationalError('SELECT 1', {}, Exception('private details')), None]
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=connection)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.object(app.state, 'database_ready', True, create=True), patch('app.main.engine', MagicMock(connect=Mock(return_value=context))):
+            unavailable = await health()
+            recovered = await health()
+        self.assertEqual(unavailable['database'], 'reconnecting')
+        self.assertNotIn('private details', str(unavailable))
+        self.assertEqual(recovered['database'], 'connected')
+        self.assertEqual(connection.execute.await_count, 2)
+
+    async def test_health_timeout_returns_degraded_state(self):
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(side_effect=TimeoutError())
+        with patch.object(app.state, 'database_ready', True, create=True), patch('app.main.engine', MagicMock(connect=Mock(return_value=context))):
+            result = await health()
+        self.assertEqual(result['status'], 'degraded')
+
     async def test_database_outage_does_not_block_api_startup_or_health(self):
         with patch("app.main._initialize_database", new=AsyncMock(side_effect=RuntimeError("database locked"))):
             async with lifespan(app):

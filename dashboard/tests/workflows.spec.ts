@@ -24,6 +24,70 @@ async function mockAPI(page: Page) {
 }
 
 const pages = ['/', `/projects/${id}`, '/scan', '/gold-hunter', '/hub-spoke', '/settings', '/website-prompts', '/gap-page-prompts', '/write-blog', `/write-blog/${id}`, '/saved-keywords']
+test('workspace connection failures are visible promptly and retry restores the account', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'test-token'))
+  await mockAPI(page)
+  let unavailable = true
+  for (const endpoint of ['auth/me', 'projects']) {
+    await page.route(`**/api/${endpoint}`, route => unavailable
+      ? route.fulfill({ status: 503, json: { detail: 'Account database temporarily unavailable' } })
+      : route.fulfill({ json: endpoint === 'auth/me' ? user : [project] }))
+  }
+  await page.goto('/')
+  await expect(page.getByRole('alert')).toContainText('Could not load your account', { timeout: 5000 })
+  await expect(page.getByText('Account unavailable', { exact: true })).toBeVisible()
+  await expect(page.getByText('0 active projects', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('No scans yet', { exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => localStorage.getItem('token'))).toBe('test-token')
+  unavailable = false
+  await page.getByRole('button', { name: 'Retry connection', exact: true }).click()
+  await expect(page.getByText('First User', { exact: true })).toBeVisible()
+  await expect(page.getByText('1 active project', { exact: true })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('pending account requests show loading instead of an empty account', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'test-token'))
+  await mockAPI(page)
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/auth/me', async route => { await pending; await route.fulfill({ json: user }) })
+  await page.goto('/')
+  await expect(page.getByText('Loading account…', { exact: true })).toBeVisible()
+  await expect(page.getByRole('status')).toHaveText('Connecting to your workspace…')
+  await expect(page.getByText('User', { exact: true })).toHaveCount(0)
+  release()
+  await expect(page.getByText('First User', { exact: true })).toBeVisible()
+})
+
+test('a hanging account request times out once instead of retrying silently for minutes', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'test-token'))
+  await mockAPI(page)
+  const requestTimes: number[] = []
+  await page.route('**/api/auth/me', () => { requestTimes.push(Date.now()) })
+  await page.goto('/')
+  await expect(page.getByRole('alert')).toContainText('The API request timed out', { timeout: 18_000 })
+  // React StrictMode may cancel/restart the initial mount in development.
+  // No additional attempt should start when the 15-second deadline expires.
+  expect(requestTimes.length).toBeGreaterThan(0)
+  expect(Math.max(...requestTimes) - Math.min(...requestTimes)).toBeLessThan(1000)
+  expect(await page.evaluate(() => localStorage.getItem('token'))).toBe('test-token')
+})
+
+test('expired account session redirects to login instead of staying empty', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('test-initialized')) {
+      localStorage.setItem('token', 'expired-token')
+      sessionStorage.setItem('test-initialized', 'true')
+    }
+  })
+  await mockAPI(page)
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, json: { detail: 'Invalid or missing authentication token' } }))
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/login$/)
+  expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull()
+})
+
 for (const path of ['/website-prompts', '/gap-page-prompts']) {
   test(`prompt workflow ${path} completes without inventing an audit score`, async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('token', 'test-token'))

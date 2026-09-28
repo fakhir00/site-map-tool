@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bot, CreditCard, Database } from 'lucide-react'
-import { api, type ProviderStatus, type User } from '../lib/api'
+import { api, type ProviderStatus } from '../lib/api'
+import { accountQuery } from '../lib/workspaceQueries'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
@@ -19,10 +20,7 @@ export function Settings() {
     mutationFn: () => api.postAI<AIStatus>('/providers/ai/check'),
     onSuccess: (result) => queryClient.setQueryData(['provider-status', 'ai'], result),
   })
-  const { data: user } = useQuery({
-    queryKey: ['user'],
-    queryFn: () => api.get<User>('/auth/me'),
-  })
+  const { data: user } = useQuery(accountQuery)
   const { data: dataForSeo, isLoading: isLoadingDataForSeo } = useQuery({
     queryKey: ['provider-status', 'dataforseo'],
     queryFn: () => api.get<ProviderStatus>('/providers/dataforseo/status'),

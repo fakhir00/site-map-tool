@@ -249,6 +249,15 @@ app.include_router(providers_router)
 @app.get("/api/health")
 async def health():
     database_ready = bool(getattr(app.state, "database_ready", False))
+    if database_ready:
+        async def ping_database():
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+        try:
+            await asyncio.wait_for(ping_database(), timeout=3)
+        except Exception as exc:
+            logger.warning("Database health check failed (%s)", type(exc).__name__)
+            database_ready = False
     return {
         "status": "ok" if database_ready else "degraded",
         "service": "SiteMapSEO API",

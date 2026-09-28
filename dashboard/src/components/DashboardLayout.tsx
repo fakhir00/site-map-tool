@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, Bookmark, ExternalLink, FolderKanban, LogOut, Map, Menu, Network, Plus, Settings, X, Search } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { DEMO_BACKEND_ENABLED, api, auth, type Project, type User } from '../lib/api'
+import { DEMO_BACKEND_ENABLED, auth, type Project } from '../lib/api'
+import { accountQuery, projectsQuery } from '../lib/workspaceQueries'
 import { marketingUrl } from '../lib/marketing'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -27,15 +28,12 @@ export function DashboardLayout() {
   const queryClient = useQueryClient()
   const websiteUrl = marketingUrl('/')
 
-  const { data: user } = useQuery({
-    queryKey: ['user'],
-    queryFn: () => api.get<User>('/auth/me'),
-  })
-
-  const { data: projects = [] } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => api.get<Project[]>('/projects'),
-  })
+  const account = useQuery(accountQuery)
+  const projectList = useQuery(projectsQuery)
+  const user = account.data
+  const projects = projectList.data || []
+  const connectionError = account.error || projectList.error
+  const initialLoading = account.isPending || projectList.isPending
 
   const handleLogout = () => {
     auth.clear()
@@ -138,7 +136,8 @@ export function DashboardLayout() {
                 )
               })}
 
-              {projects.length === 0 && <p className="px-3 py-2 text-sm text-slate-500">No scans yet</p>}
+              {projectList.data === undefined && <p className="px-3 py-2 text-sm text-slate-500">{projectList.error ? 'Projects unavailable' : 'Loading projects…'}</p>}
+              {projectList.isSuccess && projects.length === 0 && <p className="px-3 py-2 text-sm text-slate-500">No scans yet</p>}
             </div>
           </div>
         </nav>
@@ -149,7 +148,7 @@ export function DashboardLayout() {
               {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">{user?.full_name || 'User'}</p>
+              <p className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">{user?.full_name || user?.email || (account.error ? 'Account unavailable' : 'Loading account…')}</p>
               <p className="truncate text-xs text-slate-500 dark:text-slate-400">{user?.email}</p>
             </div>
           </div>
@@ -199,10 +198,16 @@ export function DashboardLayout() {
               </div>
               <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
                 <BarChart3 className="h-4 w-4 text-cyan-800 dark:text-cyan-500" />
-                {projects.length} active project{projects.length === 1 ? '' : 's'}
+                {projectList.data === undefined ? (projectList.error ? 'Projects unavailable' : 'Loading projects…') : `${projects.length} active project${projects.length === 1 ? '' : 's'}`}
               </div>
             </div>
-            <Outlet />
+            {connectionError ? <div role="alert" className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+              <p className="font-semibold">Could not load {account.error ? 'your account' : 'your projects'}</p>
+              <p className="mt-1 text-sm">{connectionError.message}</p>
+              <p className="mt-1 text-sm">Retrying every 15 seconds. Missing information does not mean your saved data was deleted.</p>
+              <Button className="mt-3" variant="secondary" disabled={account.isFetching || projectList.isFetching} onClick={() => { void account.refetch(); void projectList.refetch() }}>Retry connection</Button>
+            </div> : initialLoading && <p role="status" className="mb-6 text-sm text-slate-500">Connecting to your workspace…</p>}
+            {user && <Outlet />}
           </div>
         </main>
       </div>
