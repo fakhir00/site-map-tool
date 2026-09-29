@@ -311,6 +311,33 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(architect.await_args.args[0]), 21)
         self.assertEqual(architect.await_args.kwargs['target_spokes'], 25)
 
+    def test_topical_map_api_preserves_explicit_main_topic_and_declared_owned_urls(self):
+        from test_authority_planning import PRIMARY, TOPICS, fixture_payload
+        payload = fixture_payload(TOPICS[:1])
+        payload['pages'][1]['existing_url'] = 'https://own.example/existing-method/'
+        pid = self.project()
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
+                {'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []},
+            ]),
+        ):
+            response = self.client.post('/api/hub-spoke/build', json={
+                'keywords': [TOPICS[0][0], PRIMARY], 'primary_keyword': PRIMARY,
+                'project_id': pid, 'context': 'Age calculation for families.',
+                'existing_urls': ['https://own.example/existing-method/'],
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result['clusters']['master_hub']['target_keyword'], PRIMARY)
+        self.assertEqual(result['clusters']['spokes'][0]['action'], 'update')
+        self.assertEqual(result['clusters']['map_version'], 2)
+        saved = self.client.get('/api/hub-spoke/history/' + result['history_id']).json()
+        self.assertEqual(saved['clusters']['link_plan'], result['clusters']['link_plan'])
+        self.assertEqual(json.loads(saved['context'])['primary_keyword'], PRIMARY)
+        self.assertEqual(self.client.post('/api/hub-spoke/build', json={
+            'keywords': [PRIMARY], 'existing_urls': ['javascript:alert(1)'],
+        }).status_code, 422)
+
     def test_authority_build_receives_owned_pages_and_requested_target(self):
         pid = self.project()
         with self.sessions() as db:

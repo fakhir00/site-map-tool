@@ -1321,6 +1321,13 @@ def write_prompt(
         for point in section.get("points", []):
             outline_lines.append(f"- {point}")
     outline_str = "\n".join(outline_lines)
+    architecture = str(brief.get("architecture_requirements") or "").strip()
+    architecture_block = (
+        "## Approved topical map requirements\n"
+        "Preserve this page's URL, scope, exclusions and internal links. Its section plan takes "
+        "precedence over the provisional research outline below.\n\n" + architecture + "\n\n"
+        if architecture else ""
+    )
 
     # Build Entities
     entities_list = brief.get("must_include_terms", [])
@@ -1343,6 +1350,7 @@ def write_prompt(
 
 # ARTICLE STRUCTURE
 
+{architecture_block}
 ## Heading Outline (Follow this structure exactly)
 {outline_str}
 

@@ -1,0 +1,158 @@
+export type MapLink = { source: string; target: string; source_keyword: string; target_keyword: string; source_url: string; target_url: string; anchor_text: string; relationship: string; reason: string }
+export type LayerMap = Record<string, string[]>
+export type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[]; layers: LayerMap }
+export type Hub = Silo & { sub_silos?: Silo[] }
+export type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
+export type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
+export type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number; source_domains?: string[] }
+export type PageDetail = { spoke_category?: string; id?: string; parent_target?: string | null; search_intent?: string; reader_outcome?: string; scope_out?: string[]; evidence_rationale?: string; action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
+export type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
+export type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
+export type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
+export type Mapping = { map_version?: number; map_warnings?: string[]; topic_clusters?: { id: string; name: string; page_ids: string[] }[]; link_plan?: MapLink[]; authority_coverage?: { target_spokes: number; minimum_spokes: number; maximum_spokes: number; actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
+export type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
+export type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
+export type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
+
+const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
+const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs|terms(?: and conditions)?|privacy(?: policy)?|disclaimer|legal|about us|contact us|cookie policy|refund policy|editorial policy|accessibility|support|faq)\b/i
+const shouldBuildTool = (keyword: string) => toolIntent.test(keyword) && !informationalIntent.test(keyword)
+const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+const pageSlug = (keyword: string, supplied?: string) => supplied || `/${slugify(keyword)}/`
+
+const parseCsvRow = (line: string) => {
+  const cells: string[] = []
+  let value = ''
+  let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"' && quoted && line[index + 1] === '"') { value += '"'; index += 1 }
+    else if (char === '"') quoted = !quoted
+    else if (char === ',' && !quoted) { cells.push(value.trim()); value = '' }
+    else value += char
+  }
+  cells.push(value.trim())
+  return cells
+}
+
+export const parseFile = (text: string) => {
+  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map(parseCsvRow)
+  if (!rows.length) return { keywords: [], keywordData: [] }
+  const header = rows[0].map((cell) => cell.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())
+  const keywordIndex = header.findIndex((cell) => cell === 'keyword' || cell === 'keyword gap' || cell === 'phrase')
+  const volumeIndex = header.findIndex((cell) => cell === 'search volume' || cell === 'volume')
+  const difficultyIndex = header.findIndex((cell) => cell === 'difficulty' || cell === 'keyword difficulty' || cell === 'kd')
+  const typeIndex = header.findIndex((cell) => cell === 'type' || cell === 'keyword type')
+  const sourceDomainsIndex = header.findIndex((cell) => cell === 'source domains' || cell === 'source domain')
+  const hasHeader = keywordIndex >= 0
+  const dataRows = hasHeader ? rows.slice(1) : rows
+  const seen = new Set<string>()
+  const keywordData = dataRows.flatMap((row) => {
+    const phrase = (row[hasHeader ? keywordIndex : 0] || '').trim().toLowerCase()
+    if (!phrase || seen.has(phrase)) return []
+    seen.add(phrase)
+    const volume = volumeIndex >= 0 && row[volumeIndex] !== '' ? Number(row[volumeIndex]) : null
+    const difficulty = difficultyIndex >= 0 && row[difficultyIndex] !== '' ? Number(row[difficultyIndex]) : null
+    return [{
+      phrase,
+      keyword_type: typeIndex >= 0 ? row[typeIndex] || 'long-tail' : 'long-tail',
+      search_volume: Number.isFinite(volume) ? volume : null,
+      difficulty: Number.isFinite(difficulty) ? difficulty : null,
+      source_domains: sourceDomainsIndex >= 0
+        ? (row[sourceDomainsIndex] || '').split(';').map((value) => value.trim()).filter(Boolean)
+        : [],
+    }]
+  })
+  return { keywords: keywordData.map((item) => item.phrase), keywordData }
+}
+
+export const downloadText = (name: string, content: string) => {
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
+  const lines = ['# GRAND WEBSITE ARCHITECTURE BUILD PROMPT', '', 'Build the complete website architecture below. Follow every page specification and preserve the assigned keyword placements.', '']
+  if (context.trim()) lines.push('## Website context', context.trim(), '')
+  if (mapping._deduplication_check) lines.push('## Architecture validation', `- Semantic review: ${mapping._semantic_audit_status || 'not recorded'}`,  `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
+  lines.push('## Global writing standards')
+  ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
+  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, FAQ schema, and internal links.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', '- Treat the suggested word count as a useful depth target; satisfy intent without padding.', '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
+
+  if (mapping.authority_coverage) lines.push('## Coverage target', `${mapping.authority_coverage.actual_spokes} spokes; target ${mapping.authority_coverage.minimum_spokes}–${mapping.authority_coverage.maximum_spokes}. ${mapping.authority_coverage.message}`, '')
+
+  const addPage = (label: string, page: PageDetail) => {
+    const target = page.target_keyword || ''
+    const heading = label === 'MASTER HUB' ? `MASTER HUB: ${mapping.site_domain || page.article_title || target}` : `${label}: ${page.article_title || target}`
+    lines.push(`## ${heading}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- ${label === 'MASTER HUB' ? 'Primary keyword' : 'Target keyword'}: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
+    lines.push(`- Action: ${page.action || 'review'}${page.existing_url ? ` existing page ${page.existing_url}; preserve its URL` : ''}`, `- Evidence: ${page.evidence_type === 'editorial_proposal' ? 'Editorial proposal; validate demand before publishing' : 'Supplied keyword; demand may be unknown'}`)
+    if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
+    if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
+    if (page.h2_sections?.length) { lines.push('- H2 plan:'); page.h2_sections.forEach((section) => lines.push(`  - ${section.h2_heading}: ${section.section_definition || 'Cover this section directly.'}${section.targeted_keywords_placed_here?.length ? ` Keywords: ${section.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
+    if (page.faq_schema_questions?.length) { lines.push('- FAQ schema:'); page.faq_schema_questions.forEach((faq) => lines.push(`  - ${faq.question}${faq.targeted_keywords_placed_here?.length ? ` Keywords: ${faq.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
+    if (page.entity_terms?.length) lines.push(`- Entities to use naturally: ${page.entity_terms.join(', ')}`)
+    if (page.internal_links?.length) lines.push(`- Required internal links to these target pages: ${page.internal_links.join(', ')}`)
+    if (page.reader_outcome) lines.push(`- Reader outcome: ${page.reader_outcome}`)
+    if (page.scope_out?.length) lines.push(`- Leave to other pages: ${page.scope_out.join('; ')}`)
+    if (page.parent_target) lines.push(`- Parent page: ${page.parent_target}`)
+    if (page.writing_instructions) lines.push(`- Writing instructions: ${page.writing_instructions}`)
+    lines.push('')
+  }
+
+  if (mapping.master_hub) addPage('MASTER HUB', mapping.master_hub)
+  ;(mapping.spokes || []).forEach((spoke, index) => addPage(`SPOKE ${index + 1} — ${spoke.spoke_category || 'Strategic article'}`, spoke))
+  lines.push('## Interlinking strategy', mapping.interlinking_strategy || 'Every spoke links to the Master Hub and to the most relevant next-step spoke.', '')
+  if (mapping.filtered_irrelevant_keywords?.length) lines.push('## Do not target these filtered keywords', ...mapping.filtered_irrelevant_keywords.map((keyword) => `- ${keyword}`), '')
+  if (mapping.link_plan?.length) {
+    lines.push('## Internal link implementation')
+    mapping.link_plan.forEach(link => lines.push(`- ${link.source_url} → ${link.target_url}; suggested anchor: ${link.anchor_text}; ${link.reason}`))
+  }
+  lines.push('Begin by creating the Master Hub, then build each spoke in order. Return production-ready pages and tools that follow this architecture.')
+  return lines.join('\n')
+}
+
+
+export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): string {
+  return [
+    `Page: ${page.article_title || page.target_keyword}`,
+    `URL: ${page.existing_url || page.slug || '/'}`,
+    `Action: ${page.action || 'review'}`,
+    `Reader task: ${page.reader_outcome || page.search_intent || ''}`,
+    `Scope: ${page.content_brief || ''}`,
+    `Leave to other pages: ${(page.scope_out || []).join('; ')}`,
+    `Outline: ${(page.h2_sections || []).map(section => `${section.h2_heading}: ${section.section_definition || ''}`).join('\n')}`,
+    `Supporting keywords: ${(page.targeted_keywords || []).join(', ')}`,
+    `Tool functions: ${(page.tool_functions || []).join('; ')}`,
+    'Internal links:',
+    ...(mapping.link_plan || []).filter(link => link.source_keyword === page.target_keyword).map(link => `${link.target_url} — ${link.anchor_text}`),
+    ...(mapping.link_plan ? [] : page.internal_links || []),
+    page.evidence_type === 'editorial_proposal' ? 'Editorial idea: confirm demand and relevance before publication.' : '',
+  ].filter(Boolean).join('\n')
+}
+
+export function normalizeSavedMapping(mapping: Mapping): Mapping {
+  if (mapping.master_hub || mapping.spokes?.length || !mapping.hubs?.length) return mapping
+  const [root, ...otherHubs] = mapping.hubs
+  const spokes: SpokeDetail[] = []
+  const visit = (hub: Hub, includeHub: boolean) => {
+    if (includeHub && hub.target_keyword) spokes.push({ article_title: hub.hub_title, target_keyword: hub.target_keyword, slug: pageSlug(hub.target_keyword), targeted_keywords: hub.h2_keywords || [], spoke_category: 'Supporting hubs' })
+    for (const [category, values] of Object.entries(hub.layers || {})) {
+      for (const value of values || []) {
+        const target = value.match(/\(Target Keyword:\s*(.*?)\)/i)?.[1]?.trim() || value.trim()
+        const title = value.split(/\(Target Keyword:/i)[0].replace('[Tool]', '').trim() || target
+        if (!target || target === root.target_keyword || spokes.some(page => page.target_keyword === target)) continue
+        spokes.push({ article_title: title, target_keyword: target, spoke_category: category, slug: pageSlug(target), internal_links: [root.target_keyword] })
+      }
+    }
+    for (const child of hub.sub_silos || []) visit(child, true)
+  }
+  visit(root, false)
+  otherHubs.forEach(hub => visit(hub, true))
+  return { ...mapping, master_hub: { target_keyword: root.target_keyword, article_title: root.hub_title, slug: '/', targeted_keywords: root.h2_keywords || [], internal_links: spokes.map(page => page.target_keyword) }, spokes }
+}

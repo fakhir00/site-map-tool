@@ -1,434 +1,181 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Clock3, Download, FileText, FileUp, Layers3, Loader2, Network, Sparkles, Wrench, X } from 'lucide-react'
-import { api } from '../lib/api'
+import { Clock3, Download, FileUp, Loader2, Network, Plus, X } from 'lucide-react'
+import { api, type Project } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { TopicalAuthorityMap } from '../components/TopicalAuthorityMap'
+import { downloadText, grandArchitecturePrompt, pageArchitectureBrief, normalizeSavedMapping, parseFile, type Mapping, type KeywordMetric, type HistorySummary, type HistoryDetail, type ProjectImport, type PageDetail } from '../lib/hubSpoke'
 
-type LayerMap = Record<string, string[]>
-type Silo = { hub_title: string; target_keyword: string; h2_keywords?: string[]; layers: LayerMap }
-type Hub = Silo & { sub_silos?: Silo[] }
-type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
-type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
-type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number; source_domains?: string[] }
-type PageDetail = { action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
-type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
-type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
-type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
-type Mapping = { authority_coverage?: { target_spokes: number; minimum_spokes: number; maximum_spokes: number; actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
-type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
-type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
-type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
-
-const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
-const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs|terms(?: and conditions)?|privacy(?: policy)?|disclaimer|legal|about us|contact us|cookie policy|refund policy|editorial policy|accessibility|support|faq)\b/i
-const shouldBuildTool = (keyword: string) => toolIntent.test(keyword) && !informationalIntent.test(keyword)
-const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-const pageSlug = (keyword: string, supplied?: string) => supplied || `/${slugify(keyword)}/`
-
-const parseSpoke = (spoke: string) => {
-  const target = spoke.match(/\(Target Keyword:\s*(.*?)\)/i)?.[1]?.trim() || spoke.trim()
-  const title = spoke.split(/\(Target Keyword:/i)[0].replace('[Tool]', '').trim() || target
-  const includedText = spoke.match(/\[Include(?: H2)?:\s*(.*?)\]/i)?.[1] || ''
-  return { title, target, included: includedText.split(',').map((item) => item.trim()).filter(Boolean) }
-}
-
-const parseCsvRow = (line: string) => {
-  const cells: string[] = []
-  let value = ''
-  let quoted = false
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-    if (char === '"' && quoted && line[index + 1] === '"') { value += '"'; index += 1 }
-    else if (char === '"') quoted = !quoted
-    else if (char === ',' && !quoted) { cells.push(value.trim()); value = '' }
-    else value += char
-  }
-  cells.push(value.trim())
-  return cells
-}
-
-const parseFile = (text: string) => {
-  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map(parseCsvRow)
-  if (!rows.length) return { keywords: [], keywordData: [] }
-  const header = rows[0].map((cell) => cell.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())
-  const keywordIndex = header.findIndex((cell) => cell === 'keyword' || cell === 'keyword gap' || cell === 'phrase')
-  const volumeIndex = header.findIndex((cell) => cell === 'search volume' || cell === 'volume')
-  const difficultyIndex = header.findIndex((cell) => cell === 'difficulty' || cell === 'keyword difficulty' || cell === 'kd')
-  const typeIndex = header.findIndex((cell) => cell === 'type' || cell === 'keyword type')
-  const sourceDomainsIndex = header.findIndex((cell) => cell === 'source domains' || cell === 'source domain')
-  const hasHeader = keywordIndex >= 0
-  const dataRows = hasHeader ? rows.slice(1) : rows
-  const seen = new Set<string>()
-  const keywordData = dataRows.flatMap((row) => {
-    const phrase = (row[hasHeader ? keywordIndex : 0] || '').trim().toLowerCase()
-    if (!phrase || seen.has(phrase)) return []
-    seen.add(phrase)
-    const volume = volumeIndex >= 0 && row[volumeIndex] !== '' ? Number(row[volumeIndex]) : null
-    const difficulty = difficultyIndex >= 0 && row[difficultyIndex] !== '' ? Number(row[difficultyIndex]) : null
-    return [{
-      phrase,
-      keyword_type: typeIndex >= 0 ? row[typeIndex] || 'long-tail' : 'long-tail',
-      search_volume: Number.isFinite(volume) ? volume : null,
-      difficulty: Number.isFinite(difficulty) ? difficulty : null,
-      source_domains: sourceDomainsIndex >= 0
-        ? row[sourceDomainsIndex].split(';').map((value) => value.trim()).filter(Boolean)
-        : [],
-    }]
-  })
-  return { keywords: keywordData.map((item) => item.phrase), keywordData }
-}
-
-const downloadText = (name: string, content: string) => {
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = name
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
-  const lines = ['# GRAND WEBSITE ARCHITECTURE BUILD PROMPT', '', 'Build the complete website architecture below. Follow every page specification and preserve the assigned keyword placements.', '']
-  if (context.trim()) lines.push('## Website context', context.trim(), '')
-  if (mapping._deduplication_check) lines.push('## Architecture validation', `- Semantic review: ${mapping._semantic_audit_status || 'not recorded'}`,  `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
-  lines.push('## Global writing standards')
-  ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
-  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, FAQ schema, and internal links.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', '- Treat the suggested word count as a useful depth target; satisfy intent without padding.', '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
-
-  if (mapping.authority_coverage) lines.push('## Coverage target', `${mapping.authority_coverage.actual_spokes} spokes; target ${mapping.authority_coverage.minimum_spokes}–${mapping.authority_coverage.maximum_spokes}. ${mapping.authority_coverage.message}`, '')
-
-  const addPage = (label: string, page: PageDetail) => {
-    const target = page.target_keyword || ''
-    const heading = label === 'MASTER HUB' ? `MASTER HUB: ${mapping.site_domain || page.article_title || target}` : `${label}: ${page.article_title || target}`
-    lines.push(`## ${heading}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- ${label === 'MASTER HUB' ? 'Primary keyword' : 'Target keyword'}: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
-    lines.push(`- Action: ${page.action || 'review'}${page.existing_url ? ` existing page ${page.existing_url}; preserve its URL` : ''}`, `- Evidence: ${page.evidence_type === 'editorial_proposal' ? 'Editorial proposal; validate demand before publishing' : 'Supplied keyword; demand may be unknown'}`)
-    if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
-    if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
-    if (page.h2_sections?.length) { lines.push('- H2 plan:'); page.h2_sections.forEach((section) => lines.push(`  - ${section.h2_heading}: ${section.section_definition || 'Cover this section directly.'}${section.targeted_keywords_placed_here?.length ? ` Keywords: ${section.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
-    if (page.faq_schema_questions?.length) { lines.push('- FAQ schema:'); page.faq_schema_questions.forEach((faq) => lines.push(`  - ${faq.question}${faq.targeted_keywords_placed_here?.length ? ` Keywords: ${faq.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
-    if (page.entity_terms?.length) lines.push(`- Entities to use naturally: ${page.entity_terms.join(', ')}`)
-    if (page.internal_links?.length) lines.push(`- Required internal links to these target pages: ${page.internal_links.join(', ')}`)
-    if (page.writing_instructions) lines.push(`- Writing instructions: ${page.writing_instructions}`)
-    lines.push('')
-  }
-
-  if (mapping.master_hub) addPage('MASTER HUB', mapping.master_hub)
-  ;(mapping.spokes || []).forEach((spoke, index) => addPage(`SPOKE ${index + 1} — ${spoke.spoke_category || 'Strategic article'}`, spoke))
-  lines.push('## Interlinking strategy', mapping.interlinking_strategy || 'Every spoke links to the Master Hub and to the most relevant next-step spoke.', '')
-  if (mapping.filtered_irrelevant_keywords?.length) lines.push('## Do not target these filtered keywords', ...mapping.filtered_irrelevant_keywords.map((keyword) => `- ${keyword}`), '')
-  lines.push('Begin by creating the Master Hub, then build each spoke in order. Return production-ready pages and tools that follow this architecture.')
-  return lines.join('\n')
+function primaryFromContext(context: string, fallback: string) {
+  try { return String(JSON.parse(context).primary_keyword || fallback) } catch { return fallback }
 }
 
 export function HubSpokeWorkspace() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const inputRef = useRef<HTMLInputElement>(null)
   const importedKeyRef = useRef('')
   const [targetSpokes, setTargetSpokes] = useState(25)
   const [keywords, setKeywords] = useState<string[]>([])
+  const [keywordText, setKeywordText] = useState('')
+  const [primaryKeyword, setPrimaryKeyword] = useState('')
   const [keywordData, setKeywordData] = useState<KeywordMetric[]>([])
   const [cleaned, setCleaned] = useState<string[]>([])
-  const [contextOpen, setContextOpen] = useState(false)
   const [context, setContext] = useState('')
+  const [existingUrls, setExistingUrls] = useState('')
   const [mapping, setMapping] = useState<Mapping | null>(null)
+  const [mapContext, setMapContext] = useState('')
+  const [mapProjectId, setMapProjectId] = useState<string | null>(null)
   const [busy, setBusy] = useState<'build' | 'load' | null>(null)
   const [error, setError] = useState('')
   const [sourceProjectId, setSourceProjectId] = useState<string | null>(null)
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const importProjectId = searchParams.get('project_id') || ''
   const importKeyword = searchParams.get('keyword') || ''
-
-  const { data: history = [] } = useQuery({
-    queryKey: ['hub-spoke-history'],
-    queryFn: () => api.get<HistorySummary[]>('/hub-spoke/history'),
+  const { data: history = [], error: historyError } = useQuery({ queryKey: ['hub-spoke-history'], queryFn: () => api.get<HistorySummary[]>('/hub-spoke/history') })
+  const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: () => api.get<Project[]>('/projects') })
+  const projectImport = useQuery({
+    queryKey: ['hub-spoke-project-import', importProjectId, importKeyword],
+    queryFn: () => api.get<ProjectImport>(`/hub-spoke/project-import/${importProjectId}?primary_keyword=${encodeURIComponent(importKeyword)}`),
+    enabled: Boolean(importProjectId), retry: false,
   })
+  const totalInputKeywords = new Set([...keywords, primaryKeyword.trim().toLowerCase()].filter(Boolean)).size
+  const locked = busy !== null || projectImport.isFetching
+  const visibleError = error || (projectImport.error instanceof Error ? projectImport.error.message : '')
+
+  useEffect(() => {
+    if (busy !== 'build') return
+    const started = Date.now()
+    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [busy])
+
+  useEffect(() => {
+    if (!projectImport.data) return
+    const key = `${projectImport.data.project_id}:${importKeyword}`
+    if (importedKeyRef.current === key) return
+    importedKeyRef.current = key
+    const data = projectImport.data
+    setKeywords(data.keywords); setKeywordText(data.keywords.join('\n')); setKeywordData(data.keyword_data || [])
+    setPrimaryKeyword(primaryFromContext(data.context, data.keywords[0] || ''))
+    setContext(data.context); setExistingUrls(''); setSourceProjectId(data.project_id); setError(''); setDirty(true)
+  }, [importKeyword, projectImport.data])
 
   const deleteHistoryMutation = useMutation({
     mutationFn: (id: string) => api.delete<null>(`/hub-spoke/history/${id}`),
     onSuccess: (_data, id) => {
-      queryClient.setQueryData<HistorySummary[]>(['hub-spoke-history'], (items = []) =>
-        items.filter((item) => item.id !== id),
-      )
-      if (activeHistoryId === id) {
-        setActiveHistoryId(null)
-      }
+      queryClient.setQueryData<HistorySummary[]>(['hub-spoke-history'], (items = []) => items.filter(item => item.id !== id))
+      if (activeHistoryId === id) setActiveHistoryId(null)
     },
-    onError: (err) => {
-      setError(err instanceof Error ? err.message : 'Could not delete the saved architecture')
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['hub-spoke-history'] })
-    },
+    onError: err => setError(err instanceof Error ? err.message : 'Could not delete the saved map'),
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['hub-spoke-history'] }) },
   })
-
-  const deleteHistory = (item: HistorySummary) => {
-    if (!window.confirm(`Permanently delete “${item.title}”? This cannot be undone.`)) return
-    setError('')
-    deleteHistoryMutation.mutate(item.id)
-  }
-
-  const projectImport = useQuery({
-    queryKey: ['hub-spoke-project-import', importProjectId, importKeyword],
-    queryFn: () => api.get<ProjectImport>(`/hub-spoke/project-import/${importProjectId}?primary_keyword=${encodeURIComponent(importKeyword)}`),
-    enabled: Boolean(importProjectId),
-    retry: false,
-  })
-  const importError = projectImport.error instanceof Error
-    ? projectImport.error.message
-    : projectImport.error
-      ? 'Could not import this Gap Hunter scan'
-      : ''
-  const visibleError = error || importError
-
-  useEffect(() => {
-    if (!projectImport.data) return
-    const importKey = `${projectImport.data.project_id}:${importKeyword}`
-    if (importedKeyRef.current === importKey) return
-    importedKeyRef.current = importKey
-    setKeywords(projectImport.data.keywords)
-    setKeywordData(projectImport.data.keyword_data || [])
-    setCleaned([])
-    setContext(projectImport.data.context)
-    setContextOpen(true)
-    setMapping(null)
-    setSourceProjectId(projectImport.data.project_id)
-    setActiveHistoryId(null)
-    setError('')
-  }, [importKeyword, projectImport.data])
-
-  const loadFile = async (file?: File) => {
-    if (!file) return
-    if (file.size > 5_000_000) {
-      setError('Use a CSV or TXT file smaller than 5 MB.')
-      return
-    }
-    const parsed = parseFile(await file.text())
-    setKeywords(parsed.keywords)
-    setKeywordData(parsed.keywordData)
-    setCleaned([])
-    setMapping(null)
+  const detachImport = () => {
+    importedKeyRef.current = ''
+    setSearchParams({})
     setSourceProjectId(null)
-    setActiveHistoryId(null)
-    setError('')
   }
-
+  const loadFile = async (file?: File) => {
+    if (!file || locked) return
+    if (file.size > 5_000_000) { setError('Use a CSV or TXT file smaller than 5 MB.'); return }
+    setBusy('load')
+    try {
+      const text = await file.text()
+      const parsed = parseFile(text)
+      if (!parsed.keywords.length) throw new Error('This file contains no readable keywords. Use one keyword per line or a Keyword column.')
+      if (parsed.keywords.length > 5000) throw new Error('Use at most 5,000 keywords in one map.')
+      detachImport()
+      setKeywords(parsed.keywords); setKeywordText(parsed.keywords.join('\n')); setKeywordData(parsed.keywordData)
+      setPrimaryKeyword(parsed.keywords[0] || ''); setContext(''); setExistingUrls(''); setDirty(true); setError('')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not read this file') }
+    finally { setBusy(null); if (inputRef.current) inputRef.current.value = '' }
+  }
   const build = async () => {
-    setBusy('build'); setError('')
+    if (locked) return
+    const urls = [...new Set(existingUrls.split(/\r?\n/).map(url => url.trim()).filter(Boolean))]
+    if (urls.length > 100 || urls.some(url => { try { return !['http:', 'https:'].includes(new URL(url).protocol) } catch { return true } })) {
+      setError('Add up to 100 valid existing page URLs, one per line, starting with https:// or http://.'); return
+    }
+    setBusy('build'); setError(''); setElapsed(0)
     try {
       const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
-        keywords,
-        keyword_data: keywordData,
-        target_spokes: targetSpokes,
-        context,
-        project_id: sourceProjectId,
+        keywords, keyword_data: keywordData, target_spokes: targetSpokes, primary_keyword: primaryKeyword.trim(), existing_urls: urls, context, project_id: sourceProjectId,
       })
-      setCleaned(result.keywords)
-      setMapping(result.clusters)
-      setActiveHistoryId(result.history_id)
+      setCleaned(result.keywords); setMapping(normalizeSavedMapping(result.clusters)); setActiveHistoryId(result.history_id)
+      setMapContext(context); setMapProjectId(sourceProjectId); setDirty(false)
       queryClient.invalidateQueries({ queryKey: ['hub-spoke-history'] })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Hub-spoke generation failed')
-    } finally { setBusy(null) }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Map generation failed. Your previous map is still available.') }
+    finally { setBusy(null) }
   }
-
   const loadHistory = async (id: string) => {
     setBusy('load'); setError('')
-    importedKeyRef.current = `${importProjectId}:${importKeyword}`
     try {
       const saved = await api.get<HistoryDetail>(`/hub-spoke/history/${id}`)
-      setKeywords(saved.keywords)
-      setKeywordData(saved.clusters?._keyword_metrics || [])
-      setCleaned(saved.cleaned_keywords)
-      setContext(saved.context)
-      setContextOpen(Boolean(saved.context))
-      setMapping(saved.clusters)
-      setTargetSpokes(saved.clusters?.authority_coverage?.target_spokes || 25)
-      setSourceProjectId(saved.project_id)
-      setActiveHistoryId(saved.id)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load the saved architecture')
-    } finally { setBusy(null) }
+      detachImport()
+      setKeywords(saved.keywords); setKeywordText(saved.keywords.join('\n')); setKeywordData(saved.clusters?._keyword_metrics || [])
+      setPrimaryKeyword(saved.clusters.master_hub?.target_keyword || primaryFromContext(saved.context, saved.keywords[0] || ''))
+      setCleaned(saved.cleaned_keywords); setContext(saved.context); setExistingUrls(''); setMapContext(saved.context); setMapping(normalizeSavedMapping(saved.clusters))
+      setTargetSpokes(saved.clusters?.authority_coverage?.target_spokes || 25); setSourceProjectId(saved.project_id)
+      setMapProjectId(saved.project_id); setActiveHistoryId(saved.id); setDirty(false)
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not load the saved map') }
+    finally { setBusy(null) }
   }
-
-  const openTarget = (keyword: string, included: string[] = [], pageType?: string) => {
-    const params = new URLSearchParams({ keyword })
-    if (sourceProjectId) params.set('project_id', sourceProjectId)
-    if (included.length) params.set('cluster', included.join('\n'))
-    const isTool = pageType === 'tool' && !informationalIntent.test(keyword)
-    navigate(`${isTool ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`)
+  const reset = () => {
+    detachImport(); setKeywords([]); setKeywordText(''); setKeywordData([]); setPrimaryKeyword(''); setContext(''); setMapping(null)
+    setMapContext(''); setMapProjectId(null); setExistingUrls(''); setCleaned([]); setActiveHistoryId(null); setTargetSpokes(25); setError(''); setDirty(false)
   }
+  const openPage = (page: PageDetail) => {
+    const params = new URLSearchParams({ keyword: page.target_keyword || '' })
+    if (mapProjectId) params.set('project_id', mapProjectId)
+    if (page.targeted_keywords?.length) params.set('cluster', page.targeted_keywords.join('\n'))
+    navigate(`${page.page_type === 'tool' ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`, { state: { architectureBrief: mapping ? pageArchitectureBrief(page, mapping) : '' } })
+  }
+  const inputClass = 'mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900'
 
-  const renderPage = (spoke: string) => {
-    const page = parseSpoke(spoke)
-    const detail = mapping?.spokes?.find((item) => item.target_keyword.toLowerCase() === page.target.toLowerCase())
-    const isTool = detail?.page_type === 'tool' && !informationalIntent.test(`${page.title} ${page.target}`)
-    const Icon = isTool ? Wrench : FileText
-    return (
-      <button key={spoke} type="button" onClick={() => openTarget(page.target, page.included, detail?.page_type)} className="group w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-cyan-600">
-        <div className="flex items-start gap-3">
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isTool ? 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300' : 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300'}`}><Icon className="h-4 w-4" /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-semibold text-slate-900 dark:text-slate-100">{page.title}</span>
-            <span className="mt-0.5 block text-xs text-slate-500">Target: {page.target}</span>
-            <span className="mt-0.5 block font-mono text-xs text-emerald-700 dark:text-emerald-400">Slug: {pageSlug(page.target, detail?.slug)}</span>
-            {(detail?.search_volume != null || detail?.difficulty != null) && <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold"><span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Volume {detail.search_volume?.toLocaleString() ?? '—'}</span><span className="rounded-full bg-violet-100 px-2 py-1 text-violet-800 dark:bg-violet-950 dark:text-violet-300">KD {detail.difficulty != null ? Math.round(detail.difficulty) : '—'}</span>{detail.ranking_role === 'easy_win_spoke' && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Easy-win spoke</span>}</span>}
-            {detail?.action && <span className="mt-2 block text-xs font-semibold">{detail.action === 'update' ? `Improve existing page: ${detail.existing_url}` : 'New page'}{detail.evidence_type === 'editorial_proposal' ? ' · Topic proposal — demand unverified' : ''}</span>}
-            {detail?.content_brief && <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{detail.content_brief}</span>}
-            {detail?.tool_economics?.reason && <span className="mt-2 block text-xs text-slate-500">Format decision: {detail.tool_economics.reason}</span>}
-            {(detail?.word_count_suggestion || detail?.h2_sections?.length) && <span className="mt-2 block text-xs text-slate-400">{detail.word_count_suggestion?.toLocaleString()} words{detail.h2_sections?.length ? ` • ${detail.h2_sections.length} planned sections` : ''}</span>}
-            {page.included.length > 0 && <span className="mt-3 block rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><strong>Includes:</strong> {page.included.join(' • ')}</span>}
-          </span>
-          <span className="flex items-center gap-1 text-xs font-semibold text-cyan-700 opacity-70 group-hover:opacity-100 dark:text-cyan-300">{detail?.action === 'update' ? 'Improve page' : isTool ? 'Build tool' : 'Write page'}<ArrowRight className="h-3.5 w-3.5" /></span>
+  return <div className="space-y-6">
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-400">Hub & spoke workspace</p><h2 className="text-3xl font-bold tracking-tight">Build your topical authority map</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">Turn keyword research into a connected content plan. Define the main topic, organize distinct reader tasks, and see what to create, improve and link.</p></div><Button variant="secondary" disabled={locked} onClick={reset}><Plus className="h-4 w-4" />Start fresh</Button></header>
+    {historyError && <p role="alert" className="text-sm text-amber-700">Saved maps could not be loaded. Refresh to try again.</p>}
+    {history.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><summary className="cursor-pointer text-sm font-semibold">Saved maps <span className="ml-2 text-slate-400">{history.length}</span></summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{history.map(item => <div key={item.id} className={`relative rounded-lg border ${activeHistoryId === item.id ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30' : 'border-slate-200 dark:border-slate-700'}`}><button type="button" disabled={locked || deleteHistoryMutation.isPending} onClick={() => loadHistory(item.id)} className="block w-full p-3 pr-10 text-left disabled:opacity-50"><span className="block truncate text-sm font-semibold">{item.title}</span><span className="mt-1 flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3 w-3" />{new Date(item.created_at).toLocaleDateString()} · {item.keyword_count} keywords</span></button><button type="button" aria-label={`Permanently delete ${item.title}`} disabled={locked || deleteHistoryMutation.isPending} onClick={() => { if (window.confirm(`Permanently delete “${item.title}”? This cannot be undone.`)) deleteHistoryMutation.mutate(item.id) }} className="absolute right-2 top-2 rounded p-1 text-slate-400 hover:text-rose-600"><X className="h-4 w-4" /></button></div>)}</div></details>}
+    <Card className="p-5 sm:p-6">
+      <div className="mb-5 flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-100 text-sm font-bold text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">1</span><div><h3 className="font-bold">Define your starting point</h3><p className="text-xs text-slate-500">Use a saved scan, upload research, or paste your keywords.</p></div></div>
+      <fieldset disabled={locked} className="space-y-5 disabled:opacity-70">
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="space-y-4">
+            <label className="block text-sm font-medium">Import from Gap Hunter<select aria-label="Import from Gap Hunter" value={importProjectId} onChange={event => { importedKeyRef.current = ''; if (event.target.value) setSearchParams({ project_id: event.target.value }); else detachImport() }} className={inputClass}><option value="">Choose a scan…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <div className="flex items-center gap-3"><input ref={inputRef} className="hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={event => loadFile(event.target.files?.[0])} /><Button variant="secondary" onClick={() => inputRef.current?.click()}><FileUp className="h-4 w-4" />Upload CSV / TXT</Button><span className="text-xs text-slate-500">Up to 5 MB · 300 keywords per map</span></div>
+            <label className="block text-sm font-medium">Keyword research<textarea aria-label="Keyword research" className={`${inputClass} min-h-44 font-mono text-xs`} value={keywordText} onChange={event => {
+              const text = event.target.value; const parsed = parseFile(text)
+              const metrics = new Map(keywordData.map(item => [item.phrase, item]))
+              setKeywordText(text); setKeywords(parsed.keywords); setKeywordData(parsed.keywordData.map(item => metrics.get(item.phrase) || item))
+              if (!primaryKeyword) setPrimaryKeyword(parsed.keywords[0] || '')
+              setDirty(true)
+            }} placeholder={'One keyword per line, or paste a CSV with metrics.\nlunar age calculator\nhow to calculate lunar age\nlunar age vs western age'} /></label>
+            <p className="text-xs text-slate-500">{keywords.length.toLocaleString()} keywords{sourceProjectId ? ' · Linked to a Gap Hunter project; crawled pages will be checked for reuse.' : ' · Add existing URLs alongside your context to plan improvements.'}</p>
+          </div>
+          <div className="space-y-4">
+            <label className="block text-sm font-medium">Main topic / homepage keyword<input aria-label="Main topic" list="map-keyword-options" maxLength={300} className={inputClass} value={primaryKeyword} onChange={event => { setPrimaryKeyword(event.target.value); setDirty(true) }} placeholder="e.g. lunar age calculator" /><datalist id="map-keyword-options">{keywords.slice(0, 300).map(keyword => <option key={keyword} value={keyword} />)}</datalist></label>
+            <label className="block text-sm font-medium">Website and audience context<textarea aria-label="Website and audience context" maxLength={12000} className={`${inputClass} min-h-32`} value={context} onChange={event => { setContext(event.target.value); setDirty(true) }} placeholder="Your site URL, audience, what you offer, existing page URLs, and topics to exclude. Be specific about what your site can help people do." /></label>
+            <label className="block text-sm font-medium">Existing page URLs <span className="font-normal text-slate-400">(optional)</span><textarea aria-label="Existing page URLs" className={`${inputClass} min-h-20 font-mono text-xs`} value={existingUrls} onChange={event => { setExistingUrls(event.target.value); setDirty(true) }} placeholder={'https://example.com/\nhttps://example.com/existing-guide/'} /><span className="mt-1 block text-xs font-normal text-slate-500">One URL per line. Add pages you own; URLs alone do not verify their content.</span></label>
+            <label className="block text-sm font-medium">Target spokes <span className="font-normal text-slate-400">(supporting pages)</span><div className="mt-2 flex items-center gap-3"><input aria-label="Target spokes" type="number" min={10} max={50} value={targetSpokes} onChange={event => { setTargetSpokes(Number(event.target.value)); setDirty(true) }} className="w-20 rounded-lg border border-slate-300 bg-transparent p-2 dark:border-slate-700" /><span className="text-xs leading-relaxed text-slate-500">A planning guide, not a quota.<br />Similar queries share a page; distinct tasks get their own.</span></div></label>
+          </div>
         </div>
-      </button>
-    )
-  }
-
-  const renderLayers = (layers: LayerMap) => Object.entries(layers || {}).filter(([, spokes]) => spokes?.length).map(([name, spokes]) => (
-    <div key={name} className="space-y-3">
-      <div className="flex items-center gap-2"><Layers3 className="h-4 w-4 text-slate-400" /><p className="text-xs font-bold uppercase tracking-wider text-slate-500">{name}</p><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-800">{spokes.length} pages</span></div>
-      <div className="grid gap-3 lg:grid-cols-2">{spokes.map(renderPage)}</div>
-    </div>
-  ))
-
-  const renderH2s = (keywords?: string[]) => keywords?.length ? (
-    <div className="mt-3 rounded-lg bg-cyan-50 p-3 dark:bg-cyan-950/30">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">Includes</p>
-      <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
-        {keywords.map((keyword) => <li key={keyword}>• {keyword}</li>)}
-      </ul>
-    </div>
-  ) : null
-
-  return (
-    <div className="space-y-6">
-      <section>
-        <h2 className="text-2xl font-bold">Hub Spoke</h2>
-        <p className="mt-1 text-sm text-slate-500">Give the SEO architecture specialist your site context and keyword research. It will use, consolidate, or discard every keyword and build a cannibalization-safe plan.</p>
-      </section>
-
-      {history.length > 0 && (
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div><h3 className="font-bold">Previous Hub Spoke plans</h3><p className="mt-1 text-sm text-slate-500">Open any saved architecture and continue where you left off.</p></div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{history.length} saved</span>
-          </div>
-          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {history.map((item) => (
-              <div key={item.id} className={`relative rounded-xl border transition hover:border-cyan-400 hover:bg-cyan-50/50 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20 ${activeHistoryId === item.id ? 'border-cyan-500 bg-cyan-50 dark:border-cyan-700 dark:bg-cyan-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
-                <button type="button" disabled={busy !== null || deleteHistoryMutation.isPending} onClick={() => loadHistory(item.id)} className="block w-full p-3 pr-11 text-left disabled:opacity-60">
-                  <span className="block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</span>
-                  <span className="mt-1 flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{new Date(item.created_at).toLocaleString()} • {item.keyword_count.toLocaleString()} keywords</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Permanently delete ${item.title}`}
-                  title="Permanently delete plan"
-                  disabled={busy !== null || deleteHistoryMutation.isPending}
-                  onClick={() => deleteHistory(item)}
-                  className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-100 hover:text-rose-700 disabled:opacity-50 dark:hover:bg-rose-950/50 dark:hover:text-rose-300"
-                >
-                  {deleteHistoryMutation.isPending && deleteHistoryMutation.variables === item.id
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <X className="h-4 w-4" />}
-                </button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {projectImport.isLoading && <Card className="p-4 text-sm text-slate-500">Loading keywords and audit context from Gap Hunter…</Card>}
-
-      <Card className="space-y-5 p-6">
-        <input ref={inputRef} className="hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(event) => loadFile(event.target.files?.[0])} />
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => { event.preventDefault(); loadFile(event.dataTransfer.files?.[0]) }}
-          className="flex min-h-52 w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 text-center hover:border-cyan-500 dark:border-slate-700 dark:bg-slate-900/50"
-        >
-          <FileUp className="mb-3 h-9 w-9 text-cyan-700 dark:text-cyan-400" />
-          <span className="font-semibold">Drop a CSV or TXT keyword list here</span>
-          <span className="mt-1 text-sm text-slate-500">or click to add from your computer</span>
-        </button>
-
-        {keywords.length > 0 && <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Loaded {keywords.length.toLocaleString()} keywords{sourceProjectId ? ' from Gap Hunter' : ''}</p>}
-
-        <label className="block text-sm font-medium">
-          Target spokes (blogs and tools, excluding the homepage)
-          <input aria-label="Target spokes" type="number" min={10} max={50} value={targetSpokes} onChange={(event) => setTargetSpokes(Number(event.target.value))} className="ml-3 w-20 rounded border border-slate-300 bg-transparent p-2" />
-          <span className="mt-1 block text-xs text-slate-500">Default: 20–30 distinct spokes. Existing pages can be improved; new ideas are labeled for research.</span>
-        </label>
-        <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={() => setContextOpen((value) => !value)}><Sparkles className="h-4 w-4" />Add context</Button>
-          <Button disabled={!keywords.length || busy !== null || targetSpokes < 10 || targetSpokes > 50 || !Number.isInteger(targetSpokes)} onClick={build}><Network className="h-4 w-4" />{busy === 'build' ? 'SEO specialist is planning…' : 'Build specialist architecture'}</Button>
-        </div>
-
-        {contextOpen && (
-          <div>
-            <label className="mb-2 block text-sm font-semibold">Website and audience context</label>
-            <textarea
-              className="min-h-40 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900"
-              value={context}
-              onChange={(event) => setContext(event.target.value)}
-              placeholder="Describe the site, product, audience, business goals, real capabilities, existing pages, and hard topic boundaries. The specialist will infer and separate search intents."
-            />
-          </div>
-        )}
-
-        {visibleError && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{visibleError}</p>}
-      </Card>
-
-      {cleaned.length > 0 && (
-        <Card className="p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div><h3 className="font-bold">Keywords used by the specialist</h3><p className="text-sm text-slate-500">{cleaned.length.toLocaleString()} keywords became page targets or supporting terms</p></div>
-            <Button variant="secondary" onClick={() => downloadText('usable-keywords.txt', cleaned.join('\n'))}><Download className="h-4 w-4" />Download usable keywords</Button>
-          </div>
-          <div className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-50 p-4 text-sm dark:bg-slate-900/60">{cleaned.map((keyword) => <div key={keyword}>{keyword}</div>)}</div>
-        </Card>
-      )}
-
-      {mapping && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div><h3 className="text-xl font-bold">Content architecture</h3><p className="mt-1 text-sm text-slate-500">Each card is one indexable page. Includes are reserved for true same-intent variants; valuable easy wins stay as separate spokes.</p>{mapping._deduplication_check && <p className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">{mapping._semantic_audit_status === 'passed' ? 'Cannibalization check passed' : 'Architecture safeguards passed'}{mapping._deduplication_check.duplicates_removed ? ` • ${mapping._deduplication_check.duplicates_removed} duplicates merged` : ''}</p>}{activeHistoryId && <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">Saved in Hub Spoke history</p>}{mapping._planning_thought && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{mapping._planning_thought}</p>}</div>
-            <Button onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, context))}><Download className="h-4 w-4" />Download architecture prompt</Button>
-          </div>
-          {mapping.authority_coverage && <Card className="p-4">
-            <p className="font-semibold">{mapping.authority_coverage.actual_spokes} spokes · target {mapping.authority_coverage.minimum_spokes}–{mapping.authority_coverage.maximum_spokes}</p>
-            <p className="mt-1 text-sm">{mapping.authority_coverage.new_spokes} new pages · {mapping.authority_coverage.existing_spokes} existing pages to improve</p>
-            <p className="mt-1 text-sm text-slate-500">{mapping.authority_coverage.message}</p>
-            {mapping.authority_coverage.discovery_status === 'unavailable' && <p className="mt-1 text-sm text-amber-700">Topic discovery was unavailable; this map uses the supplied inventory.</p>}
-          </Card>}
-          {mapping.hubs.map((hub) => (
-            <Card key={hub.target_keyword} className="overflow-hidden p-0">
-              <button type="button" onClick={() => openTarget(hub.target_keyword, hub.h2_keywords, mapping.master_hub?.page_type)} className="group flex w-full items-start gap-4 bg-gradient-to-r from-cyan-700 to-blue-700 p-6 text-left text-white">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15"><Network className="h-5 w-5" /></span>
-                <span className="min-w-0 flex-1"><span className="block text-xl font-bold">MASTER HUB: {mapping.site_domain || hub.target_keyword}</span><span className="mt-1 block text-sm text-cyan-100">Primary keyword: {hub.target_keyword}</span></span>
-              </button>
-              <div className="space-y-7 p-6">
-                {mapping.master_hub?.content_brief && <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100"><strong>Content focus:</strong> {mapping.master_hub.content_brief}{mapping.master_hub.word_count_suggestion ? ` • ${mapping.master_hub.word_count_suggestion.toLocaleString()} suggested words` : ''}</div>}
-                {renderH2s(hub.h2_keywords)}
-                {Object.keys(hub.layers || {}).length > 0 && <div className="space-y-6">{renderLayers(hub.layers)}</div>}
-                {(hub.sub_silos || []).length > 0 && <div className="space-y-5 border-t border-slate-200 pt-6 dark:border-slate-800">
-                  <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Supporting topic clusters</p><p className="mt-1 text-sm text-slate-500">Pillar pages with their own focused supporting content.</p></div>
-                  {(hub.sub_silos || []).map((silo) => <div key={silo.target_keyword} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-700 dark:bg-slate-900/60"><button type="button" onClick={() => openTarget(silo.target_keyword, silo.h2_keywords)} className="group flex w-full items-center justify-between gap-4 text-left"><span><span className="font-bold text-slate-900 dark:text-slate-100">{silo.hub_title}</span><span className="mt-0.5 block text-xs text-slate-500">Target: {silo.target_keyword}</span></span><span className="flex items-center gap-1 text-xs font-semibold text-cyan-700 dark:text-cyan-300">Open pillar <ArrowRight className="h-3.5 w-3.5" /></span></button>{renderH2s(silo.h2_keywords)}<div className="mt-5 space-y-6">{renderLayers(silo.layers)}</div></div>)}
-                </div>}
-              </div>
-            </Card>
-          ))}
-          {mapping.interlinking_strategy && <Card className="border-emerald-200 bg-emerald-50/70 p-5 dark:border-emerald-900 dark:bg-emerald-950/20"><p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Interlinking strategy</p><p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{mapping.interlinking_strategy}</p></Card>}
-          {mapping.discarded_keywords && mapping.discarded_keywords.length > 0 && <Card className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Discarded by the SEO specialist</p><p className="mt-1 text-sm text-slate-500">These queries do not need a page or supporting placement in this architecture.</p><div className="mt-3 max-h-72 space-y-2 overflow-auto">{mapping.discarded_keywords.map((item) => <div key={item.keyword} className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-900"><span className="font-semibold">{item.keyword}</span><span className="ml-2 text-slate-500">— {item.reason}</span></div>)}</div></Card>}
-        </section>
-      )}
-    </div>
-  )
+      </fieldset>
+      {projectImport.isFetching && <p role="status" className="mt-4 text-sm text-slate-500">Loading keywords and site context…</p>}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5 dark:border-slate-800"><p className="max-w-lg text-xs leading-relaxed text-slate-500">The planner groups intents, checks overlap and proposes missing topics. Research ideas are labeled separately from supplied keywords.</p><Button disabled={locked || !keywords.length || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000 || !Number.isInteger(targetSpokes) || targetSpokes < 10 || targetSpokes > 50} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button></div>
+      {totalInputKeywords > 300 && <p role="alert" className="mt-3 text-sm text-rose-700">Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.</p>}
+      {busy === 'build' && <div role="status" className="mt-4 rounded-lg bg-cyan-50 p-4 text-sm text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200"><p className="font-semibold">Planning your topic coverage · {elapsed}s</p><p className="mt-1 text-xs">Discovery, page planning and intent review can take a few minutes. Keep this tab open; successful maps are saved automatically.</p></div>}
+      {visibleError && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{visibleError}</p>}
+    </Card>
+    {mapping && <>
+      {dirty && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Inputs have changed. The map below is your previous result; build again to apply these changes.</p>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">{activeHistoryId ? 'Saved in your map history' : 'Map preview'} · {cleaned.length} keywords assigned</p><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => downloadText('usable-keywords.txt', cleaned.join('\n'))}><Download className="h-4 w-4" />Keywords</Button><Button variant="secondary" onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, mapContext))}><Download className="h-4 w-4" />Architecture brief</Button></div></div>
+      <TopicalAuthorityMap key={activeHistoryId || 'preview'} mapping={mapping} onOpen={openPage} />
+    </>}
+    {!mapping && <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700"><Network className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" /><h3 className="mt-4 font-semibold">A connected plan, from topic to page</h3><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">Your map will show the main hub, supporting topic groups, individual page briefs and internal links. Start with the topic you want your site to be known for.</p></div>}
+  </div>
 }

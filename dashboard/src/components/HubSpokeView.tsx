@@ -283,7 +283,7 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
   })
 
   const handleWrite = (keyword: string, instruction: string, included: string[] = []) => {
-    const params = new URLSearchParams({ keyword })
+    const params = new URLSearchParams({ keyword, project_id: projectId })
     if (included.length) params.set('cluster', included.join('\n'))
     const isTool = shouldBuildTool(keyword)
       || instruction.includes('tool/app')

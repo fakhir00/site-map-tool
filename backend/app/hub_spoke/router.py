@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,8 @@ class KeywordWorkspaceRequest(BaseModel):
     keywords: list[str] = Field(min_length=1, max_length=5000)
     keyword_data: list[KeywordMetricInput] = Field(default_factory=list, max_length=5000)
     context: str = Field(default="", max_length=12000)
+    primary_keyword: str = Field(default="", max_length=300)
+    existing_urls: list[HttpUrl] = Field(default_factory=list, max_length=100)
     project_id: uuid.UUID | None = None
     target_spokes: int = Field(default=25, ge=10, le=50)
 
@@ -119,7 +121,7 @@ def _keyword_records(body: KeywordWorkspaceRequest) -> list[dict[str, Any]]:
         "frequency": metrics[phrase].frequency if phrase in metrics else 1,
         "source_domains": metrics[phrase].source_domains if phrase in metrics else [],
     } for phrase in _basic_clean(body.keywords)]
-    return normalize_keyword_records(records, _primary_keyword_from_context(body.context))
+    return normalize_keyword_records(records, body.primary_keyword or _primary_keyword_from_context(body.context))
 
 
 @router.post("/build")
@@ -133,12 +135,29 @@ async def build_uploaded_hub_spoke(
         if owned.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="Project not found")
     context = _hub_spoke_context(body.context)
+    if body.primary_keyword.strip() or body.existing_urls:
+        try:
+            payload = json.loads(context) if context else {}
+        except (ValueError, TypeError):
+            payload = {"audit_summary": context}
+        if not isinstance(payload, dict):
+            payload = {"audit_summary": context}
+        if body.primary_keyword.strip():
+            payload["primary_keyword"] = clean_phrase(body.primary_keyword)
+        if body.existing_urls:
+            declared = [{"url": str(url), "evidence": "user_supplied_url"} for url in body.existing_urls]
+            previous = payload.get("owned_pages")
+            payload["owned_pages"] = (previous if isinstance(previous, list) else []) + declared
+        context = json.dumps(payload)
+    saved_context = context
     if body.project_id:
         from app.hub_spoke.context import context_with_owned_pages
         context = await context_with_owned_pages(db, body.project_id, context)
     records = _keyword_records(body)
     if not records:
         raise HTTPException(status_code=422, detail="Upload at least one readable keyword.")
+    if len(records) > 300:
+        raise HTTPException(status_code=422, detail="Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.")
     primary = _primary_keyword_from_context(context) or records[0]["phrase"]
     try:
         mapping = await build_site_architecture(records, context=context, primary_keyword=primary, target_spokes=body.target_spokes)
@@ -148,7 +167,7 @@ async def build_uploaded_hub_spoke(
     kept = usable_keywords(mapping)
     title = str(mapping["master_hub"].get("article_title") or primary.title())[:255]
     history = HubSpokeHistory(
-        user_id=current_user.id, project_id=body.project_id, title=title, context=_hub_spoke_context(body.context),
+        user_id=current_user.id, project_id=body.project_id, title=title, context=saved_context,
         keywords=[item["phrase"] for item in records], cleaned_keywords=kept, mapping_data=mapping,
     )
     db.add(history)
@@ -181,12 +200,13 @@ async def import_project_keywords(
     keyword_data.sort(key=lambda item: item["phrase"] != selected)
     if not keyword_data:
         raise HTTPException(status_code=404, detail="This Gap Hunter scan has no keywords to import yet.")
+    context = _context_with_seed_keywords(
+        project.audit_summary or "", project.target_keywords or [], project.own_domain or project.domain,
+    )
     return {
         "project_id": project.id, "project_name": project.name,
         "keywords": [item["phrase"] for item in keyword_data], "keyword_data": keyword_data,
-        "context": _context_with_seed_keywords(
-            project.audit_summary or "", project.target_keywords or [], project.own_domain or project.domain,
-        ),
+        "context": context,
     }
 
 

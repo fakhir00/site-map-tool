@@ -1,5 +1,6 @@
 """Bounded topical discovery and honest progress reporting for authority plans."""
 import json
+import asyncio
 from urllib.parse import urlparse
 
 from nlp.keywords import clean_phrase, is_publishable_keyword
@@ -28,8 +29,9 @@ Return only {{"proposals": [{{"phrase": "...", "support_phrase": "exact inventor
 "rationale": "why this distinct task belongs in scope"}}]}}. An empty list is valid.
 """
     try:
-        payload = await chat(system_prompt="Return only the requested JSON object.",
-                             user_prompt=prompt, temperature=0.15, max_tokens=6500)
+        async with asyncio.timeout(45):
+            payload = await chat(system_prompt="Return only the requested JSON object.",
+                                 user_prompt=prompt, temperature=0.15, max_tokens=6500)
         proposals = payload.get('proposals') if isinstance(payload, dict) else None
         if not isinstance(proposals, list):
             return records, 'unavailable'
@@ -85,6 +87,7 @@ def finish_authority_plan(plan, records, context, target_spokes, discovery_statu
         record = inventory[page['target_keyword']]
         page['evidence_type'] = record.get('evidence_type', 'supplied_keyword')
         page['support_phrase'] = record.get('support_phrase')
+        page['evidence_rationale'] = record.get('rationale')
     count = len(plan['spokes'])
     min_spokes, max_spokes = max(1, target_spokes - 5), target_spokes + 5
     passed = plan.get('_semantic_audit_status') == 'passed'

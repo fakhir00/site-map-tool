@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
@@ -20,6 +20,8 @@ type PromptResponse = {
 export default function GapPageGenerator() {
   const [searchParams] = useSearchParams()
   const initialKeyword = searchParams.get('keyword') || ''
+  const location = useLocation()
+  const [architectureBrief, setArchitectureBrief] = useState<string>(location.state?.architectureBrief || '')
 
   const [keyword, setKeyword] = useState(initialKeyword)
   const [manualCompetitors, setManualCompetitors] = useState('')
@@ -61,7 +63,7 @@ export default function GapPageGenerator() {
     mutationFn: async () => {
       return api.postAI<PromptResponse>('/website-prompts/generate-gap-page', {
         keyword,
-        intent,
+        intent: [intent, architectureBrief].filter(Boolean).join('\n\nArchitecture requirements:\n'),
         competitors: analyzedCompetitors,
       })
     },
@@ -121,6 +123,7 @@ export default function GapPageGenerator() {
           />
         </div>
 
+        {architectureBrief && <label className="block text-sm font-medium">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm dark:border-slate-700" /></label>}
         <button
           onClick={() => analyzeIntentMutation.mutate()}
           disabled={analyzeIntentMutation.isPending || !keyword.trim()}
@@ -293,6 +296,7 @@ export default function GapPageGenerator() {
         actionIcon="build"
         onAction={(kw) => {
           setKeyword(kw.phrase)
+          setArchitectureBrief('')
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
       />

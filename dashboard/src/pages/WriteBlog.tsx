@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
@@ -11,6 +11,8 @@ export default function WriteBlog() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const [architectureBrief, setArchitectureBrief] = useState<string>(location.state?.architectureBrief || '')
   
   const initialKeyword = searchParams.get('keyword') || ''
   const initialCluster = searchParams.get('cluster') || ''
@@ -47,7 +49,7 @@ export default function WriteBlog() {
 
   const manualMutation = useMutation({
     mutationFn: ({ main_keyword, keyword_cluster }: { main_keyword: string, keyword_cluster: string }) => 
-      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: searchParams.get('project_id') || undefined }),
+      api.postArticle<{ project_id: string }>('/projects/manual-generate', { main_keyword, keyword_cluster, project_id: searchParams.get('project_id') || undefined, architecture_brief: architectureBrief }),
     onMutate: () => {
       setArticleError('')
     },
@@ -61,7 +63,7 @@ export default function WriteBlog() {
   })
 
   const handleGenerateBlog = () => {
-    if (selectedKeyword && selectedKeyword.phrase === mainKeyword) {
+    if (!architectureBrief && (chosenKeyword || !searchParams.get('project_id')) && selectedKeyword && selectedKeyword.phrase === mainKeyword) {
       articleMutation.mutate({ keywordId: selectedKeyword.keyword_id, projectId: selectedKeyword.project_id })
     } else {
       manualMutation.mutate({ main_keyword: mainKeyword, keyword_cluster: keywordCluster })
@@ -119,6 +121,8 @@ export default function WriteBlog() {
             />
           </div>
 
+          {architectureBrief && <label className="block text-sm font-medium">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm dark:border-slate-700" /></label>}
+
           <Button 
             className="w-full bg-cyan-500 hover:bg-cyan-600 text-white" 
             size="lg"
@@ -138,6 +142,8 @@ export default function WriteBlog() {
         actionIcon="write"
         onAction={(kw) => {
           setMainKeyword(kw.phrase)
+          setArchitectureBrief('')
+          setKeywordCluster('')
           setSelectedKeyword(kw)
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import logging
 import math
 import re
@@ -22,6 +23,9 @@ WRITING_STANDARDS = [
     "Give each indexable page a distinct purpose, title, H1, slug, and internal-link role.",
     "Link every spoke to the master hub and add lateral links only where they help the reader.",
 ]
+
+# A complete decision for every keyword must fit in one bounded planning response.
+MAX_ARCHITECTURE_KEYWORDS = 300
 
 
 class ArchitectureAgentError(RuntimeError):
@@ -318,7 +322,6 @@ def _is_protected_emd_entity(keyword: str, primary_keyword: str) -> bool:
 
 def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str, target_spokes: int | None = None) -> str:
     authority_floor = _minimum_authority_pages(len(records))
-    tool_threshold = _tool_volume_threshold(records)
     planning_goal = (
         f"Plan one homepage plus {target_spokes - 5}–{target_spokes + 5} distinct spokes, aiming for {target_spokes}. "
         "This is a planning goal, never a quota. If evidence supports fewer, return fewer and explain the missing coverage. "
@@ -377,19 +380,24 @@ Rules:
   Related wording is not sufficient reason to merge pages with different reader outcomes.
 - Assign broad variants of the core product to the homepage, but reserve informational and educational
   queries for the most specific spoke that can satisfy them completely.
-- A strong standalone calculator, generator, checker, converter, simulator, or estimator query may be a
-  tool even at low volume because the SERP intent requires an interactive result. Other possible tool spokes
-  require supplied search volume of at least {tool_threshold:,}; otherwise use an article or guide.
-- For weaker tool-like terms such as software, maker, builder, planner, or generic tool queries, require
-  supplied search volume of at least {tool_threshold:,}. When volume is lower or unknown, make that spoke
-  a focused article/guide instead. The EMD master homepage follows its real intent: a
-  calculator EMD is a tool, while a reviews, information, or editorial EMD is a content homepage.
+- Choose page format from the actual reader task. Interactive tasks need a tool; explanations,
+  accuracy questions and troubleshooting need content, even if the keyword contains "calculator".
+  Unknown volume is a research gap, never a reason to force an interactive task into an article.
+  The homepage should follow its real intent: a tool, a guide, or an editorial hub.
 - Every page target and every keyword named in an assignment must be copied exactly from the inventory.
 - Discard only genuinely unusable or off-topic phrases. Awkward but understandable phrases can support a page.
 - Page titles, headings, questions, briefs, and link explanations may be newly written natural language.
 - Every spoke links to the master. The master links to every spoke. Add only useful lateral links.
+- Organize spokes by subject, using concise topic names specific to this site (not generic buckets
+  such as Blogs, Articles, or Strategic topics). These groups are organizational labels, not extra URLs.
+- Set parent_target to the master, or to a genuinely broader spoke that introduces this page's subject.
+  Do not invent pillar pages solely to create hierarchy. No self references or circular parents.
+- Give each page a concrete reader_outcome, and scope_out naming the adjacent tasks it must leave
+  to other pages. Supply 2–4 specific H2 headings, not a repeated generic article template.
+- Supporting placements may be h2:Exact heading or faq:Exact question, as well as entity,
+  feature or variation. Preserve the most useful location for each keyword.
 
-Keep the response compact. Do not write full article outlines. Return only one JSON object with this schema:
+Keep the response compact. Do not write article body copy. Return only one JSON object with this schema:
 {{
   "site_strategy": "concise expert rationale",
   "master_target": "exact inventory keyword",
@@ -398,6 +406,10 @@ Keep the response compact. Do not write full article outlines. Return only one J
     "intent_class": "transactional_tool/informational_guide/definition/interpretation/comparison/troubleshooting/reference",
     "spoke_category": "meaningful topical silo", "article_title": "...", "page_type": "article or tool",
     "content_brief": "one or two sentences explaining the page's exclusive scope",
+    "reader_outcome": "what the reader can do after using this page",
+    "scope_out": ["adjacent task handled by another page"],
+    "parent_target": "exact broader page target, or null for the master",
+    "h2_sections": [{{"h2_heading": "specific section", "section_definition": "what it answers"}}],
     "existing_url": null, "internal_links": ["exact related page target"]
   }}],
   "keyword_decisions": [
@@ -486,6 +498,9 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
         "page_type": page_type,
         "word_count_suggestion": max(500, min(6000, _integer_or_none(raw.get("word_count_suggestion")) or 1800)),
         "content_brief": str(raw.get("content_brief") or "").strip(),
+        "reader_outcome": str(raw.get("reader_outcome") or raw.get("search_intent") or "").strip(),
+        "scope_out": [str(value).strip() for value in raw.get("scope_out") or [] if str(value).strip()],
+        "parent_target": clean_phrase(str(raw.get("parent_target") or "")) or None,
         "targeted_keywords": [],
         "tool_functions": [str(value).strip() for value in raw.get("tool_functions") or [] if str(value).strip()],
         "h2_sections": sections,
@@ -640,6 +655,7 @@ def _generated_page(target: str, metrics: dict[str, dict[str, Any]]) -> dict[str
 
 def _repair_plan_consistency(
     plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
+    *, preserve_intent: bool = False,
 ) -> dict[str, Any]:
     """Turn structurally inconsistent model output into an exact inventory-backed plan."""
     inventory = [item["phrase"] for item in records]
@@ -688,10 +704,11 @@ def _repair_plan_consistency(
     master["target_keyword"] = primary
     master["ranking_role"] = "master_hub"
     master["slug"] = "/"
-    master["page_type"] = "tool" if _has_tool_intent(primary) else "article"
-    master["intent_class"] = (
-        "transactional_tool" if master["page_type"] == "tool" else _infer_intent_class(primary)
-    )
+    if not preserve_intent:
+        master["page_type"] = "tool" if _has_tool_intent(primary) else "article"
+        master["intent_class"] = (
+            "transactional_tool" if master["page_type"] == "tool" else _infer_intent_class(primary)
+        )
     spokes = list(by_target.values())
     for spoke in spokes:
         spoke["ranking_role"] = "supporting_spoke"
@@ -934,6 +951,9 @@ def validate_architecture(
     slugs = [page.get("slug") for page in pages]
     if len(slugs) != len(set(slugs)):
         errors.append("page slugs must be unique")
+    titles = [clean_phrase(str(page.get("article_title") or "")) for page in pages]
+    if any(not title for title in titles) or len(titles) != len(set(titles)):
+        errors.append("page titles must be nonempty and unique")
     intents = [clean_phrase(str(page.get("search_intent") or "")) for page in pages]
     if any(not intent for intent in intents):
         errors.append("every page needs an explicit search intent")
@@ -976,7 +996,7 @@ def validate_architecture(
             f"topical authority is too shallow: {len(usable)} usable keywords require at least "
             f"{minimum_pages} distinct intent pages, but only {len(pages)} were created"
         )
-    if len(pages) >= 6:
+    if not plan.get("_authority_target") and len(pages) >= 6:
         categories = {
             clean_phrase(str(page.get("spoke_category") or ""))
             for page in plan.get("spokes") or []
@@ -1012,6 +1032,8 @@ async def _audit_intent_cannibalization(
         "article_title": page["article_title"],
         "page_type": page["page_type"],
         "content_brief": page["content_brief"],
+        "reader_outcome": page.get("reader_outcome", ""),
+        "scope_out": page.get("scope_out", []),
     } for page in pages]
     keyword_placements = [{
         "keyword": item["keyword"],
@@ -1093,7 +1115,6 @@ or
         right = by_target.get(clean_phrase(str(item.get("page_b") or "")))
         if left and right and (
             left["page_type"] != right["page_type"]
-            or left["intent_class"] != right["intent_class"]
         ):
             logger.info(
                 "Ignoring cross-intent cannibalization suggestion: %s vs %s",
@@ -1240,10 +1261,11 @@ def _merge_intent_conflicts(
             target = redirects[target]
         return target
 
-    def strength(target: str) -> tuple[int, int, float]:
+    def strength(target: str) -> tuple[int, int, int, float]:
         page = by_target[target]
         return (
             1 if target == master_target else 0,
+            1 if page.get("existing_url") else 0,
             int(page.get("search_volume") or 0),
             -float(page.get("difficulty") if page.get("difficulty") is not None else 101),
         )
@@ -1255,7 +1277,6 @@ def _merge_intent_conflicts(
             continue
         if (
             by_target[left]["page_type"] != by_target[right]["page_type"]
-            or by_target[left]["intent_class"] != by_target[right]["intent_class"]
         ):
             continue
         winner, loser = (left, right) if strength(left) >= strength(right) else (right, left)
@@ -1269,9 +1290,23 @@ def _merge_intent_conflicts(
         return plan, []
     for loser in list(redirects):
         redirects[loser] = final_target(redirects[loser])
+        winner = by_target[redirects[loser]]
+        removed = by_target[loser]
+        for collection, label in (("h2_sections", "h2_heading"), ("faq_schema_questions", "question")):
+            headings = {clean_phrase(item[label]) for item in winner[collection]}
+            for section in removed[collection]:
+                heading = clean_phrase(section[label])
+                if heading not in headings:
+                    winner[collection].append(section)
+                    headings.add(heading)
+        winner["internal_links"] = list(dict.fromkeys([*winner["internal_links"], *removed["internal_links"]]))
     plan["spokes"] = [
         page for page in plan["spokes"] if page["target_keyword"] not in redirects
     ]
+    for page in [plan["master_hub"], *plan["spokes"]]:
+        page["internal_links"] = [redirects.get(target, target) for target in page["internal_links"]]
+        if page.get("parent_target") in redirects:
+            page["parent_target"] = redirects[page["parent_target"]]
     for decision in plan["keyword_assignments"]:
         keyword = decision["keyword"]
         destination = decision.get("assigned_to")
@@ -1309,12 +1344,8 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
             keyword = decision["keyword"]
             destination["targeted_keywords"].append(keyword)
             placement = decision.get("placement") or ""
-            if "faq" in placement and destination["faq_schema_questions"]:
-                destination["faq_schema_questions"][0]["targeted_keywords_placed_here"].append(keyword)
-            elif "entity" in placement:
-                destination["entity_terms"].append(keyword)
-            elif destination["h2_sections"]:
-                destination["h2_sections"][0]["targeted_keywords_placed_here"].append(keyword)
+            from nlp.topical_map import place_supporting_keyword
+            place_supporting_keyword(destination, keyword, placement)
     for page in pages:
         page["targeted_keywords"] = list(dict.fromkeys(page["targeted_keywords"]))
         page["internal_links"] = [value for value in dict.fromkeys(page["internal_links"]) if value in by_target and value != page["target_keyword"]]
@@ -1362,7 +1393,7 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
     return plan
 
 
-async def build_site_architecture(
+async def _build_site_architecture(
     records: list[dict[str, Any]],
     *,
     context: str = "",
@@ -1373,10 +1404,16 @@ async def build_site_architecture(
     normalized = normalize_keyword_records(records, primary_keyword)
     if not normalized:
         raise ArchitectureAgentError("No usable keyword text was supplied.")
+    if len(normalized) > MAX_ARCHITECTURE_KEYWORDS:
+        raise ArchitectureAgentError(
+            "Use at most 300 distinct keywords per topical map, including the main topic. "
+            "Open the Hub Spoke workspace and narrow this inventory to one focused subject."
+        )
     if not is_ai_configured():
         raise ArchitectureAgentError("The SEO architecture agent is unavailable because no AI provider is configured.")
 
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
+    review_deadline = asyncio.get_running_loop().time() + 230
     discovery_status = "not_requested"
     if target_spokes is not None:
         if not 10 <= target_spokes <= 50:
@@ -1385,7 +1422,7 @@ async def build_site_architecture(
         normalized, discovery_status = await expand_inventory(normalized, context, main, target_spokes, _achat_json)
     prompt = _prompt(normalized, context, main, target_spokes)
     last_errors: list[str] = []
-    for attempt in range(3):
+    for attempt in range(2 if target_spokes else 3):
         try:
             payload = await _achat_json(
                 system_prompt=(
@@ -1402,7 +1439,7 @@ async def build_site_architecture(
                     "the provider response was incomplete or malformed JSON; retrying with the compact schema"
                 )
             plan = _normalize_plan(payload, normalized, main)
-            plan = _repair_plan_consistency(plan, normalized, main)
+            plan = _repair_plan_consistency(plan, normalized, main, preserve_intent=bool(target_spokes))
             if target_spokes:
                 plan["_authority_target"] = target_spokes
             deterministic_rejections = [
@@ -1413,7 +1450,8 @@ async def build_site_architecture(
             _apply_relevance_rejections(plan, deterministic_rejections)
             if not target_spokes:
                 plan = _ensure_topical_authority(plan, normalized, main)
-            plan = _apply_tool_roi_rules(plan, normalized)
+            if not target_spokes:
+                plan = _apply_tool_roi_rules(plan, normalized)
             causal_conflicts = _mechanical_causal_conflicts(plan)
             if causal_conflicts:
                 targets_before_merge = {
@@ -1432,13 +1470,16 @@ async def build_site_architecture(
                         main,
                         excluded_page_targets=targets_before_merge - targets_after_merge,
                     )
-                plan = _apply_tool_roi_rules(plan, normalized)
+                if not target_spokes:
+                    plan = _apply_tool_roi_rules(plan, normalized)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
-                review_limit = min(5, len(plan["spokes"]) + 1)
+                review_limit = min(2 if target_spokes else 5, len(plan["spokes"]) + 1)
                 for _review in range(review_limit):
                     try:
-                        conflicts, rejections, audit_errors = await _audit_intent_cannibalization(plan, context)
+                        remaining = max(0.01, review_deadline - asyncio.get_running_loop().time())
+                        async with asyncio.timeout(min(45, remaining)):
+                            conflicts, rejections, audit_errors = await _audit_intent_cannibalization(plan, context)
                     except Exception as exc:
                         conflicts = []
                         rejections = []
@@ -1481,16 +1522,8 @@ async def build_site_architecture(
                     final_errors = validate_architecture(plan, normalized, main)
                     if final_errors:
                         raise ValueError("; ".join(final_errors))
-                    if (attempt == 0 and plan["authority_coverage"]["status"] == "needs_research"
-                            and len(normalized) >= target_spokes):
-                        prompt += (
-                            f"\nThe first map had only {len(plan['spokes'])} spokes. Review whether distinct "
-                            "instructional, comparison, reference or tool intents were overlooked. "
-                            "Return a complete revised map; keep fewer pages if the remaining inventory "
-                            "does not justify more. Do not split same-intent variants to fill the target."
-                        )
-                        continue
-                return _apply_assignments(plan)
+                from nlp.topical_map import attach_topical_map
+                return attach_topical_map(_apply_assignments(plan))
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))
         except Exception as exc:
             last_errors = [str(exc) or type(exc).__name__]
@@ -1510,3 +1543,20 @@ def usable_keywords(plan: dict[str, Any]) -> list[str]:
         item["keyword"] for item in plan.get("keyword_assignments") or []
         if item.get("disposition") != "discard"
     ]
+
+
+async def build_site_architecture(
+    records: list[dict[str, Any]], *, context: str = "", primary_keyword: str = "",
+    site_domain: str = "", target_spokes: int | None = None,
+) -> dict[str, Any]:
+    try:
+        async with asyncio.timeout(240):
+            return await _build_site_architecture(
+                records, context=context, primary_keyword=primary_keyword,
+                site_domain=site_domain, target_spokes=target_spokes,
+            )
+    except TimeoutError as exc:
+        raise ArchitectureAgentError(
+            "Planning exceeded four minutes. Your previous saved map is unchanged. "
+            "Try a smaller focused keyword list or check the AI connection in Settings."
+        ) from exc

@@ -22,6 +22,7 @@ def generate_article_package(
     seed_keywords: list[str],
     competitor_urls: list[str],
     own_urls: list[str],
+    architecture_brief: str = "",
 ) -> dict[str, Any]:
     started = time.monotonic()
     if not is_ai_configured():
@@ -50,6 +51,8 @@ def generate_article_package(
     )
     if not brief:
         brief = _heuristic_brief(primary_keyword, merged_competitors)
+    if architecture_brief:
+        brief["architecture_requirements"] = architecture_brief
 
     article_markdown = ""
     audit: dict[str, Any] | None = None

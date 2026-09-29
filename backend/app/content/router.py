@@ -81,6 +81,7 @@ from pydantic import BaseModel, Field, field_validator
 class ManualGenerateRequest(BaseModel):
     main_keyword: str = Field(min_length=1)
     keyword_cluster: str = ""
+    architecture_brief: str = Field(default="", max_length=12000)
     project_id: uuid.UUID | None = None
 
     @field_validator("main_keyword", mode="before")
@@ -141,6 +142,7 @@ async def manual_generate_article(
             project_name=project.name,
             project_domain=project.domain,
             primary_keyword=req.main_keyword,
+            architecture_brief=req.architecture_brief,
             seed_keywords=seed_keywords,
             competitor_urls=competitor_urls,
             own_urls=own_urls,

@@ -235,7 +235,7 @@ test('authority planner sends the spoke target and displays an honest shortfall'
   })
   await page.goto('/hub-spoke')
   await page.locator('input[type=file]').setInputFiles({ name: 'keywords.txt', mimeType: 'text/plain', buffer: Buffer.from('lunar age\nchinese age') })
-  await page.getByRole('button', { name: 'Build specialist architecture' }).click()
+  await page.getByRole('button', { name: 'Build topical map' }).click()
   await expect(page.getByText('0 spokes · target 20–30', { exact: true })).toBeVisible()
   await expect(page.getByText('More distinct topic evidence is needed.', { exact: true })).toBeVisible()
   expect(submitted?.target_spokes).toBe(25)
