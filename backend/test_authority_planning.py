@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from nlp.authority import expand_inventory
-from nlp.hub_spoke_agent import build_site_architecture
+from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture
 
 
 PRIMARY = 'lunar age calculator'
@@ -120,7 +120,6 @@ class AuthorityPlanningTests(unittest.TestCase):
                 RuntimeError('discovery unavailable'), payload, RuntimeError('review unavailable'),
             ]),
         ):
-            plan = asyncio.run(build_site_architecture(
-                [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY, target_spokes=25))
-        self.assertEqual(plan['authority_coverage']['status'], 'needs_review')
-        self.assertEqual(plan['authority_coverage']['discovery_status'], 'unavailable')
+            with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
+                asyncio.run(build_site_architecture(
+                    [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY, target_spokes=25))

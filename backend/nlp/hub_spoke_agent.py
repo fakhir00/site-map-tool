@@ -117,14 +117,6 @@ def _slug(value: str) -> str:
     return "/" + re.sub(r"[^a-z0-9]+", "-", clean_phrase(value)).strip("-") + "/"
 
 
-def _minimum_authority_pages(usable_keyword_count: int) -> int:
-    if usable_keyword_count < 8:
-        return 1
-    if usable_keyword_count < 25:
-        return 3
-    return min(16, max(6, math.ceil(math.sqrt(usable_keyword_count))))
-
-
 def _tool_volume_threshold(records: list[dict[str, Any]]) -> int:
     volumes = sorted(
         int(item["search_volume"])
@@ -194,13 +186,8 @@ def _causal_queries_overlap(left_keyword: str, right_keyword: str) -> bool:
     right_terms = _causal_topic_terms(right_value)
     if not left_terms or not right_terms:
         return False
-    matched_left = {
-        left
-        for left in left_terms
-        if any(left == right or SequenceMatcher(None, left, right).ratio() >= 0.72 for right in right_terms)
-    }
-    similarity = len(matched_left) / max(len(left_terms), len(right_terms))
-    return similarity >= 0.6
+    # Partial/fuzzy topic overlap can conflate distinct entities or conditions.
+    return left_terms == right_terms
 
 
 def _mechanical_causal_conflicts(plan: dict[str, Any]) -> list[dict[str, str]]:
@@ -223,6 +210,72 @@ def _mechanical_causal_conflicts(plan: dict[str, Any]) -> list[dict[str, str]]:
                 "reason": "Causes, reasons, and why-it-happens queries share one causal-explanation intent.",
                 "resolution": "Merge them into one comprehensive causes page.",
             })
+    return conflicts
+
+
+def _intent_signature(keyword: str) -> tuple[str, frozenset[str]]:
+    """Conservative equivalent-query guard; wider paraphrases need semantic review.
+
+    Keep every topic qualifier (including numbers, locations and negation). Never
+    merge merely because one keyword is a subset of another.
+    """
+    value = clean_phrase(keyword)
+    patterns = (
+        ("comparison", r"\b(?:vs|versus|comparison|compare|differences? between)\b"),
+        ("accuracy", r"\b(?:accuracy|accurate)\b"),
+        ("troubleshooting", r"\b(?:errors?|mistakes?|troubleshooting)\b"),
+        ("causal", r"\b(?:causes?|caused|reasons?|why|happens?|happening)\b"),
+        ("definition", r"\b(?:what is|what are|meanings?|definitions?|defined)\b"),
+        ("manual", r"\b(?:how to|manually|manual|guides?|tutorials?)\b"),
+        ("reference", r"\b(?:symbols?|reference)\b"),
+        ("tool", r"\b(?:calculators?|generators?|checkers?|converters?|builders?|makers?|simulators?|estimators?|planners?|tools?|software)\b"),
+    )
+    for family, pattern in patterns:
+        if not re.search(pattern, value):
+            continue
+        # Different interactive functions are not interchangeable.
+        topic = value if family == "tool" else re.sub(pattern, " ", value)
+        if family == "manual":
+            topic = re.sub(r"\b(?:calculate|calculation|calculating)\b", "calculation", topic)
+        if family == "tool":
+            topic = re.sub(r"\b(?:free|online)\b", " ", topic)
+        ignored = {"a", "an", "the", "is", "are", "does", "do", "of"}
+        terms = set()
+        for term in topic.split():
+            if term in ignored:
+                continue
+            if term.endswith("s") and len(term) > 3 and not term.endswith(("ss", "us", "is")):
+                term = term[:-1]
+            terms.add(term)
+        # Direction and grammatical roles can change the task despite identical
+        # word sets (e.g. USD to EUR versus EUR to USD).
+        if family != "comparison" and re.search(r"\b(?:to|from|for|by)\b", topic):
+            terms.add("ordered:" + " ".join(topic.split()))
+        return family, frozenset(terms)
+    return "", frozenset()
+
+
+def _clearly_distinct_tasks(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    families = {_intent_signature(page["target_keyword"])[0] for page in (left, right)}
+    return "tool" in families and bool(families & {
+        "manual", "definition", "comparison", "accuracy", "troubleshooting", "reference", "causal",
+    })
+
+
+def _mechanical_intent_conflicts(plan: dict[str, Any]) -> list[dict[str, str]]:
+    pages = [plan["master_hub"], *plan["spokes"]]
+    conflicts = _mechanical_causal_conflicts(plan)
+    for index, left in enumerate(pages):
+        signature = _intent_signature(left["target_keyword"])
+        if not signature[0] or not signature[1]:
+            continue
+        for right in pages[index + 1:]:
+            if signature == _intent_signature(right["target_keyword"]):
+                conflicts.append({
+                    "page_a": left["target_keyword"], "page_b": right["target_keyword"],
+                    "reason": "Equivalent query variants serve the same task and topic.",
+                    "resolution": "Merge into one page and retain the variant as a supporting keyword.",
+                })
     return conflicts
 
 
@@ -321,7 +374,6 @@ def _is_protected_emd_entity(keyword: str, primary_keyword: str) -> bool:
 
 
 def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str, target_spokes: int | None = None) -> str:
-    authority_floor = _minimum_authority_pages(len(records))
     planning_goal = (
         f"Plan one homepage plus {target_spokes - 5}–{target_spokes + 5} distinct spokes, aiming for {target_spokes}. "
         "This is a planning goal, never a quota. If evidence supports fewer, return fewer and explain the missing coverage. "
@@ -330,7 +382,7 @@ def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str, t
         "A brief mention or homepage summary does not exhaust a deeper instructional intent. Do not duplicate a fully served task. "
         "Set existing_url to null for new pages. Never assign multiple pages to one existing URL. "
         "State an exclusive scope and concrete reader outcome for each page, and useful internal links."
-        if target_spokes else f"Aim for at least {authority_floor} pages when distinct intents support them."
+        if target_spokes else "Create only pages supported by distinct reader tasks. Keyword count is not a page quota."
     )
     return f"""
 Act as a senior technical SEO architect whose specialty is hub-and-spoke information architecture.
@@ -371,6 +423,10 @@ Rules:
   page intent. They belong as variants or sections on one comprehensive causes spoke, never separate URLs.
 - Never create two pages that would compete for the same search intent. Variants with the same user
   goal belong on one page. Similar words with different goals may remain separate pages.
+- Compare the homepage and every spoke across all groups. Synonyms, reordered phrases, free/online
+  modifiers, and reworded definitions do not justify extra URLs. Different page formats, intent labels,
+  titles, or scope_out claims alone do not prove different tasks. Consolidate repeated answers and
+  overlapping outlines; retain all useful supporting keywords on the surviving page.
 - The requested PRIMARY TOPIC is the exact-match-domain homepage. It is non-negotiable: master_target
   must equal "{primary_keyword}" exactly, it is the only homepage, and it represents the site's core product.
 - Build topical authority around that homepage. Create distinct spokes for meaningful subtopics, entities,
@@ -602,22 +658,6 @@ def _infer_category(keyword: str) -> str:
     return "Foundational guides"
 
 
-def _is_page_target_candidate(keyword: str, primary_keyword: str) -> bool:
-    phrase_terms = clean_phrase(keyword).split()
-    core = _primary_core_terms(primary_keyword)
-    if len(core) < 2:
-        return True
-    anchor = core[:2]
-    for index in range(len(phrase_terms) - 1):
-        if phrase_terms[index:index + 2] != anchor:
-            continue
-        leading = set(phrase_terms[:index])
-        return not leading or leading <= {
-            "buy", "buying", "order", "best", "verified", "official", "where", "to",
-        }
-    return False
-
-
 def _resolve_inventory_keyword(value: str, candidates: list[str]) -> str | None:
     requested = clean_phrase(value)
     if not requested:
@@ -766,103 +806,15 @@ def _repair_plan_consistency(
         if decision.get("disposition") == "supporting":
             decision["assigned_to"] = destination
 
-    seen_intents: set[str] = set()
     for page in [master, *spokes]:
         intent = clean_phrase(str(page.get("search_intent") or ""))
-        if not intent or intent in seen_intents:
+        if not intent or intent in {"informational", "transactional", "commercial", "navigational"}:
             intent = f"{page['intent_class'].replace('_', ' ')} for {page['target_keyword']}"
             page["search_intent"] = intent
-        seen_intents.add(clean_phrase(intent))
 
     plan["master_hub"] = master
     plan["spokes"] = spokes
     plan["keyword_assignments"] = decisions
-    return plan
-
-
-def _ensure_topical_authority(
-    plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
-    excluded_page_targets: set[str] | None = None,
-) -> dict[str, Any]:
-    """Promote diverse, relevant supporting terms when the model returns a one-page plan."""
-    metrics = {item["phrase"]: item for item in records}
-    decisions = plan["keyword_assignments"]
-    usable = [item for item in decisions if item.get("disposition") != "discard"]
-    minimum_pages = _minimum_authority_pages(len(usable))
-    existing_targets = {
-        plan["master_hub"]["target_keyword"],
-        *(page["target_keyword"] for page in plan["spokes"]),
-    }
-    excluded_page_targets = excluded_page_targets or set()
-    if len(existing_targets) < minimum_pages:
-        candidates = [
-            item["keyword"] for item in usable
-            if item.get("disposition") == "supporting"
-            and item["keyword"] not in existing_targets
-            and item["keyword"] not in excluded_page_targets
-            and _is_core_entity_relevant(item["keyword"], primary_keyword)
-            and _is_page_target_candidate(item["keyword"], primary_keyword)
-            and not any(
-                _causal_queries_overlap(item["keyword"], target)
-                for target in existing_targets
-            )
-        ]
-        candidates.sort(key=lambda keyword: (
-            int(metrics[keyword].get("search_volume") or 0),
-            int(metrics[keyword].get("frequency") or 1),
-            len(keyword.split()),
-        ), reverse=True)
-        selected: list[str] = []
-        used_categories = {
-            page.get("spoke_category")
-            for page in [plan["master_hub"], *plan["spokes"]]
-            if page.get("spoke_category")
-        }
-        for keyword in candidates:
-            category = _infer_category(keyword)
-            if category not in used_categories:
-                selected.append(keyword)
-                used_categories.add(category)
-            if len(existing_targets) + len(selected) >= minimum_pages:
-                break
-        for keyword in candidates:
-            if keyword in selected:
-                continue
-            selected.append(keyword)
-            if len(existing_targets) + len(selected) >= minimum_pages:
-                break
-        decision_by_keyword = {item["keyword"]: item for item in decisions}
-        for target in selected:
-            page = _generated_page(target, metrics)
-            page["spoke_category"] = _infer_category(target)
-            page["ranking_role"] = "supporting_spoke"
-            plan["spokes"].append(page)
-            decision_by_keyword[target].update({
-                "disposition": "page_target", "assigned_to": target, "placement": "title",
-                "reason": "Promoted to provide the topical depth required by this keyword inventory.",
-            })
-            existing_targets.add(target)
-
-    pages = [plan["master_hub"], *plan["spokes"]]
-    target_categories = {
-        page["target_keyword"]: page.get("spoke_category") or _infer_category(page["target_keyword"])
-        for page in pages
-    }
-    target_terms = {
-        target: set(target.split()) for target in target_categories
-    }
-    for decision in decisions:
-        if decision.get("disposition") != "supporting":
-            continue
-        keyword = decision["keyword"]
-        terms = set(keyword.split())
-        category = _infer_category(keyword)
-        ranked_targets = sorted(existing_targets, key=lambda target: (
-            1 if target_categories[target] == category else 0,
-            len(terms & target_terms[target]) / max(1, len(terms | target_terms[target])),
-            int(metrics[target].get("search_volume") or 0),
-        ), reverse=True)
-        decision["assigned_to"] = ranked_targets[0]
     return plan
 
 
@@ -989,34 +941,6 @@ def validate_architecture(
     if page_targets != {item.get("keyword") for item in assignments if item.get("disposition") == "page_target"}:
         errors.append("page targets and page_target decisions do not match")
 
-    usable = [item for item in assignments if item.get("disposition") != "discard"]
-    minimum_pages = _minimum_authority_pages(len(usable))
-    if not plan.get("_authority_target") and len(pages) < minimum_pages:
-        errors.append(
-            f"topical authority is too shallow: {len(usable)} usable keywords require at least "
-            f"{minimum_pages} distinct intent pages, but only {len(pages)} were created"
-        )
-    if not plan.get("_authority_target") and len(pages) >= 6:
-        categories = {
-            clean_phrase(str(page.get("spoke_category") or ""))
-            for page in plan.get("spokes") or []
-        }
-        categories.discard("")
-        categories.discard("strategic topic")
-        if len(categories) < 3:
-            errors.append("topical authority needs at least three meaningful spoke categories")
-    if not plan.get("_authority_target") and len(usable) >= 30:
-        assignment_counts = {
-            target: sum(1 for item in usable if item.get("assigned_to") == target)
-            for target in page_targets
-        }
-        overloaded_target, overloaded_count = max(assignment_counts.items(), key=lambda item: item[1])
-        maximum_share = math.ceil(len(usable) * 0.45)
-        if overloaded_count > maximum_share:
-            errors.append(
-                f'page "{overloaded_target}" absorbs {overloaded_count} of {len(usable)} usable keywords; '
-                f"split distinct informational intents into topical spokes (maximum {maximum_share})"
-            )
     return list(dict.fromkeys(errors))
 
 
@@ -1034,6 +958,10 @@ async def _audit_intent_cannibalization(
         "content_brief": page["content_brief"],
         "reader_outcome": page.get("reader_outcome", ""),
         "scope_out": page.get("scope_out", []),
+        "h2_sections": page.get("h2_sections", []),
+        "faq_schema_questions": page.get("faq_schema_questions", []),
+        "tool_functions": page.get("tool_functions", []),
+        "existing_url": page.get("existing_url"),
     } for page in pages]
     keyword_placements = [{
         "keyword": item["keyword"],
@@ -1055,12 +983,18 @@ Proposed indexable pages:
 Retained keyword placements:
 {json.dumps(keyword_placements, ensure_ascii=False)}
 
-Find only pairs that would satisfy the same user goal with the same result type. Do not flag pages merely
+Compare every page against the homepage and every other spoke, including pages in different groups.
+Find pairs that would satisfy the same user goal. Do not flag pages merely
 because they discuss the same entity. A calculator/tool, a manual calculation guide, a definition, an
 interpretation, and a comparison serve different intents and should coexist as topical-authority spokes.
 Likewise, entity-specific pages may coexist when each gives a complete answer about a distinct entity.
 Causes, reasons, "why it happens", and equivalent causal questions about the same subject are the same
 intent and must be reported as a conflict if proposed as separate pages.
+Treat page_type, intent_class, scope_out and titles as proposals, not evidence of distinct intent.
+Inspect the actual outlines, tool functions, outcomes and supporting keyword placements. If the same
+answer or functionality would satisfy both queries, merge even if their labels or formats differ.
+Definition/meaning synonyms, free/online variants and reworded how-to guides belong on one URL.
+Report every duplicate pair in this pass. A page-count target never justifies keeping duplicates.
 Also reject retained keywords that are clearly unrelated, broken, competitor-branded, another company's
 product/domain, or navigational searches for another site. A keyword containing relevant topic words is
 still irrelevant when its real intent is reaching a competitor. Do not reject useful non-branded subtopics.
@@ -1078,7 +1012,7 @@ or
 {{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "reason": "...", "resolution": "merge or clarify"}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
 """,
         temperature=0,
-        max_tokens=3000,
+        max_tokens=8000,
     )
     audit = _coerce_object(audit)
     if audit is None or not isinstance(audit.get("conflicts"), list):
@@ -1110,18 +1044,22 @@ or
     raw_conflicts = [item for item in audit["conflicts"] if isinstance(item, dict)]
     by_target = {page["target_keyword"]: page for page in pages}
     conflicts = []
+    invalid_conflicts = len(raw_conflicts) != len(audit["conflicts"])
     for item in raw_conflicts:
         left = by_target.get(clean_phrase(str(item.get("page_a") or "")))
         right = by_target.get(clean_phrase(str(item.get("page_b") or "")))
-        if left and right and (
-            left["page_type"] != right["page_type"]
-        ):
+        if not left or not right or left is right:
+            invalid_conflicts = True
+            continue
+        if _clearly_distinct_tasks(left, right):
             logger.info(
                 "Ignoring cross-intent cannibalization suggestion: %s vs %s",
                 left["target_keyword"], right["target_keyword"],
             )
             continue
         conflicts.append(item)
+    if invalid_conflicts:
+        return [], rejections, ["the semantic review referenced invalid page conflicts; review must be retried"]
     if audit.get("passed") is True and not conflicts:
         return [], rejections, []
     if raw_conflicts and not conflicts:
@@ -1275,9 +1213,7 @@ def _merge_intent_conflicts(
         right = final_target(clean_phrase(str(conflict.get("page_b") or "")))
         if not left or not right or left == right or left not in by_target or right not in by_target:
             continue
-        if (
-            by_target[left]["page_type"] != by_target[right]["page_type"]
-        ):
+        if _clearly_distinct_tasks(by_target[left], by_target[right]):
             continue
         winner, loser = (left, right) if strength(left) >= strength(right) else (right, left)
         redirects[loser] = winner
@@ -1300,6 +1236,13 @@ def _merge_intent_conflicts(
                     winner[collection].append(section)
                     headings.add(heading)
         winner["internal_links"] = list(dict.fromkeys([*winner["internal_links"], *removed["internal_links"]]))
+        winner["tool_functions"] = list(dict.fromkeys([
+            *winner.get("tool_functions", []), *removed.get("tool_functions", []),
+        ]))
+        if removed["page_type"] == "tool":
+            winner["page_type"] = "tool"
+            winner["intent_class"] = "transactional_tool"
+            winner.pop("tool_economics", None)
     plan["spokes"] = [
         page for page in plan["spokes"] if page["target_keyword"] not in redirects
     ]
@@ -1321,6 +1264,7 @@ def _merge_intent_conflicts(
         value for value in [plan.get("site_strategy", ""), *merge_notes] if value
     )
     plan["_planning_thought"] = plan["site_strategy"]
+    plan["_intent_merges"] = [*plan.get("_intent_merges", []), *merge_notes]
     return plan, merge_notes
 
 
@@ -1385,10 +1329,7 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
             if plan.get("_semantic_audit_status") == "passed"
             else "Structural intent safeguards passed"
         ),
-        "duplicates_removed": sum(
-            1 for item in plan["keyword_assignments"]
-            if item["disposition"] == "supporting" and "duplicate" in item["reason"].lower()
-        ),
+        "duplicates_removed": len(plan.get("_intent_merges", [])),
     }
     return plan
 
@@ -1449,32 +1390,14 @@ async def _build_site_architecture(
             ]
             _apply_relevance_rejections(plan, deterministic_rejections)
             if not target_spokes:
-                plan = _ensure_topical_authority(plan, normalized, main)
-            if not target_spokes:
                 plan = _apply_tool_roi_rules(plan, normalized)
-            causal_conflicts = _mechanical_causal_conflicts(plan)
-            if causal_conflicts:
-                targets_before_merge = {
-                    plan["master_hub"]["target_keyword"],
-                    *(page["target_keyword"] for page in plan["spokes"]),
-                }
-                plan, _causal_merge_notes = _merge_intent_conflicts(plan, causal_conflicts)
-                targets_after_merge = {
-                    plan["master_hub"]["target_keyword"],
-                    *(page["target_keyword"] for page in plan["spokes"]),
-                }
-                if not target_spokes:
-                    plan = _ensure_topical_authority(
-                        plan,
-                        normalized,
-                        main,
-                        excluded_page_targets=targets_before_merge - targets_after_merge,
-                    )
-                if not target_spokes:
-                    plan = _apply_tool_roi_rules(plan, normalized)
+            mechanical_conflicts = _mechanical_intent_conflicts(plan)
+            if mechanical_conflicts:
+                plan, _ = _merge_intent_conflicts(plan, mechanical_conflicts)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
-                review_limit = min(2 if target_spokes else 5, len(plan["spokes"]) + 1)
+                review_limit = min(5, max(2, len(plan["spokes"]) + 1))
+                plan["_semantic_audit_status"] = "pending"
                 for _review in range(review_limit):
                     try:
                         remaining = max(0.01, review_deadline - asyncio.get_running_loop().time())
@@ -1495,25 +1418,26 @@ async def _build_site_architecture(
                                 break
                     if audit_errors and not conflicts:
                         logger.warning(
-                            "Semantic cannibalization review unavailable; keeping the structurally "
-                            "validated architecture: %s", "; ".join(audit_errors),
+                            "Semantic cannibalization review failed: %s", "; ".join(audit_errors),
                         )
-                        plan["_semantic_audit_status"] = "unavailable"
-                        last_errors = []
-                        break
+                        last_errors = audit_errors
+                        continue
                     last_errors = audit_errors
                     if not conflicts:
                         plan["_semantic_audit_status"] = "passed"
                         break
                     plan, merge_notes = _merge_intent_conflicts(plan, conflicts)
                     if not merge_notes:
-                        logger.warning("Ignoring an audit conflict that did not reference valid plan pages")
-                        plan["_semantic_audit_status"] = "invalid_conflict_ignored"
-                        last_errors = []
-                        break
+                        last_errors = ["Semantic review found conflicts that could not be resolved."]
+                        continue
                     last_errors = validate_architecture(plan, normalized, main)
                     if last_errors:
                         break
+                if plan["_semantic_audit_status"] != "passed":
+                    raise ArchitectureAgentError(
+                        "The semantic overlap review could not approve this map. "
+                        "Retry generation; your previous saved map is unchanged."
+                    )
             if not last_errors:
                 plan["site_domain"] = _clean_domain(site_domain) or _domain_from_context(context)
                 if target_spokes:
@@ -1525,6 +1449,8 @@ async def _build_site_architecture(
                 from nlp.topical_map import attach_topical_map
                 return attach_topical_map(_apply_assignments(plan))
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))
+        except ArchitectureAgentError:
+            raise
         except Exception as exc:
             last_errors = [str(exc) or type(exc).__name__]
             logger.warning("SEO architecture agent attempt %s failed: %s", attempt + 1, last_errors[0])

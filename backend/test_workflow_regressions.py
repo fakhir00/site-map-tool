@@ -334,6 +334,22 @@ class WorkflowTests(unittest.TestCase):
         saved = self.client.get('/api/hub-spoke/history/' + result['history_id']).json()
         self.assertEqual(saved['clusters']['link_plan'], result['clusters']['link_plan'])
         self.assertEqual(json.loads(saved['context'])['primary_keyword'], PRIMARY)
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
+                {'proposals': []}, fixture_payload(TOPICS[:1]),
+                RuntimeError('review unavailable'), RuntimeError('review unavailable'),
+            ]),
+        ):
+            failed = self.client.post('/api/hub-spoke/build', json={
+                'keywords': [TOPICS[0][0], PRIMARY], 'primary_keyword': PRIMARY,
+            })
+        self.assertEqual(failed.status_code, 502, failed.text)
+        self.assertIn('previous saved map is unchanged', failed.json()['detail'])
+        self.assertEqual(len(self.client.get('/api/hub-spoke/history').json()), 1)
+        self.assertEqual(
+            self.client.get('/api/hub-spoke/history/' + result['history_id']).json()['clusters'],
+            saved['clusters'],
+        )
         self.assertEqual(self.client.post('/api/hub-spoke/build', json={
             'keywords': [PRIMARY], 'existing_urls': ['javascript:alert(1)'],
         }).status_code, 422)

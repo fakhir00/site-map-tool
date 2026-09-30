@@ -17,6 +17,7 @@ from app.hub_spoke.router import (
     delete_hub_spoke_history,
 )
 from nlp.hub_spoke_agent import (
+    ArchitectureAgentError,
     _apply_tool_roi_rules,
     _coerce_object,
     _generated_page,
@@ -112,7 +113,7 @@ class HubWorkspaceTests(unittest.TestCase):
         content = "Here is the requested architecture:\n```json\n" + json.dumps(payload) + "\n```"
         self.assertEqual(_parse_json_payload(content), payload)
 
-    def test_valid_architecture_survives_an_unavailable_semantic_review(self):
+    def test_unavailable_semantic_review_cannot_publish_a_map(self):
         records = normalize_keyword_records([
             {"phrase": "circuit diagram maker"},
             {"phrase": "circuit diagram online"},
@@ -126,11 +127,8 @@ class HubWorkspaceTests(unittest.TestCase):
                 new=AsyncMock(side_effect=[specialist_payload(), [{"incomplete": "audit fragment"}]]),
             ),
         ):
-            mapping = asyncio.run(build_site_architecture(
-                records, primary_keyword="circuit diagram maker",
-            ))
-        self.assertEqual(mapping["_semantic_audit_status"], "unavailable")
-        self.assertEqual(mapping["master_hub"]["target_keyword"], "circuit diagram maker")
+            with self.assertRaisesRegex(ArchitectureAgentError, "previous saved map is unchanged"):
+                asyncio.run(build_site_architecture(records, primary_keyword="circuit diagram maker"))
 
     def test_final_relevance_review_discards_a_competitor_keyword(self):
         competitor = "astro seek circuit diagram calculator"
@@ -360,7 +358,7 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(decision["disposition"], "page_target")
         self.assertEqual(decision["assigned_to"], secondary)
 
-    def test_large_inventory_cannot_be_collapsed_into_one_page(self):
+    def test_keyword_count_does_not_force_extra_pages(self):
         records = normalize_keyword_records([{"phrase": f"topic keyword {index}"} for index in range(36)])
         payload = {
             "master_target": "topic keyword 0",
@@ -376,8 +374,7 @@ class HubWorkspaceTests(unittest.TestCase):
         from nlp.hub_spoke_agent import _normalize_plan
         plan = _normalize_plan(payload, records, "topic keyword 0")
         errors = validate_architecture(plan, records, "topic keyword 0")
-        self.assertTrue(any("topical authority is too shallow" in error for error in errors))
-        self.assertTrue(any("absorbs 36 of 36" in error for error in errors))
+        self.assertEqual(errors, [])
 
     def test_model_page_consistency_errors_are_repaired_before_validation(self):
         records = normalize_keyword_records([
