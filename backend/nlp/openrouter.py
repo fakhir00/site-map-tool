@@ -1254,6 +1254,9 @@ def build_article_brief(
     prompt = f"""
 You are a master SEO content strategist building a writer-ready brief for a gap keyword article.
 Your job is to identify the missing opportunity behind the keyword, synthesize competitor research, and design an article that can beat thin or generic results.
+Work through KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION.
+Every page needs enough content to completely satisfy its unique intent. Specify only the content and
+sections needed to solve the reader's problem, with no fixed word count or heading quota.
 
 Project name: {project_name}
 Target domain: {target_domain}
@@ -1268,6 +1271,9 @@ Competitor pages from page one search results and sitemap crawl:
 
 Return ONLY a JSON object with these keys:
 - "search_intent": precise string describing what the searcher wants
+- "user_problem": concrete problem the reader needs solved
+- "entity_topic": entity or topic in the context of that problem
+- "content_requirements": specific answers, steps, evidence or functionality needed for completion
 - "reader_persona": specific persona and sophistication level
 - "article_angle": differentiated angle that directly targets the keyword gap
 - "recommended_title": compelling SEO title containing the primary keyword
@@ -1277,8 +1283,8 @@ Return ONLY a JSON object with these keys:
 - "unique_value": array of 4-8 ways this article should be more useful than competitors
 - "must_include_terms": array of 8-16 important terms, entities, and phrases
 - "proof_points": array of 3-8 evidence types, examples, or caveats the writer should include without inventing facts
-- "outline": array of 7-12 section objects. Each object must include "heading", "intent", and "points" where points is an array of concrete bullets.
-- "faq": array of 4-8 question objects with keys "question" and "answer_angle"
+- "outline": only the sections needed to meet the content requirements. Each object must include "heading", "intent", and "points" where points is an array of concrete bullets.
+- "faq": question objects with keys "question" and "answer_angle", only for useful questions not already answered; an empty array is valid
 - "avoid": array of 4-8 pitfalls, hallucinations, or generic claims to avoid
 """
 
@@ -1345,6 +1351,13 @@ def write_prompt(
 
 ## PRIMARY KEYWORD
 "{primary_keyword}"
+
+## CONTENT COMPLETENESS
+Every page = enough content to completely satisfy its unique intent.
+Use KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION.
+Follow the approved page's problem, topic and content requirements. Its URL decision is already made;
+do not invent extra pages for supporting keywords. Explain everything needed to solve the assigned
+problem, then stop. Do not impose a word-count minimum, pad sections or repeat adjacent pages.
 
 ---
 
@@ -1686,6 +1699,9 @@ def write_final_article(
         system_prompt=(
             "You are a world-class SEO strategist, subject-matter ghostwriter, and ruthless editor. "
             "You write practical, source-grounded articles that satisfy search intent and outperform generic competitor content."
+            " Every page needs enough content to completely satisfy its unique intent. "
+            "Use the assigned problem and content requirements to determine depth, not a fixed word count. "
+            "This overrides any generic length quota in a saved prompt. Do not add padding."
         ),
         user_prompt=prompt,
         temperature=0.28,
@@ -1702,6 +1718,10 @@ def audit_article(
 ) -> dict[str, Any] | None:
     prompt = f"""
 Audit this SEO article as a demanding SEO editor. Grade whether it deserves to be published for the exact gap keyword.
+Judge completeness against the reader's problem, entity/topic, content requirements and scope in the brief.
+Every page needs enough content to completely satisfy its unique intent. Do not fail a complete answer
+for being short or having few headings; do not pass a long answer that leaves the problem unsolved.
+Require examples, additional sections or FAQs only when they help fulfill the assigned task.
 
 Primary keyword: {primary_keyword}
 Brief:

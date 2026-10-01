@@ -346,24 +346,20 @@ def _local_article_quality_issues(article_markdown: str, primary_keyword: str) -
     if re.search(r"\bas an ai\b|\bi cannot\b|\bi can't\b", lowered):
         issues.append("The article contains AI meta commentary.")
 
-    words = re.findall(r"\b[\w'-]+\b", content)
     h1_count = len(re.findall(r"^#\s+.+", content, flags=re.MULTILINE))
-    h2_count = len(re.findall(r"^##\s+.+", content, flags=re.MULTILINE))
     keyword_terms = keyword_terms_for_quality(primary_keyword)
     keyword_hits = sum(1 for term in keyword_terms if term in lowered)
 
-    if len(words) < 900:
-        issues.append("The article is too thin; expand it to at least 1,100 words with practical depth and examples.")
+    # Completeness depends on the problem and brief; the semantic audit below
+    # evaluates that. Word and heading counts cannot establish intent coverage.
+    if not any(line.strip() and not line.lstrip().startswith('#') for line in content.splitlines()):
+        issues.append("The article has headings but no answer to the reader's problem.")
     if h1_count != 1:
         issues.append("The article must have exactly one H1.")
-    if h2_count < 5:
-        issues.append("The article needs at least five useful H2 sections.")
     if keyword_terms and keyword_hits < max(1, min(2, len(keyword_terms))):
         issues.append("The article does not clearly target the primary keyword.")
     if primary_keyword.lower() not in lowered:
         issues.append("The exact primary keyword should appear naturally in the article.")
-    if not re.search(r"^##\s+.*(faq|questions)", lowered, flags=re.MULTILINE):
-        issues.append("The article should include an FAQ or common questions section.")
     return issues
 
 
@@ -374,7 +370,7 @@ def keyword_terms_for_quality(primary_keyword: str) -> set[str]:
 def _revision_notes_from_local_issues(issues: list[str], primary_keyword: str) -> list[str]:
     notes = [f"Rewrite for the exact gap keyword '{primary_keyword}' with stronger search-intent alignment."]
     notes.extend(issues)
-    notes.append("Add concrete examples, decision criteria, pitfalls, and a useful FAQ while avoiding unsupported claims.")
+    notes.append("Completely solve the assigned reader problem using the brief's content requirements; add examples or FAQs only when needed, without padding or unsupported claims.")
     return notes[:8]
 
 

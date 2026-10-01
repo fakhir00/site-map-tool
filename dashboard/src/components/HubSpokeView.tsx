@@ -199,7 +199,7 @@ function TreeHub({
                             const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
                             const instruction = isTool 
                               ? "INSTRUCTION: This is a Spoke tool/app page supporting a main hub. It MUST be an interactive tool, calculator, or interactive component."
-                              : "INSTRUCTION: This is a Spoke article supporting a main hub. It MUST be a detailed, focused article of 1500+ words."
+                              : "INSTRUCTION: This is a Spoke article supporting a main hub. Provide enough content to completely satisfy its unique intent, with no fixed word count or padding."
                             onWrite(targetKeyword || finalTitle, instruction, included)
                           }} 
                           className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-cyan-600 hover:text-cyan-500 hover:underline transition-opacity shrink-0"

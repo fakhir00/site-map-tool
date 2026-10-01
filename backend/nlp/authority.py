@@ -24,6 +24,9 @@ relationship in rationale. Sharing a generic word is insufficient evidence. Do n
 search demand, rankings, ease-of-ranking, or arbitrary year/country variants.
 Inspect existing pages: a short mention may justify a deeper guide, but an already satisfied task
 should map to that existing URL. Do not create synonyms of the same task to reach the count.
+Use KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION.
+Explain the user problem and required answer/functionality in the rationale before proposing a new URL.
+Every page needs enough content to completely satisfy its unique intent, with no fixed word count.
 These are editorial proposals pending review, not observed competitor keywords or verified gaps.
 Return only {{"proposals": [{{"phrase": "...", "support_phrase": "exact inventory phrase",
 "rationale": "why this distinct task belongs in scope"}}]}}. An empty list is valid.

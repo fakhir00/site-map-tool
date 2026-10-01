@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 const id = '11111111-1111-4111-8111-111111111111'
 const primary = 'lunar age calculator'
 const master = { id: 'home', target_keyword: primary, article_title: 'Lunar Age Calculator', page_type: 'tool', slug: '/', action: 'update', existing_url: 'https://example.com/', reader_outcome: 'Calculate age in a lunar calendar.', internal_links: ['how to calculate lunar age'], targeted_keywords: ['free lunar age calculator'] }
-const method = { id: 'method', target_keyword: 'how to calculate lunar age', article_title: 'Calculate Lunar Age by Hand', page_type: 'article', slug: '/manual-method/', action: 'update', existing_url: 'https://example.com/manual-method/', spoke_category: 'Age calculation', reader_outcome: 'Calculate age by hand using the correct year boundary.', content_brief: 'Explain the manual calculation with a worked example.', scope_out: ['Calendar conversion belongs to the converter.'], h2_sections: [{ h2_heading: 'Choose the year boundary', section_definition: 'Use the correct calendar.' }], targeted_keywords: ['lunar age formula'], internal_links: [primary] }
+const method = { word_count_suggestion: 1800, user_problem: 'Find the correct age without using the calculator.', entity_topic: 'Manual lunar age calculation', content_requirements: ['Explain the boundary rule.', 'Show a worked date example.'], url_decision_reason: 'Reuse the existing manual-method URL for this distinct instructional task.', id: 'method', target_keyword: 'how to calculate lunar age', article_title: 'Calculate Lunar Age by Hand', page_type: 'article', slug: '/manual-method/', action: 'update', existing_url: 'https://example.com/manual-method/', spoke_category: 'Age calculation', reader_outcome: 'Calculate age by hand using the correct year boundary.', content_brief: 'Explain the manual calculation with a worked example.', scope_out: ['Calendar conversion belongs to the converter.'], h2_sections: [{ h2_heading: 'Choose the year boundary', section_definition: 'Use the correct calendar.' }], targeted_keywords: ['lunar age formula'], internal_links: [primary] }
 const proposal = { id: 'leap', target_keyword: 'lunar leap month rules', article_title: 'Birthdays in Leap Months', page_type: 'article', slug: '/leap-months/', spoke_category: 'Calendar edge cases', action: 'create', evidence_type: 'editorial_proposal', support_phrase: primary, evidence_rationale: 'Explain the intercalary month input.', internal_links: [primary] }
 const mapping = { map_version: 2, topic_clusters: [{ id: 'calculation', name: 'Age calculation', page_ids: ['method'] }, { id: 'calendar', name: 'Calendar edge cases', page_ids: ['leap'] }], hubs: [], master_hub: master, spokes: [method, proposal], _semantic_audit_status: 'passed', authority_coverage: { actual_spokes: 2, minimum_spokes: 20, maximum_spokes: 30, target_spokes: 25, new_spokes: 1, existing_spokes: 1, status: 'needs_research', message: 'More distinct topic evidence is needed.', discovery_status: 'completed' }, keyword_assignments: [{ keyword: primary, disposition: 'page_target', assigned_to: primary, reason: 'Main tool task' }, { keyword: 'lunar age formula', disposition: 'supporting', assigned_to: method.target_keyword, placement: 'h2:Choose the year boundary', reason: 'Manual calculation task' }], link_plan: [{ source: 'home', target: 'method', source_keyword: primary, target_keyword: method.target_keyword, source_url: 'https://example.com/', target_url: method.existing_url, anchor_text: method.article_title, relationship: 'child', reason: 'Learn the manual method.' }, { source: 'method', target: 'home', source_keyword: method.target_keyword, target_keyword: primary, source_url: method.existing_url, target_url: 'https://example.com/', anchor_text: master.article_title, relationship: 'parent', reason: 'Return to the calculator.' }] }
 const history = { id, project_id: id, title: 'Lunar age map', context: '', keywords: [primary, method.target_keyword], cleaned_keywords: [primary, method.target_keyword], clusters: mapping, created_at: '2026-09-29T10:00:00Z', keyword_count: 2 }
@@ -46,6 +46,10 @@ test('builds a map with an explicit main topic and exports actual URL links', as
   await page.getByRole('button', { name: /Calculate Lunar Age by Hand/ }).click()
   const brief = page.getByRole('complementary', { name: 'Page brief' })
   await expect(brief).toContainText(method.reader_outcome)
+  await expect(brief).toContainText(method.user_problem)
+  await expect(brief).toContainText(method.content_requirements[0])
+  await expect(brief).toContainText(method.url_decision_reason)
+  await expect(brief).toContainText('No fixed word count.')
   await expect(brief).toContainText(method.scope_out[0])
   await expect(brief.getByRole('link', { name: 'Open existing page' })).toHaveAttribute('href', method.existing_url)
   await page.getByRole('tab', { name: 'Links (2)' }).click()
@@ -56,9 +60,9 @@ test('builds a map with an explicit main topic and exports actual URL links', as
   await page.getByRole('tab', { name: 'Keyword decisions' }).click()
   await expect(page.getByRole('tabpanel')).toContainText('Manual calculation task')
   await page.getByRole('tab', { name: 'Keyword decisions' }).press('Home')
-  await expect(page.getByRole('tab', { name: 'Map', exact: true })).toBeFocused()
-  await page.getByRole('tab', { name: 'Map', exact: true }).press('ArrowRight')
-  await expect(page.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /^map$/i })).toBeFocused()
+  await page.getByRole('tab', { name: /^map$/i }).press('ArrowRight')
+  await expect(page.getByRole('tab', { name: /^pages$/i })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('saved map sends its page brief and project to the article writer', async ({ page }) => {
@@ -77,6 +81,11 @@ test('saved map sends its page brief and project to the article writer', async (
   await expect(page.getByText('Test service unavailable')).toBeVisible()
   expect(submitted?.project_id).toBe(id)
   expect(submitted?.architecture_brief).toContain(method.reader_outcome)
+  expect(submitted?.architecture_brief).toContain(method.user_problem)
+  expect(submitted?.architecture_brief).toContain(method.content_requirements[1])
+  expect(submitted?.architecture_brief).toContain(method.url_decision_reason)
+  expect(submitted?.architecture_brief).toContain('Every page = enough content to completely satisfy its unique intent.')
+  expect(submitted?.architecture_brief).not.toContain('1800')
   expect(submitted?.architecture_brief).toContain('https://example.com/')
 })
 
@@ -158,4 +167,17 @@ test('validates oversized inventories and invalid existing URLs before generatio
   await page.getByRole('button', { name: 'Build topical map' }).click()
   await expect(page.getByRole('alert')).toContainText('valid existing page URLs')
   expect(calls).toBe(0)
+})
+
+
+test('architecture exports replace legacy length quotas with intent and content requirements', async () => {
+  const { grandArchitecturePrompt } = await import('../src/lib/hubSpoke')
+  const prompt = grandArchitecturePrompt(mapping, '')
+  expect(prompt).toContain('Every page = enough content to completely satisfy its unique intent.')
+  expect(prompt).toContain('KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION')
+  expect(prompt).toContain(method.content_requirements[0])
+  expect(prompt).toContain(method.url_decision_reason)
+  expect(prompt).not.toContain('Suggested word count')
+  expect(prompt).not.toContain('1800')
+  expect(prompt).not.toContain('2000')
 })

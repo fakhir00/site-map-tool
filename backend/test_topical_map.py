@@ -112,6 +112,39 @@ class TopicalMapTests(unittest.TestCase):
             write_prompt(project_name='Test', primary_keyword='manual age method', brief=brief, competitor_pages=[])
         self.assertIn(brief['architecture_requirements'], chat.call_args.kwargs['user_prompt'])
         self.assertIn('takes precedence', chat.call_args.kwargs['user_prompt'])
+        self.assertIn('Every page = enough content to completely satisfy its unique intent.', chat.call_args.kwargs['user_prompt'])
+
+    def test_page_requirements_survive_normalization_without_a_word_quota(self):
+        payload = fixture_payload(TOPICS[:1])
+        raw = payload['pages'][1]
+        raw.update({
+            'word_count_suggestion': 1800,
+            'user_problem': 'Determine which year boundary to use.',
+            'entity_topic': 'Lunar age year boundaries',
+            'content_requirements': ['Explain the boundary rule.', 'Show a worked date example.'],
+            'url_decision_reason': 'The manual method needs a separate explanation from the tool.',
+        })
+        records = [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}]
+        plan = _normalize_plan(payload, records, PRIMARY)
+        for page in [plan['master_hub'], *plan['spokes']]:
+            self.assertNotIn('word_count_suggestion', page)
+        for field in ('user_problem', 'entity_topic', 'content_requirements', 'url_decision_reason'):
+            self.assertEqual(plan['spokes'][0][field], raw[field])
+
+    def test_short_answer_reaches_semantic_audit_without_length_or_heading_quotas(self):
+        from app.content.service import generate_final_article_package
+        draft = '# Nominal age meaning\n\nNominal age counts a newborn as one and adds a year at the traditional new year.'
+        brief = {'content_requirements': ['Define nominal age and when it increments.']}
+        with patch('app.content.service.is_ai_configured', return_value=True), patch(
+            'app.content.service.write_final_article', return_value=draft,
+        ), patch('app.content.service.audit_article', return_value={
+            'score': 95, 'keyword_intent_score': 95, 'gap_coverage_score': 95, 'passed': True,
+        }) as audit:
+            result = generate_final_article_package(
+                primary_keyword='nominal age meaning', master_prompt='Define the term.', brief=brief,
+            )
+        self.assertEqual(result['status'], 'passed')
+        audit.assert_called_once_with(primary_keyword='nominal age meaning', brief=brief, article_markdown=draft)
 
     def test_large_inventory_is_rejected_before_spending_provider_credits(self):
         with patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock()) as chat:
@@ -125,9 +158,12 @@ class TopicalMapTests(unittest.TestCase):
         first, second, referring = plan['spokes']
         second['existing_url'] = 'https://example.com/established-guide/'
         first['h2_sections'] = [{'h2_heading': 'Worked examples', 'targeted_keywords_placed_here': []}]
+        first['content_requirements'] = ['Show a worked example.']
+        second['content_requirements'] = ['Explain the method.']
         referring['internal_links'] = [first['target_keyword']]
         result, _ = _merge_intent_conflicts(plan, [{'page_a': first['target_keyword'], 'page_b': second['target_keyword'], 'reason': 'Same task'}])
         self.assertNotIn(first, result['spokes'])
         self.assertIn(second, result['spokes'])
         self.assertEqual(second['h2_sections'][0]['h2_heading'], 'Worked examples')
         self.assertIn(second['target_keyword'], referring['internal_links'])
+        self.assertEqual(second['content_requirements'], ['Explain the method.', 'Show a worked example.'])

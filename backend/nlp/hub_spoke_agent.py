@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 WRITING_STANDARDS = [
     "Satisfy the assigned search intent directly and completely.",
+    "Every page = enough content to completely satisfy its unique intent. No fixed word count or padding.",
     "Use plain expert language, verifiable claims, and no filler or keyword stuffing.",
     "Use supporting keywords only in the page to which the architecture assigns them.",
     "Give each indexable page a distinct purpose, title, H1, slug, and internal-link role.",
@@ -404,6 +405,19 @@ KEYWORD INVENTORY (metrics are evidence, never invent replacements)
 PLANNING GOAL
 {planning_goal}
 
+PILLAR-CLUSTER DECISION PROCESS
+KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION
+For each keyword, identify the searcher's goal, the concrete problem they need solved, and the
+entity/topic in that context. Specify the answers, steps, examples, evidence, reference data or
+interactive functionality required to solve that problem completely. Only then decide its URL:
+reuse/update an existing page for an already served task; assign variants and subquestions to an
+H2/FAQ on the same page; create a distinct URL only for an independently useful, distinct task.
+A pillar introduces a broader topic and routes readers to focused clusters; it must not repeat their
+full answers. A cluster earns a URL through its own problem and content requirement, not its keyword.
+Every page = enough content to completely satisfy its unique intent.
+Do not prescribe a fixed word count, minimum length, or section count. A concise answer can be complete;
+a complex guide may need more explanation. Stop once the assigned problem is solved; do not add filler.
+
 Rules:
 - Evaluate every exact keyword. Do not omit one.
 - Give every keyword exactly one disposition: page_target, supporting, or discard.
@@ -449,7 +463,8 @@ Rules:
 - Set parent_target to the master, or to a genuinely broader spoke that introduces this page's subject.
   Do not invent pillar pages solely to create hierarchy. No self references or circular parents.
 - Give each page a concrete reader_outcome, and scope_out naming the adjacent tasks it must leave
-  to other pages. Supply 2–4 specific H2 headings, not a repeated generic article template.
+  to other pages. Supply only the specific headings needed to fulfill its content requirements.
+- Explain each keyword disposition through its problem and content requirement in the decision reason.
 - Supporting placements may be h2:Exact heading or faq:Exact question, as well as entity,
   feature or variation. Preserve the most useful location for each keyword.
 
@@ -462,6 +477,10 @@ Keep the response compact. Do not write article body copy. Return only one JSON 
     "intent_class": "transactional_tool/informational_guide/definition/interpretation/comparison/troubleshooting/reference",
     "spoke_category": "meaningful topical silo", "article_title": "...", "page_type": "article or tool",
     "content_brief": "one or two sentences explaining the page's exclusive scope",
+    "user_problem": "the concrete problem the searcher needs solved",
+    "entity_topic": "the entity or topic in the context of this problem",
+    "content_requirements": ["specific answer, evidence, step or functionality needed for completion"],
+    "url_decision_reason": "why this task needs this URL, or why its existing URL should be reused",
     "reader_outcome": "what the reader can do after using this page",
     "scope_out": ["adjacent task handled by another page"],
     "parent_target": "exact broader page target, or null for the master",
@@ -552,8 +571,13 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
         "slug": _slug(target),
         "existing_url": str(raw.get("existing_url") or "").strip() or None,
         "page_type": page_type,
-        "word_count_suggestion": max(500, min(6000, _integer_or_none(raw.get("word_count_suggestion")) or 1800)),
         "content_brief": str(raw.get("content_brief") or "").strip(),
+        "user_problem": str(raw.get("user_problem") or raw.get("reader_outcome") or raw.get("search_intent") or "").strip(),
+        "entity_topic": str(raw.get("entity_topic") or target).strip(),
+        "content_requirements": [
+            str(value).strip() for value in raw.get("content_requirements") or [] if str(value).strip()
+        ] if isinstance(raw.get("content_requirements"), list) else [],
+        "url_decision_reason": str(raw.get("url_decision_reason") or "").strip(),
         "reader_outcome": str(raw.get("reader_outcome") or raw.get("search_intent") or "").strip(),
         "scope_out": [str(value).strip() for value in raw.get("scope_out") or [] if str(value).strip()],
         "parent_target": clean_phrase(str(raw.get("parent_target") or "")) or None,
@@ -958,6 +982,10 @@ async def _audit_intent_cannibalization(
         "content_brief": page["content_brief"],
         "reader_outcome": page.get("reader_outcome", ""),
         "scope_out": page.get("scope_out", []),
+        "user_problem": page.get("user_problem", ""),
+        "entity_topic": page.get("entity_topic", ""),
+        "content_requirements": page.get("content_requirements", []),
+        "url_decision_reason": page.get("url_decision_reason", ""),
         "h2_sections": page.get("h2_sections", []),
         "faq_schema_questions": page.get("faq_schema_questions", []),
         "tool_functions": page.get("tool_functions", []),
@@ -995,6 +1023,10 @@ Inspect the actual outlines, tool functions, outcomes and supporting keyword pla
 answer or functionality would satisfy both queries, merge even if their labels or formats differ.
 Definition/meaning synonyms, free/online variants and reworded how-to guides belong on one URL.
 Report every duplicate pair in this pass. A page-count target never justifies keeping duplicates.
+Verify KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION.
+Compare the concrete problems and required answers, not keyword wording or proposed word counts.
+If one page can completely satisfy both problems, consolidate their requirements on that URL.
+Keep an independently useful task separate even when its complete answer needs very little text.
 Also reject retained keywords that are clearly unrelated, broken, competitor-branded, another company's
 product/domain, or navigational searches for another site. A keyword containing relevant topic words is
 still irrelevant when its real intent is reaching a competitor. Do not reject useful non-branded subtopics.
@@ -1238,6 +1270,9 @@ def _merge_intent_conflicts(
         winner["internal_links"] = list(dict.fromkeys([*winner["internal_links"], *removed["internal_links"]]))
         winner["tool_functions"] = list(dict.fromkeys([
             *winner.get("tool_functions", []), *removed.get("tool_functions", []),
+        ]))
+        winner["content_requirements"] = list(dict.fromkeys([
+            *winner.get("content_requirements", []), *removed.get("content_requirements", []),
         ]))
         if removed["page_type"] == "tool":
             winner["page_type"] = "tool"

@@ -5,7 +5,7 @@ export type Hub = Silo & { sub_silos?: Silo[] }
 export type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
 export type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
 export type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number; source_domains?: string[] }
-export type PageDetail = { spoke_category?: string; id?: string; parent_target?: string | null; search_intent?: string; reader_outcome?: string; scope_out?: string[]; evidence_rationale?: string; action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; word_count_suggestion?: number; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
+export type PageDetail = { spoke_category?: string; id?: string; parent_target?: string | null; search_intent?: string; user_problem?: string; entity_topic?: string; content_requirements?: string[]; url_decision_reason?: string; reader_outcome?: string; scope_out?: string[]; evidence_rationale?: string; action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
 export type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 export type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
 export type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
@@ -13,6 +13,9 @@ export type Mapping = { map_version?: number; map_warnings?: string[]; topic_clu
 export type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 export type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
 export type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
+
+export const CONTENT_COMPLETENESS = 'Every page = enough content to completely satisfy its unique intent.'
+export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
 const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs|terms(?: and conditions)?|privacy(?: policy)?|disclaimer|legal|about us|contact us|cookie policy|refund policy|editorial policy|accessibility|support|faq)\b/i
@@ -83,15 +86,23 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
   if (mapping._deduplication_check) lines.push('## Architecture validation', `- Semantic review: ${mapping._semantic_audit_status || 'not recorded'}`,  `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
   lines.push('## Global writing standards')
   ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
-  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, FAQ schema, and internal links.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', '- Treat the suggested word count as a useful depth target; satisfy intent without padding.', '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
+  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, internal links, and FAQ schema only for assigned FAQs.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', `- ${CONTENT_COMPLETENESS} No fixed word count or padding.`, `- Planning logic: ${PILLAR_CLUSTER_PROCESS}`, '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
 
   if (mapping.authority_coverage) lines.push('## Coverage target', `${mapping.authority_coverage.actual_spokes} spokes; target ${mapping.authority_coverage.minimum_spokes}–${mapping.authority_coverage.maximum_spokes}. ${mapping.authority_coverage.message}`, '')
 
   const addPage = (label: string, page: PageDetail) => {
     const target = page.target_keyword || ''
     const heading = label === 'MASTER HUB' ? `MASTER HUB: ${mapping.site_domain || page.article_title || target}` : `${label}: ${page.article_title || target}`
-    lines.push(`## ${heading}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- ${label === 'MASTER HUB' ? 'Primary keyword' : 'Target keyword'}: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Suggested word count: ${page.word_count_suggestion || 2000}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
+    lines.push(`## ${heading}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- ${label === 'MASTER HUB' ? 'Primary keyword' : 'Target keyword'}: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
     lines.push(`- Action: ${page.action || 'review'}${page.existing_url ? ` existing page ${page.existing_url}; preserve its URL` : ''}`, `- Evidence: ${page.evidence_type === 'editorial_proposal' ? 'Editorial proposal; validate demand before publishing' : 'Supplied keyword; demand may be unknown'}`)
+    lines.push(`- Search intent: ${page.search_intent || page.reader_outcome || 'Review required'}`)
+    if (page.user_problem) lines.push(`- User problem: ${page.user_problem}`)
+    if (page.entity_topic) lines.push(`- Entity/topic: ${page.entity_topic}`)
+    if (page.content_requirements?.length) {
+      lines.push('- Content requirements:')
+      page.content_requirements.forEach(requirement => lines.push(`  - ${requirement}`))
+    }
+    if (page.url_decision_reason) lines.push(`- URL decision: ${page.url_decision_reason}`)
     if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
     if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
     if (page.h2_sections?.length) { lines.push('- H2 plan:'); page.h2_sections.forEach((section) => lines.push(`  - ${section.h2_heading}: ${section.section_definition || 'Cover this section directly.'}${section.targeted_keywords_placed_here?.length ? ` Keywords: ${section.targeted_keywords_placed_here.join(', ')}` : ''}`)) }
@@ -123,6 +134,14 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
     `Page: ${page.article_title || page.target_keyword}`,
     `URL: ${page.existing_url || page.slug || '/'}`,
     `Action: ${page.action || 'review'}`,
+    CONTENT_COMPLETENESS,
+    `Planning logic: ${PILLAR_CLUSTER_PROCESS}`,
+    `Keyword: ${page.target_keyword || ''}`,
+    `Search intent: ${page.search_intent || page.reader_outcome || ''}`,
+    `User problem: ${page.user_problem || page.reader_outcome || page.search_intent || ''}`,
+    `Entity/topic: ${page.entity_topic || page.target_keyword || ''}`,
+    `Content requirements: ${(page.content_requirements || []).join('; ') || page.content_brief || 'Completely solve the assigned reader problem.'}`,
+    page.url_decision_reason ? `URL decision: ${page.url_decision_reason}` : '',
     `Reader task: ${page.reader_outcome || page.search_intent || ''}`,
     `Scope: ${page.content_brief || ''}`,
     `Leave to other pages: ${(page.scope_out || []).join('; ')}`,
