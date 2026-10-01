@@ -23,7 +23,8 @@ WRITING_STANDARDS = [
     "Use plain expert language, verifiable claims, and no filler or keyword stuffing.",
     "Use supporting keywords only in the page to which the architecture assigns them.",
     "Give each indexable page a distinct purpose, title, H1, slug, and internal-link role.",
-    "Link every spoke to the master hub and add lateral links only where they help the reader.",
+    "The homepage links selectively to major use cases, major resources and selected supporting pages; topical hubs link to deeper pages.",
+    "Link each supporting page to its relevant parent and add contextual lateral links only where they help the reader.",
 ]
 
 # A complete decision for every keyword must fit in one bounded planning response.
@@ -375,16 +376,16 @@ def _is_protected_emd_entity(keyword: str, primary_keyword: str) -> bool:
     return bool(meaningful - vague_fragments)
 
 
-def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str, target_spokes: int | None = None) -> str:
+def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str) -> str:
     planning_goal = (
-        f"Plan one homepage plus {target_spokes - 5}–{target_spokes + 5} distinct spokes, aiming for {target_spokes}. "
-        "This is a planning goal, never a quota. If evidence supports fewer, return fewer and explain the missing coverage. "
-        "Editorial proposals are unverified ideas: assess their relevance and distinct intent before accepting them. "
-        "Preserve existing owned pages in the architecture, set existing_url to their exact supplied URL, and plan an update. "
-        "A brief mention or homepage summary does not exhaust a deeper instructional intent. Do not duplicate a fully served task. "
-        "Set existing_url to null for new pages. Never assign multiple pages to one existing URL. "
-        "State an exclusive scope and concrete reader outcome for each page, and useful internal links."
-        if target_spokes else "Create only pages supported by distinct reader tasks. Keyword count is not a page quota."
+        "Final spoke count is determined by semantic validation, distinct search intent, product capability, "
+        "and unique user value. There is no minimum or target URL count. A homepage-only plan is valid. "
+        "Create a page only when it serves an independently useful task within the site's capabilities. "
+        "Do not imply unsupported product functionality; identify required capabilities in the content brief. "
+        "Editorial proposals are unverified ideas: assess relevance and distinct intent before accepting them. "
+        "Reuse supplied owned URLs for existing tasks and plan updates; never assign multiple pages to one URL. "
+        "A brief mention does not exhaust a deeper instructional intent, but do not duplicate a fully served task. "
+        "State an exclusive scope, concrete reader outcome and useful internal links for each page."
     )
     return f"""
 Act as a senior technical SEO architect whose specialty is hub-and-spoke information architecture.
@@ -463,10 +464,16 @@ Rules:
 - Every page target and every keyword named in an assignment must be copied exactly from the inventory.
 - Discard only genuinely unusable or off-topic phrases. Awkward but understandable phrases can support a page.
 - Page titles, headings, questions, briefs, and link explanations may be newly written natural language.
-- Every spoke links to the master. The master links to every spoke. Add only useful lateral links.
+- Structure navigation as primary product → major use cases → major resources → selected supporting pages.
+  The homepage must not automatically link to every spoke or give every page equal prominence.
+  Choose homepage internal_links for useful entry points, not a sitewide list in a footer or hub section.
+  Let topical hubs carry the deeper parent-child relationships. Each page links to its relevant parent;
+  add links back to the product and across related resources only when useful for the reader's next task.
 - Organize spokes by subject, using concise topic names specific to this site (not generic buckets
   such as Blogs, Articles, or Strategic topics). These groups are organizational labels, not extra URLs.
 - Set parent_target to the master, or to a genuinely broader spoke that introduces this page's subject.
+  Prefer the nearest relevant topical hub for deeper pages. Use the homepage as parent for major
+  entry points, not as the default for every spoke. Selected deeper pages may also earn a homepage link.
   Do not invent pillar pages solely to create hierarchy. No self references or circular parents.
 - Give each page a concrete reader_outcome, and scope_out naming the adjacent tasks it must leave
   to other pages. Supply only the specific headings needed to fulfill its content requirements.
@@ -999,6 +1006,8 @@ async def _audit_intent_cannibalization(
         "faq_schema_questions": page.get("faq_schema_questions", []),
         "tool_functions": page.get("tool_functions", []),
         "existing_url": page.get("existing_url"),
+        "parent_target": page.get("parent_target"),
+        "internal_links": page.get("internal_links", []),
     } for page in pages]
     keyword_placements = [{
         "keyword": item["keyword"],
@@ -1375,11 +1384,6 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
         page["internal_links"] = [value for value in dict.fromkeys(page["internal_links"]) if value in by_target and value != page["target_keyword"]]
 
     master_target = master["target_keyword"]
-    spoke_targets = [page["target_keyword"] for page in plan["spokes"]]
-    master["internal_links"] = list(dict.fromkeys([*master["internal_links"], *spoke_targets]))
-    for spoke in plan["spokes"]:
-        spoke["internal_links"] = list(dict.fromkeys([master_target, *spoke["internal_links"]]))
-
     layers: dict[str, list[str]] = {}
     for spoke in plan["spokes"]:
         category = spoke["spoke_category"] or "Strategic topics"
@@ -1420,7 +1424,7 @@ async def _build_site_architecture(
     context: str = "",
     primary_keyword: str = "",
     site_domain: str = "",
-    target_spokes: int | None = None,
+    discover_topics: bool = False,
 ) -> dict[str, Any]:
     normalized = normalize_keyword_records(records, primary_keyword)
     if not normalized:
@@ -1436,14 +1440,12 @@ async def _build_site_architecture(
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
     review_deadline = asyncio.get_running_loop().time() + 230
     discovery_status = "not_requested"
-    if target_spokes is not None:
-        if not 10 <= target_spokes <= 50:
-            raise ArchitectureAgentError("The spoke target must be between 10 and 50.")
+    if discover_topics:
         from nlp.authority import expand_inventory
-        normalized, discovery_status = await expand_inventory(normalized, context, main, target_spokes, _achat_json)
-    prompt = _prompt(normalized, context, main, target_spokes)
+        normalized, discovery_status = await expand_inventory(normalized, context, main, _achat_json, max_keywords=MAX_ARCHITECTURE_KEYWORDS)
+    prompt = _prompt(normalized, context, main)
     last_errors: list[str] = []
-    for attempt in range(2 if target_spokes else 3):
+    for attempt in range(2 if discover_topics else 3):
         try:
             payload = await _achat_json(
                 system_prompt=(
@@ -1460,16 +1462,14 @@ async def _build_site_architecture(
                     "the provider response was incomplete or malformed JSON; retrying with the compact schema"
                 )
             plan = _normalize_plan(payload, normalized, main)
-            plan = _repair_plan_consistency(plan, normalized, main, preserve_intent=bool(target_spokes))
-            if target_spokes:
-                plan["_authority_target"] = target_spokes
+            plan = _repair_plan_consistency(plan, normalized, main, preserve_intent=discover_topics)
             deterministic_rejections = [
                 *_deterministic_third_party_rejections(plan, main),
                 *_deterministic_quality_rejections(plan),
                 *_source_domain_brand_rejections(plan, normalized, main),
             ]
             _apply_relevance_rejections(plan, deterministic_rejections)
-            if not target_spokes:
+            if not discover_topics:
                 plan = _apply_tool_roi_rules(plan, normalized)
             mechanical_conflicts = _mechanical_intent_conflicts(plan)
             if mechanical_conflicts:
@@ -1520,12 +1520,11 @@ async def _build_site_architecture(
                     )
             if not last_errors:
                 plan["site_domain"] = _clean_domain(site_domain) or _domain_from_context(context)
-                if target_spokes:
-                    from nlp.authority import finish_authority_plan
-                    plan = finish_authority_plan(plan, normalized, context, target_spokes, discovery_status)
-                    final_errors = validate_architecture(plan, normalized, main)
-                    if final_errors:
-                        raise ValueError("; ".join(final_errors))
+                from nlp.authority import finish_authority_plan
+                plan = finish_authority_plan(plan, normalized, context, discovery_status)
+                final_errors = validate_architecture(plan, normalized, main)
+                if final_errors:
+                    raise ValueError("; ".join(final_errors))
                 from nlp.topical_map import attach_topical_map
                 return attach_topical_map(_apply_assignments(plan))
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))
@@ -1553,13 +1552,13 @@ def usable_keywords(plan: dict[str, Any]) -> list[str]:
 
 async def build_site_architecture(
     records: list[dict[str, Any]], *, context: str = "", primary_keyword: str = "",
-    site_domain: str = "", target_spokes: int | None = None,
+    site_domain: str = "", discover_topics: bool = False,
 ) -> dict[str, Any]:
     try:
         async with asyncio.timeout(240):
             return await _build_site_architecture(
                 records, context=context, primary_keyword=primary_keyword,
-                site_domain=site_domain, target_spokes=target_spokes,
+                site_domain=site_domain, discover_topics=discover_topics,
             )
     except TimeoutError as exc:
         raise ArchitectureAgentError(

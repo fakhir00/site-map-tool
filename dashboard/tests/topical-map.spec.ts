@@ -42,6 +42,8 @@ test('builds a map with an explicit main topic and exports actual URL links', as
   await page.getByRole('button', { name: 'Build topical map' }).click()
   await expect(page.getByRole('heading', { name: 'Your topical authority map', exact: true })).toBeVisible()
   expect(submitted?.primary_keyword).toBe(primary)
+  expect(submitted).not.toHaveProperty('target_spokes')
+  await expect(page.getByLabel('Target spokes', { exact: true })).toHaveCount(0)
   expect(submitted?.existing_urls).toEqual([method.existing_url])
   await page.getByRole('button', { name: /Calculate Lunar Age by Hand/ }).click()
   const brief = page.getByRole('complementary', { name: 'Page brief' })
@@ -68,6 +70,8 @@ test('builds a map with an explicit main topic and exports actual URL links', as
 test('saved map sends its page brief and project to the article writer', async ({ page }) => {
   await setup(page, true)
   await loadSaved(page)
+  await expect(page.getByText('2 spokes', { exact: true })).toBeVisible()
+  await expect(page.getByText('More distinct topic evidence is needed.', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: /Calculate Lunar Age by Hand/ }).click()
   await page.getByRole('button', { name: 'Improve page', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/write-blog\\?.*project_id=${id}`))
@@ -180,6 +184,11 @@ test('architecture exports replace legacy length quotas with intent and content 
   expect(prompt).not.toContain('Suggested word count')
   expect(prompt).not.toContain('1800')
   expect(prompt).not.toContain('2000')
+  expect(prompt).toContain('There is no minimum or target URL count.')
+  expect(prompt).not.toContain('20–30')
+  expect(prompt).not.toContain('More distinct topic evidence is needed.')
+  expect(prompt).toContain('Topical hubs handle deeper parent-child links.')
+  expect(prompt).not.toContain('Every spoke links to the Master Hub')
 })
 
 

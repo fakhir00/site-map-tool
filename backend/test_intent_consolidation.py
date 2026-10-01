@@ -36,7 +36,7 @@ class IntentConsolidationTests(unittest.TestCase):
         ):
             result = asyncio.run(build_site_architecture(
                 [{"phrase": target} for target in targets], primary_keyword=targets[0],
-                target_spokes=25 if authority else None,
+                discover_topics=authority,
                 context=context,
             ))
         return result, chat

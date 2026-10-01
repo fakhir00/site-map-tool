@@ -34,6 +34,27 @@ class TopicalMapTests(unittest.TestCase):
         self.assertEqual(sum(len(group['page_ids']) for group in result['topic_clusters']), 3)
         self.assertEqual({page['id'] for page in attach_topical_map(copy.deepcopy(plan))['spokes']}, ids - {pages[0]['id']})
 
+    def test_homepage_links_to_entry_points_and_only_selected_deeper_pages(self):
+        plan = self.plan()
+        parent, child, featured = plan['spokes']
+        parent['parent_target'] = PRIMARY
+        child['parent_target'] = parent['target_keyword']
+        featured['parent_target'] = parent['target_keyword']
+        for page in [plan['master_hub'], *plan['spokes']]:
+            page['internal_links'] = []
+        plan['master_hub']['internal_links'] = [featured['target_keyword']]
+        result = attach_topical_map(_apply_assignments(plan))
+        links = {(edge['source_keyword'], edge['target_keyword']) for edge in result['link_plan']}
+        self.assertEqual(set(result['master_hub']['internal_links']),
+                         {parent['target_keyword'], featured['target_keyword']})
+        self.assertNotIn((PRIMARY, child['target_keyword']), links)
+        self.assertNotIn((child['target_keyword'], PRIMARY), links)
+        self.assertIn((parent['target_keyword'], child['target_keyword']), links)
+        self.assertIn((child['target_keyword'], parent['target_keyword']), links)
+        self.assertIn((parent['target_keyword'], featured['target_keyword']), links)
+        again = attach_topical_map(_apply_assignments(result))
+        self.assertEqual({(edge['source_keyword'], edge['target_keyword']) for edge in again['link_plan']}, links)
+
     def test_invalid_and_circular_parents_still_reach_the_main_hub(self):
         plan = self.plan()
         first, second, third = plan['spokes']
@@ -67,16 +88,16 @@ class TopicalMapTests(unittest.TestCase):
         self.assertEqual(page['faq_schema_questions'][0]['targeted_keywords_placed_here'], ['lunar age questions'])
         self.assertIn('lunar age walkthrough', page['targeted_keywords'])
 
-    def test_shortfall_keeps_valid_map_without_a_second_full_generation(self):
+    def test_small_map_is_valid_without_a_second_full_generation(self):
         records = [{'phrase': PRIMARY}, *({'phrase': topic[0]} for topic in TOPICS)]
         payload = fixture_payload(TOPICS[:1])
         for topic in TOPICS[1:]:
             payload['keyword_decisions'].append([topic[0], 'supporting', PRIMARY, 'variation', 'Fixture consolidation'])
         chat = AsyncMock(side_effect=[{'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []}])
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', chat):
-            result = asyncio.run(build_site_architecture(records, primary_keyword=PRIMARY, target_spokes=25))
+            result = asyncio.run(build_site_architecture(records, primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(chat.await_count, 3)
-        self.assertEqual(result['authority_coverage']['status'], 'needs_research')
+        self.assertEqual(result['authority_coverage']['status'], 'validated')
         self.assertEqual(result['map_version'], 2)
 
     def test_authority_format_follows_reader_task_even_without_tool_keyword_or_volume(self):
@@ -85,7 +106,7 @@ class TopicalMapTests(unittest.TestCase):
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
             {'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []},
         ])):
-            result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, {'phrase': topic[0]}], primary_keyword=PRIMARY, target_spokes=25))
+            result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, {'phrase': topic[0]}], primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(result['spokes'][0]['page_type'], 'tool')
         self.assertIsNone(result['spokes'][0]['search_volume'])
 
@@ -96,14 +117,14 @@ class TopicalMapTests(unittest.TestCase):
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
             {'proposals': []}, payload, conflict, {'passed': True, 'conflicts': [], 'rejections': []},
         ])):
-            result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, *({'phrase': t[0]} for t in TOPICS[:2])], primary_keyword=PRIMARY, target_spokes=25))
+            result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, *({'phrase': t[0]} for t in TOPICS[:2])], primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(len(result['spokes']), 1)
         self.assertEqual(result['_semantic_audit_status'], 'passed')
 
     def test_deadline_returns_actionable_failure(self):
         with patch('nlp.hub_spoke_agent._build_site_architecture', new=AsyncMock(side_effect=TimeoutError)):
             with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
-                asyncio.run(build_site_architecture([{'phrase': PRIMARY}], target_spokes=25))
+                asyncio.run(build_site_architecture([{'phrase': PRIMARY}], discover_topics=True))
 
     def test_page_brief_reaches_the_actual_writing_prompt(self):
         from nlp.openrouter import write_prompt
@@ -149,7 +170,7 @@ class TopicalMapTests(unittest.TestCase):
     def test_large_inventory_is_rejected_before_spending_provider_credits(self):
         with patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock()) as chat:
             with self.assertRaisesRegex(ArchitectureAgentError, '300 distinct keywords'):
-                asyncio.run(build_site_architecture([{'phrase': f'lunar age topic {index}'} for index in range(301)], target_spokes=25))
+                asyncio.run(build_site_architecture([{'phrase': f'lunar age topic {index}'} for index in range(301)], discover_topics=True))
         chat.assert_not_awaited()
 
     def test_merging_preserves_existing_page_outline_and_redirects_incoming_links(self):

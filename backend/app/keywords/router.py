@@ -387,7 +387,7 @@ async def generate_hub_spoke(
             records,
             context=architecture_context,
             primary_keyword=main_kw,
-            target_spokes=25,
+            discover_topics=True,
             site_domain=project.own_domain or project.domain,
         )
     except ArchitectureAgentError as exc:

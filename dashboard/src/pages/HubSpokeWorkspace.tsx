@@ -6,7 +6,7 @@ import { api, type Project } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { TopicalAuthorityMap } from '../components/TopicalAuthorityMap'
-import { downloadText, grandArchitecturePrompt, pageArchitectureBrief, normalizeSavedMapping, parseFile, type Mapping, type KeywordMetric, type HistorySummary, type HistoryDetail, type ProjectImport, type PageDetail } from '../lib/hubSpoke'
+import { PAGE_COUNT_POLICY, downloadText, grandArchitecturePrompt, pageArchitectureBrief, normalizeSavedMapping, parseFile, type Mapping, type KeywordMetric, type HistorySummary, type HistoryDetail, type ProjectImport, type PageDetail } from '../lib/hubSpoke'
 
 function primaryFromContext(context: string, fallback: string) {
   try { return String(JSON.parse(context).primary_keyword || fallback) } catch { return fallback }
@@ -18,7 +18,6 @@ export function HubSpokeWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams()
   const inputRef = useRef<HTMLInputElement>(null)
   const importedKeyRef = useRef('')
-  const [targetSpokes, setTargetSpokes] = useState(25)
   const [keywords, setKeywords] = useState<string[]>([])
   const [keywordText, setKeywordText] = useState('')
   const [primaryKeyword, setPrimaryKeyword] = useState('')
@@ -104,7 +103,7 @@ export function HubSpokeWorkspace() {
     setBusy('build'); setError(''); setElapsed(0)
     try {
       const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
-        keywords, keyword_data: keywordData, target_spokes: targetSpokes, primary_keyword: primaryKeyword.trim(), existing_urls: urls, context, project_id: sourceProjectId,
+        keywords, keyword_data: keywordData, primary_keyword: primaryKeyword.trim(), existing_urls: urls, context, project_id: sourceProjectId,
       })
       setCleaned(result.keywords); setMapping(normalizeSavedMapping(result.clusters)); setActiveHistoryId(result.history_id)
       setMapContext(context); setMapProjectId(sourceProjectId); setDirty(false)
@@ -120,14 +119,14 @@ export function HubSpokeWorkspace() {
       setKeywords(saved.keywords); setKeywordText(saved.keywords.join('\n')); setKeywordData(saved.clusters?._keyword_metrics || [])
       setPrimaryKeyword(saved.clusters.master_hub?.target_keyword || primaryFromContext(saved.context, saved.keywords[0] || ''))
       setCleaned(saved.cleaned_keywords); setContext(saved.context); setExistingUrls(''); setMapContext(saved.context); setMapping(normalizeSavedMapping(saved.clusters))
-      setTargetSpokes(saved.clusters?.authority_coverage?.target_spokes || 25); setSourceProjectId(saved.project_id)
+      setSourceProjectId(saved.project_id)
       setMapProjectId(saved.project_id); setActiveHistoryId(saved.id); setDirty(false)
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not load the saved map') }
     finally { setBusy(null) }
   }
   const reset = () => {
     detachImport(); setKeywords([]); setKeywordText(''); setKeywordData([]); setPrimaryKeyword(''); setContext(''); setMapping(null)
-    setMapContext(''); setMapProjectId(null); setExistingUrls(''); setCleaned([]); setActiveHistoryId(null); setTargetSpokes(25); setError(''); setDirty(false)
+    setMapContext(''); setMapProjectId(null); setExistingUrls(''); setCleaned([]); setActiveHistoryId(null); setError(''); setDirty(false)
   }
   const openPage = (page: PageDetail) => {
     const params = new URLSearchParams({ keyword: page.target_keyword || '' })
@@ -161,12 +160,12 @@ export function HubSpokeWorkspace() {
             <label className="block text-sm font-medium">Main topic / homepage keyword<input aria-label="Main topic" list="map-keyword-options" maxLength={300} className={inputClass} value={primaryKeyword} onChange={event => { setPrimaryKeyword(event.target.value); setDirty(true) }} placeholder="e.g. lunar age calculator" /><datalist id="map-keyword-options">{keywords.slice(0, 300).map(keyword => <option key={keyword} value={keyword} />)}</datalist></label>
             <label className="block text-sm font-medium">Website and audience context<textarea aria-label="Website and audience context" maxLength={12000} className={`${inputClass} min-h-32`} value={context} onChange={event => { setContext(event.target.value); setDirty(true) }} placeholder="Your site URL, audience, what you offer, existing page URLs, and topics to exclude. Be specific about what your site can help people do." /></label>
             <label className="block text-sm font-medium">Existing page URLs <span className="font-normal text-slate-400">(optional)</span><textarea aria-label="Existing page URLs" className={`${inputClass} min-h-20 font-mono text-xs`} value={existingUrls} onChange={event => { setExistingUrls(event.target.value); setDirty(true) }} placeholder={'https://example.com/\nhttps://example.com/existing-guide/'} /><span className="mt-1 block text-xs font-normal text-slate-500">One URL per line. Add pages you own; URLs alone do not verify their content.</span></label>
-            <label className="block text-sm font-medium">Target spokes <span className="font-normal text-slate-400">(supporting pages)</span><div className="mt-2 flex items-center gap-3"><input aria-label="Target spokes" type="number" min={10} max={50} value={targetSpokes} onChange={event => { setTargetSpokes(Number(event.target.value)); setDirty(true) }} className="w-20 rounded-lg border border-slate-300 bg-transparent p-2 dark:border-slate-700" /><span className="text-xs leading-relaxed text-slate-500">A planning guide, not a quota.<br />Similar queries share a page; distinct tasks get their own.</span></div></label>
+            <p className="text-sm leading-relaxed text-slate-500">{PAGE_COUNT_POLICY}</p>
           </div>
         </div>
       </fieldset>
       {projectImport.isFetching && <p role="status" className="mt-4 text-sm text-slate-500">Loading keywords and site context…</p>}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5 dark:border-slate-800"><p className="max-w-lg text-xs leading-relaxed text-slate-500">The planner groups intents, checks overlap and proposes missing topics. Research ideas are labeled separately from supplied keywords.</p><Button disabled={locked || !keywords.length || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000 || !Number.isInteger(targetSpokes) || targetSpokes < 10 || targetSpokes > 50} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button></div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5 dark:border-slate-800"><p className="max-w-lg text-xs leading-relaxed text-slate-500">The planner groups intents, checks overlap and proposes missing topics. Research ideas are labeled separately from supplied keywords.</p><Button disabled={locked || !keywords.length || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button></div>
       {totalInputKeywords > 300 && <p role="alert" className="mt-3 text-sm text-rose-700">Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.</p>}
       {busy === 'build' && <div role="status" className="mt-4 rounded-lg bg-cyan-50 p-4 text-sm text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200"><p className="font-semibold">Planning your topic coverage · {elapsed}s</p><p className="mt-1 text-xs">Discovery, page planning and intent review can take a few minutes. Keep this tab open; successful maps are saved automatically.</p></div>}
       {visibleError && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{visibleError}</p>}

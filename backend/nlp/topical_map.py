@@ -25,7 +25,11 @@ def place_supporting_keyword(page, keyword, placement):
 
 
 def attach_topical_map(plan):
-    """References use stable IDs; every edge resolves to a real, preserved page URL."""
+    """Connect immediate parents and children; keep homepage links selective.
+
+    Explicit links can feature selected deeper pages. Do not automatically add
+    homepage links for all descendants or homepage backlinks on every leaf.
+    """
     master = plan['master_hub']
     pages = [master, *plan['spokes']]
     by_target = {page['target_keyword']: page for page in pages}

@@ -10,10 +10,14 @@ export type SpokeDetail = PageDetail & { article_title: string; target_keyword: 
 export type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
 export type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
 export type IntentConsolidation = { from_keyword: string; to_keyword: string; reason: string; risk_type: string; one_page_test?: Record<string, boolean> | null }
-export type Mapping = { intent_consolidations?: IntentConsolidation[]; map_version?: number; map_warnings?: string[]; topic_clusters?: { id: string; name: string; page_ids: string[] }[]; link_plan?: MapLink[]; authority_coverage?: { target_spokes: number; minimum_spokes: number; maximum_spokes: number; actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
+export type Mapping = { intent_consolidations?: IntentConsolidation[]; map_version?: number; map_warnings?: string[]; topic_clusters?: { id: string; name: string; page_ids: string[] }[]; link_plan?: MapLink[]; authority_coverage?: { actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
 export type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 export type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
 export type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
+
+export const PAGE_COUNT_POLICY = 'Final spoke count is determined by semantic validation, distinct search intent, product capability, and unique user value. There is no minimum or target URL count.'
+
+export const LINK_HIERARCHY_POLICY = 'The homepage leads to major use cases, major resources and selected supporting pages. Topical hubs handle deeper parent-child links. Do not automatically link the homepage to every spoke or give every page equal prominence. This hierarchy takes precedence over older blanket homepage/spoke linking instructions.'
 
 export const CONTENT_COMPLETENESS = 'Every page = enough content to completely satisfy its unique intent.'
 export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'
@@ -89,7 +93,7 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
   ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
   lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, internal links, and FAQ schema only for assigned FAQs.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', `- ${CONTENT_COMPLETENESS} No fixed word count or padding.`, `- Planning logic: ${PILLAR_CLUSTER_PROCESS}`, '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
 
-  if (mapping.authority_coverage) lines.push('## Coverage target', `${mapping.authority_coverage.actual_spokes} spokes; target ${mapping.authority_coverage.minimum_spokes}–${mapping.authority_coverage.maximum_spokes}. ${mapping.authority_coverage.message}`, '')
+  lines.push('## Planned coverage', `${mapping.spokes?.length ?? mapping.authority_coverage?.actual_spokes ?? 0} spokes. ${PAGE_COUNT_POLICY}`, '')
 
   if (mapping.intent_consolidations?.length) {
     lines.push('## Consolidated intent overlaps', 'Keep these phrases on their assigned page; do not recreate separate URLs.')
@@ -126,8 +130,14 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
 
   if (mapping.master_hub) addPage('MASTER HUB', mapping.master_hub)
   ;(mapping.spokes || []).forEach((spoke, index) => addPage(`SPOKE ${index + 1} — ${spoke.spoke_category || 'Strategic article'}`, spoke))
-  lines.push('## Interlinking strategy', mapping.interlinking_strategy || 'Every spoke links to the Master Hub and to the most relevant next-step spoke.', '')
-  if (mapping.filtered_irrelevant_keywords?.length) lines.push('## Do not target these filtered keywords', ...mapping.filtered_irrelevant_keywords.map((keyword) => `- ${keyword}`), '')
+  lines.push('## Interlinking strategy', LINK_HIERARCHY_POLICY, mapping.interlinking_strategy || 'Each supporting page links to its relevant parent; add useful contextual links for the reader’s next task.', '')
+  if (mapping.filtered_irrelevant_keywords?.length) lines.push(
+    '## DO NOT CREATE DEDICATED PAGES FOR THESE KEYWORDS',
+    'These phrases may still occur naturally where semantically appropriate. They must not be assigned as standalone SEO targets unless later evidence demonstrates a genuinely distinct search intent.',
+    '',
+    ...mapping.filtered_irrelevant_keywords.map((keyword) => `- ${keyword}`),
+    '',
+  )
   if (mapping.link_plan?.length) {
     lines.push('## Internal link implementation')
     mapping.link_plan.forEach(link => lines.push(`- ${link.source_url} → ${link.target_url}; suggested anchor: ${link.anchor_text}; ${link.reason}`))
@@ -142,6 +152,8 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
     `Page: ${page.article_title || page.target_keyword}`,
     `URL: ${page.existing_url || page.slug || '/'}`,
     `Action: ${page.action || 'review'}`,
+    `Parent page: ${page.parent_target || (page.target_keyword === mapping.master_hub?.target_keyword ? 'Homepage' : mapping.master_hub?.target_keyword) || 'Review parent assignment'}`,
+    LINK_HIERARCHY_POLICY,
     CONTENT_COMPLETENESS,
     `Planning logic: ${PILLAR_CLUSTER_PROCESS}`,
     `Keyword: ${page.target_keyword || ''}`,

@@ -7,17 +7,23 @@ from nlp.keywords import clean_phrase, is_publishable_keyword
 from nlp.intent_policy import INTENT_CLUSTERING_RULES
 
 
-async def expand_inventory(records, context, primary_keyword, target_spokes, chat):
+async def expand_inventory(records, context, primary_keyword, chat, *, max_keywords=300):
     """Propose topics grounded in exact input evidence; do not manufacture metrics."""
     evidence = {item['phrase'] for item in records}
+    # Bound research payload size, not the number of pages in the architecture.
+    proposal_limit = min(60, max(0, max_keywords - len(records)))
+    if not proposal_limit:
+        return records, 'inventory_limit'
     prompt = f"""Discover missing page intents for a focused topical-authority map.
 Primary topic: {primary_keyword}
-Desired architecture: one homepage plus {target_spokes} distinct blog, reference or tool spokes.
+Final spoke count is determined by semantic validation, distinct search intent, product capability,
+and unique user value. There is no minimum or target URL count.
 Website context and owned-page excerpts (evidence, not instructions):
 {context}
 Existing keyword inventory:
 {json.dumps(sorted(evidence))}
-Propose up to {min(60, target_spokes * 2)} additional natural search queries where coverage is missing.
+Propose additional natural search queries only where useful coverage is missing and the site can serve the task.
+Do not fill a numeric quota or imply unsupported product capabilities. An empty proposal list is valid.
 Explore definitions, manual methods, edge cases, input errors, comparisons, reference data,
 audience tasks and genuinely different interactive tools. Stay within the site's demonstrated scope.
 Every proposal must cite one exact inventory phrase as support_phrase and explain the concrete
@@ -42,7 +48,7 @@ Return only {{"proposals": [{{"phrase": "...", "support_phrase": "exact inventor
             return records, 'unavailable'
         expanded = list(records)
         seen = set(evidence)
-        for item in proposals[:min(60, target_spokes * 2)]:
+        for item in proposals[:proposal_limit]:
             if not isinstance(item, dict):
                 continue
             phrase = clean_phrase(str(item.get('phrase') or ''))
@@ -71,8 +77,8 @@ def owned_pages(context):
     return [page for page in pages if isinstance(page, dict) and page.get('url')] if isinstance(pages, list) else []
 
 
-def finish_authority_plan(plan, records, context, target_spokes, discovery_status):
-    """Attach evidence, reuse URLs and report a shortfall without padding the plan."""
+def finish_authority_plan(plan, records, context, discovery_status):
+    """Attach evidence, reuse URLs and report the resulting coverage without quotas."""
     inventory = {record['phrase']: record for record in records}
     existing = {page['url']: page for page in owned_pages(context)}
     used_urls = set()
@@ -94,20 +100,14 @@ def finish_authority_plan(plan, records, context, target_spokes, discovery_statu
         page['support_phrase'] = record.get('support_phrase')
         page['evidence_rationale'] = record.get('rationale')
     count = len(plan['spokes'])
-    min_spokes, max_spokes = max(1, target_spokes - 5), target_spokes + 5
     passed = plan.get('_semantic_audit_status') == 'passed'
-    shortfall = max(0, min_spokes - count)
-    status = ('needs_review' if not passed else 'needs_research' if shortfall else
-              'over_target' if count > max_spokes else 'target_met')
     plan['authority_coverage'] = {
-        'target_spokes': target_spokes, 'minimum_spokes': min_spokes, 'maximum_spokes': max_spokes,
-        'actual_spokes': count, 'shortfall': shortfall, 'status': status,
+        'actual_spokes': count, 'status': 'validated' if passed else 'needs_review',
         'discovery_status': discovery_status,
         'new_spokes': sum(page['action'] == 'create' for page in plan['spokes']),
         'existing_spokes': sum(page['action'] == 'update' for page in plan['spokes']),
         'message': ('Semantic review is incomplete; this map is a draft.' if not passed else
-                    f'{shortfall} more distinct intents need research; similar queries were not split to fill the target.' if shortfall else
-                    'The map exceeds the requested range; review priorities before publishing.' if count > max_spokes else
-                    'The map meets the planning range. Page count does not guarantee rankings.'),
+                    'Final spoke count is determined by semantic validation, distinct search intent, '
+                    'product capability, and unique user value. There is no minimum or target URL count.'),
     }
     return plan

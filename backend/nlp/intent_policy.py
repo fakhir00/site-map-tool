@@ -5,6 +5,10 @@ import re
 ONE_PAGE_TEST_KEYS = ("same_user", "same_task", "same_answer", "same_serp_intent", "same_entity")
 
 INTENT_CLUSTERING_RULES = """
+Final spoke count is determined by semantic validation, distinct search intent, product capability,
+and unique user value. There is no minimum or target URL count. Do not add pages just to increase coverage
+counts. Reject page proposals that depend on capabilities outside the stated product/site scope.
+
 CLUSTER BY USER INTENT, NOT WORD SIMILARITY
 A semantic cluster represents one coherent user need. Shared words are not sufficient evidence.
 Normalize obvious wording/order variations, but retain the original keywords as supporting phrases.

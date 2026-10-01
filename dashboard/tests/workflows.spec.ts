@@ -225,18 +225,19 @@ test('saved keyword actions report API and clipboard failures', async ({ page })
   await expect(page.getByRole('status')).toContainText('Could not copy')
 })
 
-test('authority planner sends the spoke target and displays an honest shortfall', async ({ page }) => {
+test('authority planner uses intent validation without sending a spoke target', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('token', 'test-token'))
   await mockAPI(page)
   let submitted: Record<string, unknown> | undefined
   await page.route('**/api/hub-spoke/build', route => {
     submitted = route.request().postDataJSON()
-    return route.fulfill({ json: { keywords: ['lunar age'], history_id: id, clusters: { hubs: [], spokes: [], authority_coverage: { target_spokes: 25, minimum_spokes: 20, maximum_spokes: 30, actual_spokes: 0, new_spokes: 0, existing_spokes: 0, status: 'needs_research', message: 'More distinct topic evidence is needed.', discovery_status: 'unavailable' } } } })
+    return route.fulfill({ json: { keywords: ['lunar age'], history_id: id, clusters: { hubs: [], spokes: [], authority_coverage: { actual_spokes: 0, new_spokes: 0, existing_spokes: 0, status: 'validated', message: 'No additional distinct task was established.', discovery_status: 'unavailable' } } } })
   })
   await page.goto('/hub-spoke')
   await page.locator('input[type=file]').setInputFiles({ name: 'keywords.txt', mimeType: 'text/plain', buffer: Buffer.from('lunar age\nchinese age') })
   await page.getByRole('button', { name: 'Build topical map' }).click()
-  await expect(page.getByText('0 spokes · target 20–30', { exact: true })).toBeVisible()
-  await expect(page.getByText('More distinct topic evidence is needed.', { exact: true })).toBeVisible()
-  expect(submitted?.target_spokes).toBe(25)
+  await expect(page.getByText('0 spokes', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Target spokes', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Topic discovery was unavailable; this map uses the supplied inventory.', { exact: true })).toBeVisible()
+  expect(submitted).not.toHaveProperty('target_spokes')
 })

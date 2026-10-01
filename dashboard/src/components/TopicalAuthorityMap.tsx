@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowRight, CheckCircle2, Download, FileText, Link2, Network, Search, Wrench, X } from 'lucide-react'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
-import { downloadText, type Mapping, type PageDetail, type MapLink } from '../lib/hubSpoke'
+import { PAGE_COUNT_POLICY, downloadText, type Mapping, type PageDetail, type MapLink } from '../lib/hubSpoke'
 
 type Props = { mapping: Mapping; onOpen: (page: PageDetail) => void }
 const colors = ['border-cyan-400', 'border-violet-400', 'border-emerald-400', 'border-amber-400', 'border-rose-400', 'border-blue-400']
@@ -70,7 +70,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
     </div>
     <Card className="p-4">
       <div className="flex flex-wrap items-center gap-2 text-sm font-semibold"><CheckCircle2 className={`h-4 w-4 ${mapping._semantic_audit_status === 'passed' ? 'text-emerald-600' : 'text-amber-600'}`} />{mapping._semantic_audit_status === 'passed' ? 'Intent review passed' : 'Intent review needed'}<span className="font-normal text-slate-500">· Editorial plan; validate demand before publishing</span></div>
-      {mapping.authority_coverage && <div className="mt-3 space-y-1 text-sm"><p className="font-semibold">{mapping.authority_coverage.actual_spokes} spokes · target {mapping.authority_coverage.minimum_spokes}–{mapping.authority_coverage.maximum_spokes}</p><p className="text-slate-500">{mapping.authority_coverage.message}</p>{mapping.authority_coverage.discovery_status === 'unavailable' && <p className="text-amber-700 dark:text-amber-300">Topic discovery was unavailable; this map uses the supplied inventory.</p>}</div>}
+      {mapping.authority_coverage && <div className="mt-3 space-y-1 text-sm"><p className="font-semibold">{mapping.spokes?.length ?? mapping.authority_coverage.actual_spokes} spokes</p><p className="text-slate-500">{PAGE_COUNT_POLICY}</p>{mapping.authority_coverage.discovery_status === 'unavailable' && <p className="text-amber-700 dark:text-amber-300">Topic discovery was unavailable; this map uses the supplied inventory.</p>}</div>}
       {mapping.map_warnings?.map(warning => <p key={warning} className="mt-2 text-sm text-amber-700 dark:text-amber-300">{warning}</p>)}
       {mapping._planning_thought && <details className="mt-3 text-sm"><summary className="cursor-pointer text-slate-500">Planning rationale</summary><p className="mt-2 leading-relaxed">{mapping._planning_thought}</p></details>}
       {!!mapping.intent_consolidations?.length && <details className="mt-3 text-sm"><summary className="cursor-pointer font-semibold">Consolidated intent overlaps ({mapping.intent_consolidations.length})</summary><p className="mt-2 text-slate-500">These keywords share an existing task. Keep them on the assigned page instead of creating extra URLs.</p><ul className="mt-3 space-y-3">{mapping.intent_consolidations.map(item => <li key={item.from_keyword} className="break-words"><p className="font-medium">{item.from_keyword} → {item.to_keyword}</p><p className="mt-1 text-xs text-slate-500">{item.risk_type === 'doorway' ? 'Near-duplicate page risk' : 'Same user need'}: {item.reason}</p></li>)}</ul></details>}

@@ -33,7 +33,6 @@ class KeywordWorkspaceRequest(BaseModel):
     primary_keyword: str = Field(default="", max_length=300)
     existing_urls: list[HttpUrl] = Field(default_factory=list, max_length=100)
     project_id: uuid.UUID | None = None
-    target_spokes: int = Field(default=25, ge=10, le=50)
 
 
 class HubSpokeHistorySummary(BaseModel):
@@ -160,7 +159,7 @@ async def build_uploaded_hub_spoke(
         raise HTTPException(status_code=422, detail="Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.")
     primary = _primary_keyword_from_context(context) or records[0]["phrase"]
     try:
-        mapping = await build_site_architecture(records, context=context, primary_keyword=primary, target_spokes=body.target_spokes)
+        mapping = await build_site_architecture(records, context=context, primary_keyword=primary, discover_topics=True)
     except ArchitectureAgentError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

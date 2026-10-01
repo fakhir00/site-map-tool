@@ -53,6 +53,42 @@ def fixture_payload(topics):
 
 
 class AuthorityPlanningTests(unittest.TestCase):
+    def test_homepage_only_is_validated_without_any_count_shortfall(self):
+        chat = AsyncMock(side_effect=[{'proposals': []}, fixture_payload([]),
+                                     {'passed': True, 'conflicts': [], 'rejections': []}])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', chat,
+        ):
+            plan = asyncio.run(build_site_architecture(
+                [{'phrase': PRIMARY}], primary_keyword=PRIMARY, discover_topics=True,
+            ))
+        coverage = plan['authority_coverage']
+        self.assertEqual(plan['spokes'], [])
+        self.assertEqual(coverage['actual_spokes'], 0)
+        self.assertEqual(coverage['status'], 'validated')
+        for key in ('target_spokes', 'minimum_spokes', 'maximum_spokes', 'shortfall'):
+            self.assertNotIn(key, coverage)
+        for call in chat.await_args_list:
+            prompt = call.kwargs['user_prompt']
+            self.assertIn('There is no minimum or target URL count.', prompt)
+            self.assertIn('product capability', prompt)
+
+    def test_discovery_respects_inventory_capacity_without_imposing_a_page_target(self):
+        chat = AsyncMock(return_value={'proposals': [
+            {'phrase': phrase, 'support_phrase': PRIMARY, 'rationale': intent}
+            for phrase, intent, _, _ in TOPICS[:3]
+        ]})
+        expanded, status = asyncio.run(expand_inventory(
+            [{'phrase': PRIMARY}], '', PRIMARY, chat, max_keywords=2,
+        ))
+        self.assertEqual(len(expanded), 2)
+        self.assertEqual(status, 'completed')
+        chat.reset_mock()
+        unchanged, status = asyncio.run(expand_inventory(expanded, '', PRIMARY, chat, max_keywords=2))
+        self.assertEqual(unchanged, expanded)
+        self.assertEqual(status, 'inventory_limit')
+        chat.assert_not_awaited()
+
     def test_expansion_requires_exact_evidence_and_never_inherits_fake_metrics(self):
         records = [{'phrase': PRIMARY}]
         chat = AsyncMock(return_value={'proposals': [
@@ -61,7 +97,7 @@ class AuthorityPlanningTests(unittest.TestCase):
             {'phrase': 'chinese zodiac calculator', 'support_phrase': 'absent evidence', 'rationale': 'Nearby'},
             {'phrase': 'lunar age leap month rules', 'support_phrase': PRIMARY, 'rationale': 'Duplicate'},
         ]})
-        expanded, status = asyncio.run(expand_inventory(records, '', PRIMARY, 25, chat))
+        expanded, status = asyncio.run(expand_inventory(records, '', PRIMARY, chat))
         self.assertEqual(status, 'completed')
         self.assertEqual(len(expanded), 2)
         self.assertIsNone(expanded[1]['search_volume'])
@@ -82,22 +118,22 @@ class AuthorityPlanningTests(unittest.TestCase):
             ]),
         ) as chat:
             plan = asyncio.run(build_site_architecture([{'phrase': PRIMARY}], context=context,
-                                                       primary_keyword=PRIMARY, target_spokes=25))
+                                                       primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(len(plan['spokes']), 25)
         accuracy = next(p for p in plan['spokes'] if p['target_keyword'] == 'lunar age calculator accuracy')
         self.assertEqual(accuracy['page_type'], 'article')
-        self.assertEqual(plan['authority_coverage']['status'], 'target_met')
+        self.assertEqual(plan['authority_coverage']['status'], 'validated')
         self.assertEqual(plan['authority_coverage']['existing_spokes'], 1)
         self.assertEqual(plan['authority_coverage']['new_spokes'], 24)
         self.assertEqual(len({p['slug'] for p in plan['spokes']}), 25)
         self.assertEqual(len(plan['master_hub']['internal_links']), 25)
         self.assertTrue(all(PRIMARY in p['internal_links'] for p in plan['spokes']))
         self.assertTrue(all(p['search_volume'] is None for p in plan['spokes']))
-        self.assertIn('20–30', chat.await_args_list[1].kwargs['user_prompt'])
+        self.assertIn('There is no minimum or target URL count.', chat.await_args_list[1].kwargs['user_prompt'])
         updated = next(p for p in plan['spokes'] if p['action'] == 'update')
         self.assertEqual(updated['slug'], '/calendar-conversion/')
 
-    def test_shortfall_is_reported_without_promoting_same_intent_variants(self):
+    def test_small_plan_is_validated_without_promoting_same_intent_variants(self):
         payload = fixture_payload(TOPICS[:1])
         variant = 'free lunar age calculator'
         payload['keyword_decisions'].append([variant, 'supporting', PRIMARY, 'feature', 'Same tool'])
@@ -107,10 +143,10 @@ class AuthorityPlanningTests(unittest.TestCase):
                 {'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []},
             ]),
         ):
-            plan = asyncio.run(build_site_architecture(records, primary_keyword=PRIMARY, target_spokes=25))
+            plan = asyncio.run(build_site_architecture(records, primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(len(plan['spokes']), 1)
-        self.assertEqual(plan['authority_coverage']['status'], 'needs_research')
-        self.assertEqual(plan['authority_coverage']['shortfall'], 19)
+        self.assertEqual(plan['authority_coverage']['status'], 'validated')
+        self.assertNotIn('shortfall', plan['authority_coverage'])
         self.assertIn(variant, plan['master_hub']['targeted_keywords'])
 
     def test_unavailable_discovery_and_review_are_not_reported_as_success(self):
@@ -122,4 +158,4 @@ class AuthorityPlanningTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
                 asyncio.run(build_site_architecture(
-                    [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY, target_spokes=25))
+                    [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY, discover_topics=True))
