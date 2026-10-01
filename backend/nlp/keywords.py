@@ -641,29 +641,13 @@ def get_intent_word_set(phrase: str) -> set[str]:
 
 
 def check_intent_cannibalization(phrase1: str, phrase2: str) -> bool:
+    """Deduplicate exact inventory repeats; URL intent belongs to the semantic planner.
+
+    Shared tokens or a subset do not prove a shared task. Keep nonidentical
+    research phrases available for the planner's one-page test and assignments.
     """
-    Checks if two phrases mathematically cannibalize each other using 
-    Set Subsets and Jaccard Similarity on their stemmed word bases.
-    """
-    set1 = get_intent_word_set(phrase1)
-    set2 = get_intent_word_set(phrase2)
-    
-    if not set1 or not set2:
-        return False
-        
-    # Check if one is a perfect mathematical subset of the other
-    if set1.issubset(set2) or set2.issubset(set1):
-        return True
-        
-    # Jaccard Similarity (Intersection over Union)
-    intersection = set1.intersection(set2)
-    union = set1.union(set2)
-    jaccard = len(intersection) / len(union)
-    
-    if jaccard >= 0.6:
-        return True
-        
-    return False
+    left, right = clean_phrase(phrase1), clean_phrase(phrase2)
+    return bool(left) and left == right
 
 
 def extract_heading_keywords(h1: str, h2s: List[str], h3s: List[str]) -> List[str]:

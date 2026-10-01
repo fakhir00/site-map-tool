@@ -5,11 +5,12 @@ export type Hub = Silo & { sub_silos?: Silo[] }
 export type SectionDetail = { h2_heading: string; section_definition?: string; targeted_keywords_placed_here?: string[] }
 export type FaqDetail = { question: string; targeted_keywords_placed_here?: string[] }
 export type KeywordMetric = { phrase: string; keyword_type?: string; search_volume?: number | null; difficulty?: number | null; frequency?: number; source_domains?: string[] }
-export type PageDetail = { spoke_category?: string; id?: string; parent_target?: string | null; search_intent?: string; user_problem?: string; entity_topic?: string; content_requirements?: string[]; url_decision_reason?: string; reader_outcome?: string; scope_out?: string[]; evidence_rationale?: string; action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
+export type PageDetail = { spoke_category?: string; id?: string; parent_target?: string | null; search_intent?: string; user_problem?: string; entity_topic?: string; content_requirements?: string[]; url_decision_reason?: string; unique_page_value?: string; reader_outcome?: string; scope_out?: string[]; evidence_rationale?: string; action?: string; existing_url?: string | null; evidence_type?: string; support_phrase?: string | null; article_title?: string; target_keyword?: string; slug?: string; page_type?: string; ranking_role?: string; search_volume?: number | null; difficulty?: number | null; content_brief?: string; targeted_keywords?: string[]; tool_functions?: string[]; writing_instructions?: string; h2_sections?: SectionDetail[]; faq_schema_questions?: FaqDetail[]; entity_terms?: string[]; internal_links?: string[]; tool_economics?: { qualifies: boolean; reason: string; minimum_volume: number; search_volume?: number | null; difficulty?: number | null } }
 export type SpokeDetail = PageDetail & { article_title: string; target_keyword: string; spoke_category?: string }
 export type DeduplicationCheck = { unique_target_keywords?: string; unique_titles?: string; unique_slugs?: string; semantic_intents?: string; duplicates_removed?: number }
 export type KeywordDecision = { keyword: string; disposition: 'page_target' | 'supporting' | 'discard'; assigned_to?: string | null; placement?: string | null; reason: string }
-export type Mapping = { map_version?: number; map_warnings?: string[]; topic_clusters?: { id: string; name: string; page_ids: string[] }[]; link_plan?: MapLink[]; authority_coverage?: { target_spokes: number; minimum_spokes: number; maximum_spokes: number; actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
+export type IntentConsolidation = { from_keyword: string; to_keyword: string; reason: string; risk_type: string; one_page_test?: Record<string, boolean> | null }
+export type Mapping = { intent_consolidations?: IntentConsolidation[]; map_version?: number; map_warnings?: string[]; topic_clusters?: { id: string; name: string; page_ids: string[] }[]; link_plan?: MapLink[]; authority_coverage?: { target_spokes: number; minimum_spokes: number; maximum_spokes: number; actual_spokes: number; new_spokes: number; existing_spokes: number; status: string; message: string; discovery_status: string }; hubs: Hub[]; site_domain?: string; _semantic_audit_status?: string; _planning_thought?: string; _deduplication_check?: DeduplicationCheck; _keyword_metrics?: KeywordMetric[]; master_hub?: PageDetail; spokes?: SpokeDetail[]; interlinking_strategy?: string; filtered_irrelevant_keywords?: string[]; discarded_keywords?: { keyword: string; reason: string }[]; keyword_assignments?: KeywordDecision[]; deferred_spoke_keywords?: string[]; writing_standards?: string[] }
 export type HistorySummary = { id: string; project_id: string | null; title: string; keyword_count: number; created_at: string }
 export type HistoryDetail = { id: string; project_id: string | null; title: string; context: string; keywords: string[]; cleaned_keywords: string[]; clusters: Mapping; created_at: string }
 export type ProjectImport = { project_id: string; project_name: string; keywords: string[]; keyword_data?: KeywordMetric[]; context: string }
@@ -90,6 +91,12 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
 
   if (mapping.authority_coverage) lines.push('## Coverage target', `${mapping.authority_coverage.actual_spokes} spokes; target ${mapping.authority_coverage.minimum_spokes}–${mapping.authority_coverage.maximum_spokes}. ${mapping.authority_coverage.message}`, '')
 
+  if (mapping.intent_consolidations?.length) {
+    lines.push('## Consolidated intent overlaps', 'Keep these phrases on their assigned page; do not recreate separate URLs.')
+    mapping.intent_consolidations.forEach(item => lines.push(`- ${item.from_keyword} → ${item.to_keyword} (${item.risk_type === 'doorway' ? 'Near-duplicate page risk' : 'Same user need'}): ${item.reason}`))
+    lines.push('')
+  }
+
   const addPage = (label: string, page: PageDetail) => {
     const target = page.target_keyword || ''
     const heading = label === 'MASTER HUB' ? `MASTER HUB: ${mapping.site_domain || page.article_title || target}` : `${label}: ${page.article_title || target}`
@@ -102,6 +109,7 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
       lines.push('- Content requirements:')
       page.content_requirements.forEach(requirement => lines.push(`  - ${requirement}`))
     }
+    if (page.unique_page_value) lines.push(`- Unique page value: ${page.unique_page_value}`)
     if (page.url_decision_reason) lines.push(`- URL decision: ${page.url_decision_reason}`)
     if (page.targeted_keywords?.length) lines.push(`- Additional hub keywords: ${page.targeted_keywords.join(', ')}`)
     if (page.tool_functions?.length) { lines.push('- Required tool functions:'); page.tool_functions.forEach((item) => lines.push(`  - ${item}`)) }
@@ -142,6 +150,7 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
     `Entity/topic: ${page.entity_topic || page.target_keyword || ''}`,
     `Content requirements: ${(page.content_requirements || []).join('; ') || page.content_brief || 'Completely solve the assigned reader problem.'}`,
     page.url_decision_reason ? `URL decision: ${page.url_decision_reason}` : '',
+    page.unique_page_value ? `Unique page value: ${page.unique_page_value}` : '',
     `Reader task: ${page.reader_outcome || page.search_intent || ''}`,
     `Scope: ${page.content_brief || ''}`,
     `Leave to other pages: ${(page.scope_out || []).join('; ')}`,

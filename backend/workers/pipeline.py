@@ -3007,7 +3007,8 @@ def _build_ai_refined_accumulator(
         ):
             continue
 
-        # Check against all previously seen phrases for cannibalization (subsets or high jaccard)
+        # Collapse exact repeats only. The architecture planner decides which
+        # different phrases share a user task and should share a URL.
         is_cannibalized = False
         target_merge_phrase = None
         for seen in seen_phrases:

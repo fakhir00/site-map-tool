@@ -4,6 +4,7 @@ import asyncio
 from urllib.parse import urlparse
 
 from nlp.keywords import clean_phrase, is_publishable_keyword
+from nlp.intent_policy import INTENT_CLUSTERING_RULES
 
 
 async def expand_inventory(records, context, primary_keyword, target_spokes, chat):
@@ -27,6 +28,7 @@ should map to that existing URL. Do not create synonyms of the same task to reac
 Use KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION.
 Explain the user problem and required answer/functionality in the rationale before proposing a new URL.
 Every page needs enough content to completely satisfy its unique intent, with no fixed word count.
+{INTENT_CLUSTERING_RULES}
 These are editorial proposals pending review, not observed competitor keywords or verified gaps.
 Return only {{"proposals": [{{"phrase": "...", "support_phrase": "exact inventory phrase",
 "rationale": "why this distinct task belongs in scope"}}]}}. An empty list is valid.

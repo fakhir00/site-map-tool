@@ -181,3 +181,20 @@ test('architecture exports replace legacy length quotas with intent and content 
   expect(prompt).not.toContain('1800')
   expect(prompt).not.toContain('2000')
 })
+
+
+test('shows and exports resolved near-duplicate page risks', async ({ page }) => {
+  const consolidation = { from_keyword: 'lunar age calculator with leap months', to_keyword: primary,
+    reason: 'The same calculator can handle this input; a feature URL adds no separate task.', risk_type: 'doorway' }
+  const reviewed = { ...mapping, intent_consolidations: [consolidation] }
+  await setup(page, true)
+  await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: { ...history, clusters: reviewed } }))
+  await loadSaved(page)
+  await page.getByText('Consolidated intent overlaps (1)', { exact: true }).click()
+  await expect(page.getByText(`Near-duplicate page risk: ${consolidation.reason}`, { exact: true })).toBeVisible()
+  const { grandArchitecturePrompt } = await import('../src/lib/hubSpoke')
+  const prompt = grandArchitecturePrompt(reviewed, '')
+  expect(prompt).toContain(`${consolidation.from_keyword} → ${primary}`)
+  expect(prompt).toContain(consolidation.reason)
+  expect(prompt).toContain('do not recreate separate URLs')
+})

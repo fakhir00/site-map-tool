@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from nlp.keywords import clean_phrase, is_publishable_keyword, looks_incomplete_search_query
+from nlp.intent_policy import INTENT_CLUSTERING_RULES, one_page_test_passes, requires_feature_page_test
 from nlp.openrouter import _achat_json, is_ai_configured
 
 logger = logging.getLogger(__name__)
@@ -402,8 +403,13 @@ PRIMARY TOPIC
 KEYWORD INVENTORY (metrics are evidence, never invent replacements)
 {json.dumps(records, ensure_ascii=False)}
 
+KEYWORDS REQUIRING THE FEATURE PAGE TEST (a review trigger, not a separate-page recommendation)
+{json.dumps([item['phrase'] for item in records if requires_feature_page_test(item['phrase'])], ensure_ascii=False)}
+
 PLANNING GOAL
 {planning_goal}
+
+{INTENT_CLUSTERING_RULES}
 
 PILLAR-CLUSTER DECISION PROCESS
 KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION
@@ -475,12 +481,13 @@ Keep the response compact. Do not write article body copy. Return only one JSON 
   "pages": [{{
     "target_keyword": "exact inventory keyword", "search_intent": "specific unique intent",
     "intent_class": "transactional_tool/informational_guide/definition/interpretation/comparison/troubleshooting/reference",
-    "spoke_category": "meaningful topical silo", "article_title": "...", "page_type": "article or tool",
+    "spoke_category": "coherent user-need group", "article_title": "...", "page_type": "article or tool",
     "content_brief": "one or two sentences explaining the page's exclusive scope",
     "user_problem": "the concrete problem the searcher needs solved",
     "entity_topic": "the entity or topic in the context of this problem",
     "content_requirements": ["specific answer, evidence, step or functionality needed for completion"],
     "url_decision_reason": "why this task needs this URL, or why its existing URL should be reused",
+    "unique_page_value": "specific independently useful information or functionality absent from adjacent pages",
     "reader_outcome": "what the reader can do after using this page",
     "scope_out": ["adjacent task handled by another page"],
     "parent_target": "exact broader page target, or null for the master",
@@ -578,6 +585,7 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
             str(value).strip() for value in raw.get("content_requirements") or [] if str(value).strip()
         ] if isinstance(raw.get("content_requirements"), list) else [],
         "url_decision_reason": str(raw.get("url_decision_reason") or "").strip(),
+        "unique_page_value": str(raw.get("unique_page_value") or "").strip(),
         "reader_outcome": str(raw.get("reader_outcome") or raw.get("search_intent") or "").strip(),
         "scope_out": [str(value).strip() for value in raw.get("scope_out") or [] if str(value).strip()],
         "parent_target": clean_phrase(str(raw.get("parent_target") or "")) or None,
@@ -986,6 +994,7 @@ async def _audit_intent_cannibalization(
         "entity_topic": page.get("entity_topic", ""),
         "content_requirements": page.get("content_requirements", []),
         "url_decision_reason": page.get("url_decision_reason", ""),
+        "unique_page_value": page.get("unique_page_value", ""),
         "h2_sections": page.get("h2_sections", []),
         "faq_schema_questions": page.get("faq_schema_questions", []),
         "tool_functions": page.get("tool_functions", []),
@@ -1010,6 +1019,11 @@ Proposed indexable pages:
 
 Retained keyword placements:
 {json.dumps(keyword_placements, ensure_ascii=False)}
+
+Keywords requiring a feature-page assessment:
+{json.dumps([item['keyword'] for item in keyword_placements if requires_feature_page_test(item['keyword'])], ensure_ascii=False)}
+
+{INTENT_CLUSTERING_RULES}
 
 Compare every page against the homepage and every other spoke, including pages in different groups.
 Find pairs that would satisfy the same user goal. Do not flag pages merely
@@ -1041,7 +1055,13 @@ remain relevant when they genuinely concern the protected EMD subject.
 Return:
 {{"passed": true, "conflicts": [], "rejections": []}}
 or
-{{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "reason": "...", "resolution": "merge or clarify"}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
+{{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "preferred_target": "page_a or page_b's exact target for the comprehensive destination", "reason": "specific shared task/answer and why the modifier adds no unique value", "resolution": "merge", "risk_type": "same_intent or doorway", "one_page_test": {{"same_user": true, "same_task": true, "same_answer": true, "same_serp_intent": true, "same_entity": true}}}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
+For each conflict report the five actual boolean judgments; do not copy the example values blindly.
+Report feature-page families as conflicts with a suitable retained destination so their requirements
+can be consolidated. Distinct pages need concrete unique value, not a differently worded title.
+For each flagged feature query, verify its classification and destination. If a small component was
+given a URL, report it as a doorway conflict with the appropriate parent as preferred_target. A major
+workflow or distinct entity-specific task may keep its URL when its unique information justifies it.
 """,
         temperature=0,
         max_tokens=8000,
@@ -1083,7 +1103,14 @@ or
         if not left or not right or left is right:
             invalid_conflicts = True
             continue
-        if _clearly_distinct_tasks(left, right):
+        if item.get("preferred_target") and clean_phrase(str(item["preferred_target"])) not in {
+            left["target_keyword"], right["target_keyword"],
+        }:
+            invalid_conflicts = True
+            continue
+        if "one_page_test" in item and not one_page_test_passes(item["one_page_test"]):
+            return [], rejections, ["the merge recommendation lacks a valid majority-YES one-page test"]
+        if not one_page_test_passes(item.get("one_page_test")) and _clearly_distinct_tasks(left, right):
             logger.info(
                 "Ignoring cross-intent cannibalization suggestion: %s vs %s",
                 left["target_keyword"], right["target_keyword"],
@@ -1223,6 +1250,7 @@ def _merge_intent_conflicts(
     master_target = plan["master_hub"]["target_keyword"]
     redirects: dict[str, str] = {}
     merge_notes: list[str] = []
+    findings: dict[str, dict[str, Any]] = {}
 
     def final_target(target: str) -> str:
         seen: set[str] = set()
@@ -1245,10 +1273,23 @@ def _merge_intent_conflicts(
         right = final_target(clean_phrase(str(conflict.get("page_b") or "")))
         if not left or not right or left == right or left not in by_target or right not in by_target:
             continue
-        if _clearly_distinct_tasks(by_target[left], by_target[right]):
+        if "one_page_test" in conflict and not one_page_test_passes(conflict["one_page_test"]):
+            continue
+        if not one_page_test_passes(conflict.get("one_page_test")) and _clearly_distinct_tasks(by_target[left], by_target[right]):
             continue
         winner, loser = (left, right) if strength(left) >= strength(right) else (right, left)
+        preferred = final_target(clean_phrase(str(conflict.get("preferred_target") or "")))
+        # Keep the homepage and established URL ownership. Otherwise prefer the
+        # reviewer's comprehensive destination over a higher-volume feature query.
+        if preferred in {left, right} and strength(left)[:2] == strength(right)[:2]:
+            winner, loser = (preferred, right if preferred == left else left)
         redirects[loser] = winner
+        findings[loser] = {
+            "from_keyword": loser, "to_keyword": winner,
+            "reason": str(conflict.get("reason") or "Equivalent query variants serve one task."),
+            "risk_type": "doorway" if conflict.get("risk_type") == "doorway" else "same_intent",
+            "one_page_test": conflict.get("one_page_test"),
+        }
         merge_notes.append(
             f'Merged "{loser}" into "{winner}": '
             + str(conflict.get("reason") or "overlapping search intent")
@@ -1294,12 +1335,16 @@ def _merge_intent_conflicts(
             decision["disposition"] = "supporting"
             decision["assigned_to"] = redirects[keyword]
             decision["placement"] = "h2"
-            decision["reason"] = "Consolidated into the stronger page after semantic cannibalization review."
+            decision["reason"] = "Consolidated into one page: " + findings[keyword]["reason"]
     plan["site_strategy"] = " ".join(
         value for value in [plan.get("site_strategy", ""), *merge_notes] if value
     )
     plan["_planning_thought"] = plan["site_strategy"]
     plan["_intent_merges"] = [*plan.get("_intent_merges", []), *merge_notes]
+    consolidations = [*plan.get("intent_consolidations", []), *findings.values()]
+    for finding in consolidations:
+        finding["to_keyword"] = final_target(finding["to_keyword"])
+    plan["intent_consolidations"] = consolidations
     return plan, merge_notes
 
 
