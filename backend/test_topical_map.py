@@ -1,4 +1,5 @@
 """Regression cases for the page graph, exact placements and bounded planner."""
+from architecture_test_fixtures import approved_review
 import asyncio
 import copy
 import json
@@ -93,7 +94,7 @@ class TopicalMapTests(unittest.TestCase):
         payload = fixture_payload(TOPICS[:1])
         for topic in TOPICS[1:]:
             payload['keyword_decisions'].append([topic[0], 'supporting', PRIMARY, 'variation', 'Fixture consolidation'])
-        chat = AsyncMock(side_effect=[{'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []}])
+        chat = AsyncMock(side_effect=[{'proposals': []}, payload, approved_review(payload)])
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', chat):
             result = asyncio.run(build_site_architecture(records, primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(chat.await_count, 3)
@@ -104,7 +105,7 @@ class TopicalMapTests(unittest.TestCase):
         topic = ('days between two dates', 'Find a date interval', 'Date arithmetic', 'tool')
         payload = fixture_payload([topic])
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-            {'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []},
+            {'proposals': []}, payload, approved_review(payload),
         ])):
             result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, {'phrase': topic[0]}], primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(result['spokes'][0]['page_type'], 'tool')
@@ -115,7 +116,7 @@ class TopicalMapTests(unittest.TestCase):
         payload['pages'][2]['intent_class'] = 'definition'
         conflict = {'passed': False, 'conflicts': [{'page_a': TOPICS[0][0], 'page_b': TOPICS[1][0], 'reason': 'Fixture: same task'}]}
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-            {'proposals': []}, payload, conflict, {'passed': True, 'conflicts': [], 'rejections': []},
+            {'proposals': []}, payload, conflict, approved_review(payload),
         ])):
             result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, *({'phrase': t[0]} for t in TOPICS[:2])], primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(len(result['spokes']), 1)

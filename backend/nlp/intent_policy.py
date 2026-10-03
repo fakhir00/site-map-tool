@@ -8,6 +8,10 @@ INTENT_CLUSTERING_RULES = """
 Final spoke count is determined by semantic validation, distinct search intent, product capability,
 and unique user value. There is no minimum or target URL count. Do not add pages just to increase coverage
 counts. Reject page proposals that depend on capabilities outside the stated product/site scope.
+Do not create a URL just because a keyword exists. Follow search intent → problem → best resource.
+For a product/tool site, the homepage is the primary product page and editor entry point. It owns
+the exact-match core query, presents the tool, and links to major hubs and selected high-value pages.
+Do not create another product landing page for that same core task.
 
 CLUSTER BY USER INTENT, NOT WORD SIMILARITY
 A semantic cluster represents one coherent user need. Shared words are not sufficient evidence.
@@ -33,6 +37,12 @@ Choose the parent by the task it satisfies, not just shared words or the homepag
 Keep the original keyword and its useful content requirements. If a suitable parent is missing,
 reconsider the architecture within the supplied inventory; do not invent a destination or approve
 the small feature as a standalone page merely because its parent was omitted.
+Product conveniences such as grid snapping, keyboard shortcuts, wire routing, symbol counts,
+auto-save, local storage and dark mode normally belong in product/tool documentation sections.
+They do not become independent workflows simply because a keyword names them.
+Unsupported capabilities must not receive dedicated pages or implementation requirements. When
+the context rules out real-time collaboration, mention the limitation only where relevant to JSON
+sharing or local storage; do not imply those features provide live multi-user editing.
 
 THE ONE-PAGE TEST — before creating any URL, compare it with the hub and related proposed/owned pages:
 A same_user: Would essentially the same person search both queries?

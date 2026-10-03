@@ -1,4 +1,5 @@
 """Offline regression tests using isolated databases and mocked providers."""
+from architecture_test_fixtures import approved_review
 import asyncio
 import json
 from contextlib import ExitStack
@@ -319,7 +320,7 @@ class WorkflowTests(unittest.TestCase):
         pid = self.project()
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
             'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-                {'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []},
+                {'proposals': []}, payload, approved_review(payload),
             ]),
         ):
             response = self.client.post('/api/hub-spoke/build', json={

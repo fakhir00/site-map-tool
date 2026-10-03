@@ -1,3 +1,4 @@
+from architecture_test_fixtures import approved_review
 import asyncio
 import json
 import unittest
@@ -148,6 +149,7 @@ class HubWorkspaceTests(unittest.TestCase):
             {"phrase": competitor},
         ])
         review = {
+            **approved_review(payload),
             "passed": True,
             "conflicts": [],
             "rejections": [{
@@ -210,7 +212,7 @@ class HubWorkspaceTests(unittest.TestCase):
             patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
             patch(
                 "nlp.hub_spoke_agent._achat_json",
-                new=AsyncMock(side_effect=[specialist_payload(), {"passed": True, "conflicts": []}]),
+                new=AsyncMock(side_effect=[specialist_payload(), approved_review(specialist_payload())]),
             ),
         ):
             mapping = asyncio.run(build_site_architecture(
@@ -242,6 +244,7 @@ class HubWorkspaceTests(unittest.TestCase):
         provider = AsyncMock(side_effect=[
             specialist_payload(),
             {
+                **approved_review(specialist_payload()),
                 "passed": False,
                 "conflicts": [{
                     "page_a": "circuit diagram maker",
@@ -307,7 +310,7 @@ class HubWorkspaceTests(unittest.TestCase):
             patch("nlp.hub_spoke_agent.is_ai_configured", return_value=True),
             patch(
                 "nlp.hub_spoke_agent._achat_json",
-                new=AsyncMock(side_effect=[{"result": json.dumps(compact)}, {"passed": True, "conflicts": []}]),
+                new=AsyncMock(side_effect=[{"result": json.dumps(compact)}, approved_review(compact)]),
             ),
         ):
             mapping = asyncio.run(build_site_architecture(
@@ -335,7 +338,7 @@ class HubWorkspaceTests(unittest.TestCase):
             ],
             "interlinking_strategy": "One cluster.",
         }
-        conflict = {"passed": False, "conflicts": [{
+        conflict = {**approved_review(payload), "passed": False, "conflicts": [{
             "page_a": "moon nodes calculator", "page_b": secondary,
             "reason": "Both pages serve users obtaining lunar node placements.",
             "resolution": "Merge the comparison into the calculator page.",

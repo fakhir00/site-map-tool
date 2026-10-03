@@ -19,6 +19,13 @@ export const PAGE_COUNT_POLICY = 'Final spoke count is determined by semantic va
 
 export const LINK_HIERARCHY_POLICY = 'The homepage leads to major use cases, major resources and selected supporting pages. Topical hubs handle deeper parent-child links. Do not automatically link the homepage to every spoke or give every page equal prominence. This hierarchy takes precedence over older blanket homepage/spoke linking instructions.'
 
+export const URL_PURPOSE_POLICY = 'Do not create a URL just because a keyword exists. Keep only pages with a clearly distinct purpose. Small product features belong in the relevant product or documentation sections. Unsupported capabilities must not receive dedicated pages or implementation requirements.'
+export const PRODUCT_HOME_POLICY = 'For product/tool sites, the homepage is the primary product page and editor entry point. It owns the exact-match core query, presents the tool, and links to major hubs and selected high-value supporting pages.'
+
+// Saved maps can predate the selective-link policy. Remove the obsolete command
+// instead of exporting two contradictory instructions to the downstream writer.
+const currentLinkInstructions = (value: string) => value.replace(/\b(?:The\s+)?(?:homepage|home page|master hub)\s+(?:must\s+|should\s+)?links?\s+to\s+(?:every|all)\s+(?:the\s+)?spokes?\b[^.!?\n]*[.!?]?/gi, '').trim()
+
 export const CONTENT_COMPLETENESS = 'Every page = enough content to completely satisfy its unique intent.'
 export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'
 
@@ -90,7 +97,8 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
   if (context.trim()) lines.push('## Website context', context.trim(), '')
   if (mapping._deduplication_check) lines.push('## Architecture validation', `- Semantic review: ${mapping._semantic_audit_status || 'not recorded'}`,  `- Cannibalizing pages removed: ${mapping._deduplication_check.duplicates_removed || 0}`, '')
   lines.push('## Global writing standards')
-  ;(mapping.writing_standards || []).forEach((rule) => lines.push(`- ${rule}`))
+  ;(mapping.writing_standards || []).map(currentLinkInstructions).filter(Boolean).forEach((rule) => lines.push(`- ${rule}`))
+  lines.push(`- ${URL_PURPOSE_POLICY}`, `- ${PRODUCT_HOME_POLICY}`)
   lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, internal links, and FAQ schema only for assigned FAQs.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', `- ${CONTENT_COMPLETENESS} No fixed word count or padding.`, `- Planning logic: ${PILLAR_CLUSTER_PROCESS}`, '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
 
   lines.push('## Planned coverage', `${mapping.spokes?.length ?? mapping.authority_coverage?.actual_spokes ?? 0} spokes. ${PAGE_COUNT_POLICY}`, '')
@@ -124,13 +132,13 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
     if (page.reader_outcome) lines.push(`- Reader outcome: ${page.reader_outcome}`)
     if (page.scope_out?.length) lines.push(`- Leave to other pages: ${page.scope_out.join('; ')}`)
     if (page.parent_target) lines.push(`- Parent page: ${page.parent_target}`)
-    if (page.writing_instructions) lines.push(`- Writing instructions: ${page.writing_instructions}`)
+    if (page.writing_instructions && currentLinkInstructions(page.writing_instructions)) lines.push(`- Writing instructions: ${currentLinkInstructions(page.writing_instructions)}`)
     lines.push('')
   }
 
   if (mapping.master_hub) addPage('MASTER HUB', mapping.master_hub)
   ;(mapping.spokes || []).forEach((spoke, index) => addPage(`SPOKE ${index + 1} — ${spoke.spoke_category || 'Strategic article'}`, spoke))
-  lines.push('## Interlinking strategy', LINK_HIERARCHY_POLICY, mapping.interlinking_strategy || 'Each supporting page links to its relevant parent; add useful contextual links for the reader’s next task.', '')
+  lines.push('## Interlinking strategy', LINK_HIERARCHY_POLICY, currentLinkInstructions(mapping.interlinking_strategy || '') || 'Each supporting page links to its relevant parent; add useful contextual links for the reader’s next task.', '')
   if (mapping.filtered_irrelevant_keywords?.length) lines.push(
     '## DO NOT CREATE DEDICATED PAGES FOR THESE KEYWORDS',
     'These phrases may still occur naturally where semantically appropriate. They must not be assigned as standalone SEO targets unless later evidence demonstrates a genuinely distinct search intent.',
@@ -154,6 +162,8 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
     `Action: ${page.action || 'review'}`,
     `Parent page: ${page.parent_target || (page.target_keyword === mapping.master_hub?.target_keyword ? 'Homepage' : mapping.master_hub?.target_keyword) || 'Review parent assignment'}`,
     LINK_HIERARCHY_POLICY,
+    URL_PURPOSE_POLICY,
+    PRODUCT_HOME_POLICY,
     CONTENT_COMPLETENESS,
     `Planning logic: ${PILLAR_CLUSTER_PROCESS}`,
     `Keyword: ${page.target_keyword || ''}`,
@@ -194,5 +204,5 @@ export function normalizeSavedMapping(mapping: Mapping): Mapping {
   }
   visit(root, false)
   otherHubs.forEach(hub => visit(hub, true))
-  return { ...mapping, master_hub: { target_keyword: root.target_keyword, article_title: root.hub_title, slug: '/', targeted_keywords: root.h2_keywords || [], internal_links: spokes.map(page => page.target_keyword) }, spokes }
+  return { ...mapping, master_hub: { target_keyword: root.target_keyword, article_title: root.hub_title, slug: '/', targeted_keywords: root.h2_keywords || [], internal_links: [] }, spokes }
 }

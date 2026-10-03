@@ -96,7 +96,7 @@ installed Chrome executable. In `marketing`, run `npm run build`.
    `Competitor gap diagnostics` log entry. Distinguish failed scraping from no
    relevant candidates, already-covered topics, and quality rejection. Zero
    accepted gaps can be a valid result; do not pad it with junk to hide a warning.
-6. Build the 25-spoke plan and review proposed topics, existing-page reuse, and
+6. Build an intent-validated plan without a target URL count and review proposed topics, existing-page reuse, and
    duplicate intent. Open a spoke in Write Blog and confirm it remains attached
    to this project. Export the keywords and check source URLs and page counts.
 
@@ -108,3 +108,23 @@ minutes; the explicit Settings test checks the process serving that request.
 This audit verifies the listed workflows and regression cases. Hosted acceptance,
 load testing, every input combination, and external-service uptime remain outside
 that evidence. It is not a guarantee that every function is defect-free.
+
+## Local architecture follow-up — 4 October 2026
+
+Page approval now requires an independent task, unique user value and a capability
+justification for every surviving spoke. Minor features must be consolidated into
+relevant resources; unsupported-capability proposals can be rejected even when
+they include the core product query. A missing or incomplete review prevents the
+new map from replacing the saved map. There is no minimum or target URL count.
+
+The exporter removes obsolete blanket homepage-to-every-spoke instructions from
+saved writing and linking guidance. Legacy map conversion no longer invents a
+homepage link to every page. The homepage owns the core product query and editor
+entry, with selective links to major resources and useful supporting pages.
+
+The local `grand-website-architecture-prompt (2).md` was revised around the editor,
+symbol lookup, drawing instruction and examples. Feature conveniences remain
+sections. Real-time collaboration has no dedicated page; its limitation is
+explained only in relevant sharing/storage guidance. This revises a local plan,
+not deployed URLs or persisted map history. Regenerate saved maps to apply the
+new URL eligibility review.

@@ -23,6 +23,7 @@ WRITING_STANDARDS = [
     "Use plain expert language, verifiable claims, and no filler or keyword stuffing.",
     "Use supporting keywords only in the page to which the architecture assigns them.",
     "Give each indexable page a distinct purpose, title, H1, slug, and internal-link role.",
+    "For product/tool sites, the homepage owns the exact-match core query, presents the product and provides the editor entry point.",
     "The homepage links selectively to major use cases, major resources and selected supporting pages; topical hubs link to deeper pages.",
     "Link each supporting page to its relevant parent and add contextual lateral links only where they help the reader.",
 ]
@@ -984,7 +985,7 @@ def validate_architecture(
 
 
 async def _audit_intent_cannibalization(
-    plan: dict[str, Any], context: str,
+    plan: dict[str, Any], context: str, review_feedback: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]]:
     """Use a separate review pass to catch semantic overlap hidden by different wording."""
     pages = [plan["master_hub"], *plan["spokes"]]
@@ -1022,6 +1023,9 @@ async def _audit_intent_cannibalization(
         user_prompt=f"""
 Website context:
 {context or "No additional context supplied."}
+
+Previous review issues to resolve in this response:
+{json.dumps(review_feedback or [], ensure_ascii=False)}
 
 Proposed indexable pages:
 {json.dumps(review_input, ensure_ascii=False)}
@@ -1062,7 +1066,7 @@ merely because competitor source pages also discuss or sell the same product. Pr
 side effects, buying intent, source-specific reviews, and explicit "core product vs competitor" comparisons
 remain relevant when they genuinely concern the protected EMD subject.
 Return:
-{{"passed": true, "conflicts": [], "rejections": []}}
+{{"passed": true, "conflicts": [], "rejections": [], "url_assessments": [{{"target_keyword": "exact surviving spoke target", "classification": "distinct_task", "independent_task": "concrete user problem", "unique_value": "useful answer or workflow absent from other pages", "capability_basis": "specific supplied capability or relevant editorial scope"}}]}}
 or
 {{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "preferred_target": "page_a or page_b's exact target for the comprehensive destination", "reason": "specific shared task/answer and why the modifier adds no unique value", "resolution": "merge", "risk_type": "same_intent or doorway", "one_page_test": {{"same_user": true, "same_task": true, "same_answer": true, "same_serp_intent": true, "same_entity": true}}}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
 For each conflict report the five actual boolean judgments; do not copy the example values blindly.
@@ -1071,6 +1075,17 @@ can be consolidated. Distinct pages need concrete unique value, not a differentl
 For each flagged feature query, verify its classification and destination. If a small component was
 given a URL, report it as a doorway conflict with the appropriate parent as preferred_target. A major
 workflow or distinct entity-specific task may keep its URL when its unique information justifies it.
+Every approval MUST include url_assessments, one per surviving spoke (never just passed: true).
+Each assessment has target_keyword, classification (independent_workflow, distinct_task,
+meaningful_entity, major_feature, small_feature, subsection, or unsupported), independent_task,
+unique_value, and capability_basis. The last three fields must explain the actual user task,
+nonduplicative information/functionality, and support in the supplied site context. Keyword wording,
+search volume and a differently worded title are not evidence. Do not invent capability evidence.
+small_feature/subsection must be merged using conflicts before approval. unsupported must be removed
+using rejections with category: unsupported_capability, even when it contains the protected core query.
+For unsupported capabilities, optionally include clarification_parent (an exact surviving target)
+and limitation (a factual contextual clarification, never a request to implement the feature).
+Only add that clarification where the parent already discusses a related supported workflow.
 """,
         temperature=0,
         max_tokens=8000,
@@ -1082,6 +1097,8 @@ workflow or distinct entity-specific task may keep its URL when its unique infor
     primary_target = plan["master_hub"]["target_keyword"]
     def should_honor_rejection(item: dict[str, Any]) -> bool:
         keyword = clean_phrase(str(item.get("keyword") or ""))
+        if item.get("category") == "unsupported_capability":
+            return keyword != primary_target
         if not _is_protected_emd_entity(keyword, primary_target):
             return True
         reason = clean_phrase(str(item.get("reason") or ""))
@@ -1094,6 +1111,9 @@ workflow or distinct entity-specific task may keep its URL when its unique infor
         {
             "keyword": clean_phrase(str(item.get("keyword") or "")),
             "reason": str(item.get("reason") or "Rejected by the relevance review.").strip(),
+            "clarification_parent": clean_phrase(str(item.get("clarification_parent") or "")),
+            "limitation": str(item.get("limitation") or "").strip()
+            if item.get("category") == "unsupported_capability" else "",
         }
         for item in audit.get("rejections") or []
         if (
@@ -1128,6 +1148,31 @@ workflow or distinct entity-specific task may keep its URL when its unique infor
         conflicts.append(item)
     if invalid_conflicts:
         return [], rejections, ["the semantic review referenced invalid page conflicts; review must be retried"]
+    if not conflicts:
+        rejected = {item["keyword"] for item in rejections}
+        required = {page["target_keyword"] for page in plan["spokes"]} - rejected
+        assessments = audit.get("url_assessments", [])
+        if not isinstance(assessments, list):
+            return [], [], ["the URL eligibility review returned invalid assessments"]
+        approved = {}
+        for item in assessments:
+            if not isinstance(item, dict):
+                continue
+            target = clean_phrase(str(item.get("target_keyword") or ""))
+            if target not in required:
+                continue
+            if target in approved or item.get("classification") not in {
+                "independent_workflow", "distinct_task", "meaningful_entity", "major_feature",
+            } or not all(isinstance(item.get(key), str) and item[key].strip() for key in (
+                "independent_task", "unique_value", "capability_basis",
+            )):
+                return [], [], ["a spoke lacks independent user value or supported capability evidence"]
+            approved[target] = item
+        if required != set(approved):
+            return [], [], ["the URL eligibility review must justify every surviving spoke"]
+        for page in plan["spokes"]:
+            if page["target_keyword"] in approved:
+                page["url_assessment"] = approved[page["target_keyword"]]
     if audit.get("passed") is True and not conflicts:
         return [], rejections, []
     if raw_conflicts and not conflicts:
@@ -1163,6 +1208,14 @@ def _apply_relevance_rejections(
         page for page in plan["spokes"] if page["target_keyword"] not in rejected_targets
     ]
     remaining_targets = [master_target, *(page["target_keyword"] for page in plan["spokes"])]
+    for rejection in rejections:
+        parent = rejection.get("clarification_parent")
+        if rejection.get("limitation") and parent in remaining_targets:
+            page = next(page for page in [plan["master_hub"], *plan["spokes"]]
+                        if page["target_keyword"] == parent)
+            page["content_requirements"] = list(dict.fromkeys([
+                *page.get("content_requirements", []), rejection["limitation"],
+            ]))
     for decision in plan["keyword_assignments"]:
         keyword = decision["keyword"]
         if keyword in reasons:
@@ -1482,7 +1535,7 @@ async def _build_site_architecture(
                     try:
                         remaining = max(0.01, review_deadline - asyncio.get_running_loop().time())
                         async with asyncio.timeout(min(45, remaining)):
-                            conflicts, rejections, audit_errors = await _audit_intent_cannibalization(plan, context)
+                            conflicts, rejections, audit_errors = await _audit_intent_cannibalization(plan, context, last_errors)
                     except Exception as exc:
                         conflicts = []
                         rejections = []

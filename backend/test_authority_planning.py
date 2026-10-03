@@ -1,4 +1,5 @@
 """Behavioral authority-planning tests; model outputs are controlled, not live SEO evidence."""
+from architecture_test_fixtures import approved_review
 import asyncio
 import json
 import unittest
@@ -55,7 +56,7 @@ def fixture_payload(topics):
 class AuthorityPlanningTests(unittest.TestCase):
     def test_homepage_only_is_validated_without_any_count_shortfall(self):
         chat = AsyncMock(side_effect=[{'proposals': []}, fixture_payload([]),
-                                     {'passed': True, 'conflicts': [], 'rejections': []}])
+                                     approved_review(fixture_payload([]))])
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
             'nlp.hub_spoke_agent._achat_json', chat,
         ):
@@ -114,7 +115,7 @@ class AuthorityPlanningTests(unittest.TestCase):
                                    'rationale': intent} for phrase, intent, _, _ in TOPICS]}
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
             'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-                proposals, payload, {'passed': True, 'conflicts': [], 'rejections': []},
+                proposals, payload, approved_review(payload),
             ]),
         ) as chat:
             plan = asyncio.run(build_site_architecture([{'phrase': PRIMARY}], context=context,
@@ -140,7 +141,7 @@ class AuthorityPlanningTests(unittest.TestCase):
         records = [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}, {'phrase': variant}]
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
             'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-                {'proposals': []}, payload, {'passed': True, 'conflicts': [], 'rejections': []},
+                {'proposals': []}, payload, approved_review(payload),
             ]),
         ):
             plan = asyncio.run(build_site_architecture(records, primary_keyword=PRIMARY, discover_topics=True))

@@ -4,6 +4,8 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from architecture_test_fixtures import approved_review
+
 from nlp.hub_spoke_agent import (
     ArchitectureAgentError, build_site_architecture,
 )
@@ -29,6 +31,7 @@ def payload_for(targets):
 
 class IntentConsolidationTests(unittest.TestCase):
     def build(self, targets, payload, reviews, *, authority=False, context=''):
+        reviews = [approved_review(payload) if review is APPROVED else review for review in reviews]
         responses = ([{"proposals": []}] if authority else []) + [payload, *reviews]
         chat = AsyncMock(side_effect=responses)
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
@@ -40,6 +43,67 @@ class IntentConsolidationTests(unittest.TestCase):
                 context=context,
             ))
         return result, chat
+
+    def test_bare_approval_cannot_publish_unjustified_spokes(self):
+        targets = ['diagram maker', 'diagram maker with dark mode']
+        bare = dict(APPROVED)  # Deliberately omit the new per-URL evidence.
+        with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
+            self.build(targets, payload_for(targets), [bare, bare])
+
+    def test_minor_feature_classification_cannot_be_approved_as_a_page(self):
+        targets = ['diagram maker', 'diagram maker with grid snapping']
+        payload = payload_for(targets)
+        for classification in ('small_feature', 'subsection', 'unsupported'):
+            review = approved_review(payload)
+            review['url_assessments'][1]['classification'] = classification
+            with self.subTest(classification=classification), self.assertRaises(ArchitectureAgentError):
+                self.build(targets, payload, [review, review])
+
+    def test_independent_page_requires_capability_and_unique_value_evidence(self):
+        targets = ['diagram maker', 'logic gate symbols']
+        payload = payload_for(targets)
+        for field in ('independent_task', 'unique_value', 'capability_basis'):
+            review = approved_review(payload)
+            review['url_assessments'][1][field] = ''
+            with self.subTest(field=field), self.assertRaises(ArchitectureAgentError):
+                self.build(targets, payload, [review, review])
+
+    def test_editor_conveniences_are_consolidated_without_losing_useful_sections(self):
+        primary = 'circuit diagram maker'
+        features = ['grid snapping', 'keyboard shortcuts', 'Manhattan routing', '40 symbols',
+                    'auto-save', 'LocalStorage', 'dark mode']
+        targets = [primary, *(f'{primary} with {feature.lower()}' for feature in features)]
+        payload = payload_for(targets)
+        for page, feature in zip(payload['pages'][1:], features):
+            page['content_requirements'] = [f'Explain {feature} in the editor documentation.']
+        review = {'passed': False, 'conflicts': [
+            {'page_a': primary, 'page_b': keyword, 'preferred_target': primary,
+             'risk_type': 'doorway', 'one_page_test': SAME_PAGE,
+             'reason': 'Small editor convenience; the homepage documentation satisfies this task.'}
+            for keyword in targets[1:]
+        ]}
+        plan, _ = self.build(targets, payload, [review, APPROVED], authority=True)
+        self.assertEqual(plan['spokes'], [])
+        self.assertEqual(set(plan['master_hub']['targeted_keywords']), set(targets[1:]))
+        self.assertEqual(len(plan['master_hub']['content_requirements']), len(features))
+
+    def test_unsupported_core_feature_is_removed_without_merging_implementation(self):
+        targets = ['circuit diagram maker', 'circuit diagram maker with real time collaboration']
+        payload = payload_for(targets)
+        payload['pages'][1]['tool_functions'] = ['Implement live multi-user editing']
+        limitation = 'JSON files can be shared manually; real-time collaboration is not supported.'
+        review = {'passed': True, 'conflicts': [], 'rejections': [{
+            'keyword': targets[1], 'category': 'unsupported_capability',
+            'reason': 'Real-time collaboration is outside the declared product capabilities.',
+            'clarification_parent': targets[0], 'limitation': limitation,
+        }]}
+        plan, _ = self.build(targets, payload, [review], authority=True,
+                             context='Supports JSON sharing and local storage. Real-time collaboration is not supported.')
+        self.assertEqual(plan['spokes'], [])
+        self.assertNotIn('Implement live multi-user editing', plan['master_hub']['tool_functions'])
+        self.assertIn(limitation, plan['master_hub']['content_requirements'])
+        decision = next(item for item in plan['keyword_assignments'] if item['keyword'] == targets[1])
+        self.assertEqual(decision['disposition'], 'discard')
 
     def test_feature_phrasing_triggers_assessment_without_deciding_its_intent(self):
         from nlp.intent_policy import requires_feature_page_test

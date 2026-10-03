@@ -191,6 +191,25 @@ test('architecture exports replace legacy length quotas with intent and content 
   expect(prompt).not.toContain('Every spoke links to the Master Hub')
 })
 
+test('exports remove stale blanket homepage instructions and keep useful contextual guidance', async () => {
+  const { grandArchitecturePrompt, normalizeSavedMapping } = await import('../src/lib/hubSpoke')
+  const obsolete = 'The homepage links to every spoke via a categorized footer or hub section.'
+  const prompt = grandArchitecturePrompt({ ...mapping,
+    writing_standards: [obsolete, 'Use clear examples.'],
+    master_hub: { ...master, writing_instructions: `Present the editor. ${obsolete}` },
+    interlinking_strategy: `Link examples to relevant symbols. ${obsolete} Keep anchors descriptive.`,
+  }, '')
+  expect(prompt).not.toContain('The homepage links to every spoke')
+  expect(prompt).not.toContain('categorized footer')
+  expect(prompt).toContain('Link examples to relevant symbols.')
+  expect(prompt).toContain('Keep anchors descriptive.')
+  expect(prompt).toContain('Present the editor.')
+  expect(prompt).toContain('homepage is the primary product page and editor entry point')
+  expect(prompt).toContain('Small product features belong in the relevant product or documentation sections.')
+  const legacy = normalizeSavedMapping({ hubs: [{ hub_title: 'Editor', target_keyword: 'editor', layers: { Guides: ['symbols', 'examples'] } }] })
+  expect(legacy.master_hub?.internal_links).toEqual([])
+})
+
 
 test('shows and exports resolved near-duplicate page risks', async ({ page }) => {
   const consolidation = { from_keyword: 'lunar age calculator with leap months', to_keyword: primary,
