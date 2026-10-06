@@ -73,7 +73,7 @@ test('saved map sends its page brief and project to the article writer', async (
   await expect(page.getByText('2 spokes', { exact: true })).toBeVisible()
   await expect(page.getByText('More distinct topic evidence is needed.', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: /Calculate Lunar Age by Hand/ }).click()
-  await page.getByRole('button', { name: 'Improve page', exact: true }).click()
+  await page.getByRole('complementary', { name: 'Page brief' }).getByRole('button', { name: 'Improve existing page', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/write-blog\\?.*project_id=${id}`))
   await expect(page.getByLabel('Architecture brief', { exact: true })).toContainText(method.existing_url)
   let submitted: Record<string, unknown> | undefined
@@ -152,7 +152,7 @@ test('desktop map preview and tool handoff preserve the selected scope', async (
   await loadSaved(page)
   await page.getByRole('region', { name: 'Topical authority map', exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/topical-map-desktop.png', fullPage: true })
-  await page.getByRole('button', { name: 'Build tool', exact: true }).click()
+  await page.getByRole('complementary', { name: 'Page brief' }).getByRole('button', { name: 'Improve existing page', exact: true }).click()
   await expect(page).toHaveURL(/gap-page-prompts/)
   await expect(page.getByLabel('Architecture brief', { exact: true })).toContainText('Calculate age in a lunar calendar.')
 })
@@ -225,4 +225,45 @@ test('shows and exports resolved near-duplicate page risks', async ({ page }) =>
   expect(prompt).toContain(`${consolidation.from_keyword} → ${primary}`)
   expect(prompt).toContain(consolidation.reason)
   expect(prompt).toContain('do not recreate separate URLs')
+})
+
+
+test('Pages actions open the correct editor directly, carrying the selected brief', async ({ page }) => {
+  await setup(page, true)
+  const tool = { ...proposal, id: 'converter', target_keyword: 'lunar date converter', article_title: 'Lunar Date Converter', page_type: 'tool' }
+  await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: { ...history, clusters: { ...mapping, spokes: [method, proposal, tool] } } }))
+  await loadSaved(page)
+  await page.getByRole('tab', { name: /^pages$/i }).click()
+  await page.getByRole('button', { name: 'Create blog: Birthdays in Leap Months', exact: true }).click()
+  await expect(page).toHaveURL(/write-blog\?/)
+  await expect(page.getByLabel('Architecture brief', { exact: true })).toContainText(proposal.target_keyword)
+  await loadSaved(page)
+  await page.getByRole('tab', { name: /^pages$/i }).click()
+  await page.getByRole('button', { name: 'Create page: Lunar Date Converter', exact: true }).click()
+  await expect(page).toHaveURL(/gap-page-prompts\?/)
+  await expect(page.getByLabel('Architecture brief', { exact: true })).toContainText(tool.target_keyword)
+  expect(new URL(page.url()).searchParams.get('project_id')).toBe(id)
+})
+
+test('every tab explains its purpose and existing URLs never offer Create', async ({ page }) => {
+  await setup(page, true)
+  // Historical data may have a stale create action despite carrying an owned URL.
+  await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: { ...history, clusters: { ...mapping, spokes: [{ ...method, action: 'create' }, proposal] } } }))
+  await loadSaved(page)
+  for (const [tab, title] of [
+    ['map', 'See how your topics fit together'], ['pages', 'Choose what to create or improve'],
+    ['Links (2)', 'Connect related pages on your site'], ['Keyword decisions', 'Understand where each keyword belongs'],
+  ]) {
+    await page.getByRole('tab', { name: tab, exact: true }).click()
+    await expect(page.getByRole('tabpanel').getByRole('heading', { name: title })).toBeVisible()
+  }
+  await page.getByRole('tab', { name: 'pages', exact: true }).click()
+  await expect(page.getByRole('button', { name: `Improve existing page: ${method.article_title}`, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: `Create blog: ${method.article_title}`, exact: true })).toHaveCount(0)
+  await page.getByLabel('Filter pages').selectOption('create')
+  await expect(page.getByRole('tabpanel')).not.toContainText(method.article_title)
+  await expect(page.getByRole('button', { name: 'Create blog: Birthdays in Leap Months', exact: true })).toBeVisible()
+  await page.getByLabel('Filter pages').selectOption('update')
+  await page.getByRole('button', { name: `View brief for ${method.article_title}`, exact: true }).click()
+  await expect(page.getByRole('complementary', { name: 'Page brief' })).toContainText('This page already exists.')
 })

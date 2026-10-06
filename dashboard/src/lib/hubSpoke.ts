@@ -27,6 +27,9 @@ export const PRODUCT_HOME_POLICY = 'For product/tool sites, the homepage is the 
 const currentLinkInstructions = (value: string) => value.replace(/\b(?:The\s+)?(?:homepage|home page|master hub)\s+(?:must\s+|should\s+)?links?\s+to\s+(?:every|all)\s+(?:the\s+)?spokes?\b[^.!?\n]*[.!?]?/gi, '').trim()
 
 export const CONTENT_COMPLETENESS = 'Every page = enough content to completely satisfy its unique intent.'
+export const isExistingPage = (page: PageDetail) => Boolean(page.existing_url) || page.action === 'update'
+export const pageEditor = (page: PageDetail) => ['tool', 'page', 'landing_page', 'service', 'product'].includes(page.page_type || '') ? 'page' : 'blog'
+export const pageActionLabel = (page: PageDetail) => isExistingPage(page) ? 'Improve existing page' : pageEditor(page) === 'page' ? 'Create page' : 'Create blog'
 export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'
 
 const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
@@ -99,7 +102,7 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
   lines.push('## Global writing standards')
   ;(mapping.writing_standards || []).map(currentLinkInstructions).filter(Boolean).forEach((rule) => lines.push(`- ${rule}`))
   lines.push(`- ${URL_PURPOSE_POLICY}`, `- ${PRODUCT_HOME_POLICY}`)
-  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, internal links, and FAQ schema only for assigned FAQs.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Build exactly the pages specified below.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', `- ${CONTENT_COMPLETENESS} No fixed word count or padding.`, `- Planning logic: ${PILLAR_CLUSTER_PROCESS}`, '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
+  lines.push('', '## Required deliverables', '- Build every article and interactive tool in this plan as a production-ready page.', '- For each article, provide the title, meta title, meta description, H1, complete body copy, internal links, and FAQ schema only for assigned FAQs.', '- For each tool, provide the working interface and logic, helpful explanatory copy, accessibility labels, validation, result states, and requested export actions.', '', '## Execution rules', '- Create only pages marked create. Improve existing pages in place and preserve their URLs; never create duplicates.', '- Use each target keyword for only its assigned URL and keep every slug exactly as written.', `- ${CONTENT_COMPLETENESS} No fixed word count or padding.`, `- Planning logic: ${PILLAR_CLUSTER_PROCESS}`, '- Use H2 keywords only in their assigned substantive sections, FAQ keywords only in the FAQ block and FAQ schema, and entity terms naturally in the copy.', '- Never turn an entity or FAQ variation into an extra indexable page.', '- Implement every listed tool function on pages marked as tool.', '- Add the specified internal links and keep anchor text natural and descriptive.', '')
 
   lines.push('## Planned coverage', `${mapping.spokes?.length ?? mapping.authority_coverage?.actual_spokes ?? 0} spokes. ${PAGE_COUNT_POLICY}`, '')
 
@@ -113,7 +116,7 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
     const target = page.target_keyword || ''
     const heading = label === 'MASTER HUB' ? `MASTER HUB: ${mapping.site_domain || page.article_title || target}` : `${label}: ${page.article_title || target}`
     lines.push(`## ${heading}`, `- Ranking role: ${page.ranking_role || (label === 'MASTER HUB' ? 'master_hub' : 'supporting_spoke')}`, `- Page type: ${page.page_type || (shouldBuildTool(target) ? 'tool' : 'article')}`, `- ${label === 'MASTER HUB' ? 'Primary keyword' : 'Target keyword'}: ${target}`, `- Slug: ${pageSlug(target, page.slug)}`, `- Search volume: ${page.search_volume ?? 'unknown'}`, `- Keyword difficulty: ${page.difficulty ?? 'unknown'}`, `- Content brief: ${page.content_brief || 'Fully satisfy the target search intent for the website audience.'}`)
-    lines.push(`- Action: ${page.action || 'review'}${page.existing_url ? ` existing page ${page.existing_url}; preserve its URL` : ''}`, `- Evidence: ${page.evidence_type === 'editorial_proposal' ? 'Editorial proposal; validate demand before publishing' : 'Supplied keyword; demand may be unknown'}`)
+    lines.push(`- Action: ${isExistingPage(page) ? 'update' : page.action || 'review'}${page.existing_url ? ` existing page ${page.existing_url}; preserve its URL` : ''}`, `- Evidence: ${page.evidence_type === 'editorial_proposal' ? 'Editorial proposal; validate demand before publishing' : 'Supplied keyword; demand may be unknown'}`)
     lines.push(`- Search intent: ${page.search_intent || page.reader_outcome || 'Review required'}`)
     if (page.user_problem) lines.push(`- User problem: ${page.user_problem}`)
     if (page.entity_topic) lines.push(`- Entity/topic: ${page.entity_topic}`)
@@ -150,7 +153,7 @@ export const grandArchitecturePrompt = (mapping: Mapping, context: string) => {
     lines.push('## Internal link implementation')
     mapping.link_plan.forEach(link => lines.push(`- ${link.source_url} → ${link.target_url}; suggested anchor: ${link.anchor_text}; ${link.reason}`))
   }
-  lines.push('Begin by creating the Master Hub, then build each spoke in order. Return production-ready pages and tools that follow this architecture.')
+  lines.push('Begin with the Master Hub, then work through each spoke in order. Reuse every existing URL and create only missing pages. Return production-ready pages and tools that follow this architecture.')
   return lines.join('\n')
 }
 
@@ -159,7 +162,8 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
   return [
     `Page: ${page.article_title || page.target_keyword}`,
     `URL: ${page.existing_url || page.slug || '/'}`,
-    `Action: ${page.action || 'review'}`,
+    `Action: ${isExistingPage(page) ? 'update' : page.action || 'review'}`,
+    isExistingPage(page) ? 'Improve the existing page in place. Preserve its URL; do not create a duplicate page.' : '',
     `Parent page: ${page.parent_target || (page.target_keyword === mapping.master_hub?.target_keyword ? 'Homepage' : mapping.master_hub?.target_keyword) || 'Review parent assignment'}`,
     LINK_HIERARCHY_POLICY,
     URL_PURPOSE_POLICY,
@@ -187,7 +191,11 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
 }
 
 export function normalizeSavedMapping(mapping: Mapping): Mapping {
-  if (mapping.master_hub || mapping.spokes?.length || !mapping.hubs?.length) return mapping
+  if (mapping.master_hub || mapping.spokes?.length || !mapping.hubs?.length) return {
+    ...mapping,
+    master_hub: mapping.master_hub?.existing_url ? { ...mapping.master_hub, action: 'update' } : mapping.master_hub,
+    spokes: mapping.spokes?.map(page => page.existing_url ? { ...page, action: 'update' } : page),
+  }
   const [root, ...otherHubs] = mapping.hubs
   const spokes: SpokeDetail[] = []
   const visit = (hub: Hub, includeHub: boolean) => {
@@ -197,7 +205,7 @@ export function normalizeSavedMapping(mapping: Mapping): Mapping {
         const target = value.match(/\(Target Keyword:\s*(.*?)\)/i)?.[1]?.trim() || value.trim()
         const title = value.split(/\(Target Keyword:/i)[0].replace('[Tool]', '').trim() || target
         if (!target || target === root.target_keyword || spokes.some(page => page.target_keyword === target)) continue
-        spokes.push({ article_title: title, target_keyword: target, spoke_category: category, slug: pageSlug(target), internal_links: [root.target_keyword] })
+        spokes.push({ article_title: title, target_keyword: target, spoke_category: category, slug: pageSlug(target), page_type: value.includes('[Tool]') ? 'tool' : 'article', internal_links: [root.target_keyword] })
       }
     }
     for (const child of hub.sub_silos || []) visit(child, true)

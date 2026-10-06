@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from nlp.authority import expand_inventory
+from nlp.authority import expand_inventory, reconcile_owned_pages
 from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture
 
 
@@ -160,3 +160,50 @@ class AuthorityPlanningTests(unittest.TestCase):
             with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
                 asyncio.run(build_site_architecture(
                     [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY, discover_topics=True))
+
+
+class OwnedPageMatchingTests(unittest.TestCase):
+    def plan(self):
+        return {'master_hub': {'target_keyword': PRIMARY, 'slug': '/', 'action': 'create'},
+                'spokes': [{'target_keyword': 'manual lunar age', 'article_title': 'Calculate Lunar Age by Hand',
+                            'slug': '/new-manual-guide/', 'action': 'create'}],
+                'link_plan': [{'source_keyword': PRIMARY, 'target_keyword': 'manual lunar age',
+                               'source_url': '/', 'target_url': '/new-manual-guide/'}]}
+
+    def test_same_title_reuses_owned_page_despite_different_keyword_and_slug(self):
+        context = json.dumps({'owned_pages': [{'url': 'https://example.com/established-guide/',
+                                              'title': 'Calculate Lunar Age by Hand!'}]})
+        plan = reconcile_owned_pages(self.plan(), context)
+        self.assertEqual(plan['spokes'][0]['action'], 'update')
+        self.assertEqual(plan['spokes'][0]['slug'], '/established-guide/')
+        self.assertEqual(plan['link_plan'][0]['target_url'], 'https://example.com/established-guide/')
+        self.assertEqual(plan['master_hub']['action'], 'create')
+
+    def test_url_equivalents_keep_the_original_owned_url(self):
+        plan = self.plan()
+        plan['spokes'][0]['existing_url'] = 'http://www.example.com/guide#examples'
+        context = json.dumps({'owned_pages': [{'url': 'https://example.com/guide/'}]})
+        reconcile_owned_pages(plan, context)
+        self.assertEqual(plan['spokes'][0]['existing_url'], 'https://example.com/guide/')
+
+    def test_nested_url_matches_keyword_without_crawl_text(self):
+        plan = reconcile_owned_pages(self.plan(), json.dumps({'owned_pages': [
+            {'url': 'https://example.com/blog/manual-lunar-age/'}]}))
+        self.assertEqual(plan['spokes'][0]['action'], 'update')
+
+    def test_distinct_tasks_and_query_pages_are_not_matched_by_shared_words(self):
+        plan = reconcile_owned_pages(self.plan(), json.dumps({'owned_pages': [
+            {'url': 'https://example.com/?topic=other'},
+            {'url': 'https://example.com/age/', 'title': 'Lunar age calculator accuracy'}]}))
+        self.assertTrue(all(page['action'] == 'create' for page in [plan['master_hub'], *plan['spokes']]))
+
+    def test_unowned_urls_and_two_intents_for_one_url_are_rejected(self):
+        plan = self.plan()
+        plan['spokes'][0]['existing_url'] = 'https://competitor.example/guide/'
+        with self.assertRaisesRegex(ValueError, 'outside the owned-page inventory'):
+            reconcile_owned_pages(plan, '{}')
+        plan = self.plan()
+        plan['spokes'].append(dict(plan['spokes'][0], target_keyword='other task'))
+        with self.assertRaisesRegex(ValueError, 'same existing URL'):
+            reconcile_owned_pages(plan, json.dumps({'owned_pages': [
+                {'url': 'https://example.com/new-manual-guide/'}]}))

@@ -1,5 +1,6 @@
 import json
 import uuid
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -232,7 +233,16 @@ async def get_hub_spoke_history(
     record = result.scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail="Hub Spoke history not found")
-    return _history_payload(record)
+    # Recheck saved plans against the latest crawl so a newly discovered page
+    # cannot remain a "create" recommendation in an older map.
+    from app.hub_spoke.context import context_with_owned_pages
+    from nlp.authority import reconcile_owned_pages
+    payload = _history_payload(record)
+    context = payload['context']
+    if record.project_id:
+        context = await context_with_owned_pages(db, record.project_id, context)
+    payload['clusters'] = reconcile_owned_pages(deepcopy(payload['clusters'] or {}), context, strict=False)
+    return payload
 
 
 @router.delete("/history/{history_id}", status_code=204)

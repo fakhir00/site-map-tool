@@ -6,7 +6,7 @@ import { api, type Project } from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { TopicalAuthorityMap } from '../components/TopicalAuthorityMap'
-import { PAGE_COUNT_POLICY, downloadText, grandArchitecturePrompt, pageArchitectureBrief, normalizeSavedMapping, parseFile, type Mapping, type KeywordMetric, type HistorySummary, type HistoryDetail, type ProjectImport, type PageDetail } from '../lib/hubSpoke'
+import { downloadText, grandArchitecturePrompt, pageArchitectureBrief, pageEditor, normalizeSavedMapping, parseFile, type Mapping, type KeywordMetric, type HistorySummary, type HistoryDetail, type ProjectImport, type PageDetail } from '../lib/hubSpoke'
 
 function primaryFromContext(context: string, fallback: string) {
   try { return String(JSON.parse(context).primary_keyword || fallback) } catch { return fallback }
@@ -132,7 +132,7 @@ export function HubSpokeWorkspace() {
     const params = new URLSearchParams({ keyword: page.target_keyword || '' })
     if (mapProjectId) params.set('project_id', mapProjectId)
     if (page.targeted_keywords?.length) params.set('cluster', page.targeted_keywords.join('\n'))
-    navigate(`${page.page_type === 'tool' ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`, { state: { architectureBrief: mapping ? pageArchitectureBrief(page, mapping) : '' } })
+    navigate(`${pageEditor(page) === 'page' ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`, { state: { architectureBrief: mapping ? pageArchitectureBrief(page, mapping) : '' } })
   }
   const inputClass = 'mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900'
 
@@ -159,8 +159,8 @@ export function HubSpokeWorkspace() {
           <div className="space-y-4">
             <label className="block text-sm font-medium">Main topic / homepage keyword<input aria-label="Main topic" list="map-keyword-options" maxLength={300} className={inputClass} value={primaryKeyword} onChange={event => { setPrimaryKeyword(event.target.value); setDirty(true) }} placeholder="e.g. lunar age calculator" /><datalist id="map-keyword-options">{keywords.slice(0, 300).map(keyword => <option key={keyword} value={keyword} />)}</datalist></label>
             <label className="block text-sm font-medium">Website and audience context<textarea aria-label="Website and audience context" maxLength={12000} className={`${inputClass} min-h-32`} value={context} onChange={event => { setContext(event.target.value); setDirty(true) }} placeholder="Your site URL, audience, what you offer, existing page URLs, and topics to exclude. Be specific about what your site can help people do." /></label>
-            <label className="block text-sm font-medium">Existing page URLs <span className="font-normal text-slate-400">(optional)</span><textarea aria-label="Existing page URLs" className={`${inputClass} min-h-20 font-mono text-xs`} value={existingUrls} onChange={event => { setExistingUrls(event.target.value); setDirty(true) }} placeholder={'https://example.com/\nhttps://example.com/existing-guide/'} /><span className="mt-1 block text-xs font-normal text-slate-500">One URL per line. Add pages you own; URLs alone do not verify their content.</span></label>
-            <p className="text-sm leading-relaxed text-slate-500">{PAGE_COUNT_POLICY}</p>
+            <label className="block text-sm font-medium">Existing page URLs <span className="font-normal text-slate-400">(optional)</span><textarea aria-label="Existing page URLs" className={`${inputClass} min-h-20 font-mono text-xs`} value={existingUrls} onChange={event => { setExistingUrls(event.target.value); setDirty(true) }} placeholder={'https://example.com/\nhttps://example.com/existing-guide/'} /><span className="mt-1 block text-xs font-normal text-slate-500">Add your existing pages so we can avoid suggesting them again. Linked scans include known site pages automatically. Use one URL per line.</span></label>
+            <p className="text-sm leading-relaxed text-slate-500">There is no fixed number of pages. Add a page only when it answers a different question or helps the reader do a different task.</p>
           </div>
         </div>
       </fieldset>

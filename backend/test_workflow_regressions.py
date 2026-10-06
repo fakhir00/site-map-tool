@@ -381,6 +381,40 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('already exists', context['owned_pages'][0]['text_excerpt'])
         self.assertEqual(len(response.json()['keyword_data']), 2)
 
+    def test_saved_maps_recheck_all_owned_urls_including_unscraped_pages(self):
+        pid = self.project()
+        mapping = {'hubs': [], 'master_hub': {'article_title': 'Circuit Diagram',
+                   'target_keyword': 'circuit diagram', 'slug': '/', 'action': 'create'},
+                   'spokes': [{'target_keyword': 'circuit symbols', 'article_title': 'Circuit Symbols',
+                               'slug': '/new-symbols/', 'action': 'create'}],
+                   'keyword_assignments': [], 'link_plan': []}
+        with patch('app.hub_spoke.router.build_site_architecture', new=AsyncMock(return_value=mapping)):
+            response = self.client.post('/api/hub-spoke/build', json={
+                'keywords': ['circuit diagram'], 'project_id': pid})
+        self.assertEqual(response.status_code, 200, response.text)
+        history_id = response.json()['history_id']
+        with self.sessions() as db:
+            for index in range(35):
+                db.add(Url(project_id=uuid.UUID(pid), url=f'https://own.example/a-{index}/',
+                           source_type='own', status='scraped', h1=f'Other topic {index}'))
+            db.add(Url(project_id=uuid.UUID(pid), url='https://own.example/z/circuit-symbols/',
+                       source_type='own', status='pending'))
+            db.add(Url(project_id=uuid.UUID(pid), url='https://competitor.example/',
+                       source_type='competitor', status='scraped', h1='Circuit Diagram'))
+            db.commit()
+        saved = self.client.get('/api/hub-spoke/history/' + history_id)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        clusters = saved.json()['clusters']
+        self.assertEqual(clusters['spokes'][0]['action'], 'update')
+        self.assertEqual(clusters['spokes'][0]['existing_url'], 'https://own.example/z/circuit-symbols/')
+        self.assertEqual(clusters['master_hub']['action'], 'create')
+        with patch('app.hub_spoke.router.build_site_architecture', new=AsyncMock(return_value=mapping)) as architect:
+            response = self.client.post('/api/hub-spoke/build', json={
+                'keywords': ['circuit diagram'], 'project_id': pid})
+        context = json.loads(architect.await_args.kwargs['context'])
+        self.assertEqual(len(context['owned_pages']), 36)
+        self.assertFalse(any('competitor.example' in page['url'] for page in context['owned_pages']))
+
     def test_standalone_hub_workspace_builds_and_saves_specialist_plan(self):
         keywords = ['circuit diagram maker', 'circuit diagram symbols', 'celebrity news']
         specialist_map = {

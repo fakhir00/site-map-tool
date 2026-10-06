@@ -1,7 +1,8 @@
 """Bounded topical discovery and honest progress reporting for authority plans."""
 import json
 import asyncio
-from urllib.parse import urlparse
+import re
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from nlp.keywords import clean_phrase, is_publishable_keyword
 from nlp.intent_policy import INTENT_CLUSTERING_RULES
@@ -77,24 +78,69 @@ def owned_pages(context):
     return [page for page in pages if isinstance(page, dict) and page.get('url')] if isinstance(pages, list) else []
 
 
+def _url_key(url):
+    parsed = urlparse(url)
+    query = tuple(sorted((key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                         if not key.lower().startswith('utm_') and key.lower() not in {'gclid', 'fbclid'}))
+    return (parsed.netloc.lower().removeprefix('www.'), unquote(parsed.path).rstrip('/'), query)
+
+
+def _topic_key(value):
+    return ' '.join(re.findall(r'\w+', unquote(str(value or '')).casefold().replace('_', ' ')))
+
+
+def reconcile_owned_pages(plan, context, *, strict=True):
+    """Reuse known URLs even when the planner proposes a different slug for the same title."""
+    existing = {page['url']: page for page in owned_pages(context)
+                if isinstance(page.get('url'), str) and urlparse(page['url']).scheme in {'http', 'https'}}
+    by_url = {_url_key(url): url for url in existing}
+    existing = {url: existing[url] for url in by_url.values()}
+    used_urls = set()
+    pages = [page for page in [plan.get('master_hub'), *plan.get('spokes', [])] if page]
+    for page in pages:
+        requested_url = page.get('existing_url')
+        if requested_url and _url_key(requested_url) in by_url:
+            requested_url = by_url[_url_key(requested_url)]
+        elif requested_url and strict:
+            raise ValueError('Architecture referenced an existing URL outside the owned-page inventory')
+        if not requested_url and page.get('slug'):
+            slug_key = _url_key(page['slug'])
+            candidates = [url for url in existing if _url_key(url)[1:] == slug_key[1:]]
+            if len(candidates) == 1:
+                requested_url = candidates[0]
+        if not requested_url:
+            topics = {_topic_key(page.get('target_keyword')), _topic_key(page.get('article_title'))} - {''}
+            candidates = [url for url, owned in existing.items() if
+                          _topic_key(owned.get('title')) in topics or
+                          _topic_key(urlparse(url).path.rstrip('/').rsplit('/', 1)[-1]) in topics]
+            if len(candidates) == 1:
+                requested_url = candidates[0]
+        if requested_url:
+            if _url_key(requested_url) in used_urls and strict:
+                raise ValueError('Multiple page intents were assigned to the same existing URL; consolidate them')
+            used_urls.add(_url_key(requested_url))
+            page['existing_url'] = requested_url
+            page['slug'] = urlparse(requested_url).path or '/'
+            page['action'] = 'update'
+        elif strict:
+            page['action'] = 'create'
+    by_target = {page.get('target_keyword'): page for page in pages}
+    for link in plan.get('link_plan', []):
+        for side in ('source', 'target'):
+            page = by_target.get(link.get(f'{side}_keyword'))
+            if page:
+                link[f'{side}_url'] = page.get('existing_url') or page.get('slug') or '/'
+    if plan.get('authority_coverage'):
+        plan['authority_coverage']['new_spokes'] = sum(page.get('action') == 'create' for page in plan.get('spokes', []))
+        plan['authority_coverage']['existing_spokes'] = sum(page.get('action') == 'update' for page in plan.get('spokes', []))
+    return plan
+
+
 def finish_authority_plan(plan, records, context, discovery_status):
     """Attach evidence, reuse URLs and report the resulting coverage without quotas."""
     inventory = {record['phrase']: record for record in records}
-    existing = {page['url']: page for page in owned_pages(context)}
-    used_urls = set()
+    reconcile_owned_pages(plan, context)
     for page in [plan['master_hub'], *plan['spokes']]:
-        requested_url = page.get('existing_url')
-        if requested_url and requested_url not in existing:
-            raise ValueError('Architecture referenced an existing URL outside the owned-page inventory')
-        if not requested_url:
-            requested_url = next((url for url in existing if urlparse(url).path.rstrip('/') == page['slug'].rstrip('/')), None)
-        if requested_url:
-            if requested_url in used_urls:
-                raise ValueError('Multiple page intents were assigned to the same existing URL; consolidate them')
-            used_urls.add(requested_url)
-            page['existing_url'] = requested_url
-            page['slug'] = urlparse(requested_url).path or '/'
-        page['action'] = 'update' if requested_url else 'create'
         record = inventory[page['target_keyword']]
         page['evidence_type'] = record.get('evidence_type', 'supplied_keyword')
         page['support_phrase'] = record.get('support_phrase')
