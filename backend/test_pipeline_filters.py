@@ -43,6 +43,36 @@ from workers.pipeline import (
 
 
 class PipelineFilterTests(TestCase):
+    def test_branded_ranking_pages_are_not_dropped_before_review(self):
+        project = SimpleNamespace(own_domain='https://own.example', domain='https://own.example',
+                                  search_locale='us', audit_summary='A lunar age calculator')
+        results = [
+            {'url': 'https://specialist.example/', 'title': 'Lunar Age Calculator',
+             'snippet': 'Calculate your age with the lunar calendar.'},
+            {'url': 'https://other.example/tools/123', 'title': 'Lunar Age Calculator',
+             'snippet': 'Calculate your lunar age.'},
+            {'url': 'https://reddit.com/lunar-age-calculator', 'title': 'Lunar Age Calculator'},
+            {'url': 'https://unrelated.example/', 'title': 'Lunar news', 'snippet': 'Space launches'},
+            {'url': 'https://own.example/', 'title': 'Lunar Age Calculator'},
+        ]
+        ranking = {}
+        with (
+            patch('scraping.apify_client_module.is_apify_configured', return_value=True),
+            patch('scraping.apify_client_module.search_google_via_apify', return_value=results),
+            patch('workers.pipeline._llm_filter_competitor_domains', return_value=[]) as judge,
+        ):
+            domains = _discover_competitor_domains(project, ['lunar age calculator'], ranking_urls_out=ranking)
+        self.assertEqual(domains, ['https://specialist.example', 'https://other.example'])
+        self.assertEqual(ranking['https://other.example'], ['https://other.example/tools/123'])
+        self.assertIn('https://specialist.example', [item['domain'] for item in judge.call_args.args[2]])
+
+    def test_title_fallback_preserves_numeric_product_identity(self):
+        from workers.pipeline import _ranking_page_matches_seed
+        self.assertFalse(_ranking_page_matches_seed(
+            {'title': 'Dental Pro 9 Reviews', 'snippet': 'Review of Dental Pro 9'}, 'dental pro 7 reviews'))
+        self.assertTrue(_ranking_page_matches_seed(
+            {'title': 'Dental Pro 7 Reviews', 'snippet': 'Product analysis'}, 'dental pro 7 reviews'))
+
     def test_statistical_extraction_preserves_source_adjacency(self):
         from nlp.keywords import extract_statistical_keywords
         phrases = dict(extract_statistical_keywords(

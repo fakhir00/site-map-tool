@@ -251,13 +251,13 @@ test('every tab explains its purpose and existing URLs never offer Create', asyn
   await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: { ...history, clusters: { ...mapping, spokes: [{ ...method, action: 'create' }, proposal] } } }))
   await loadSaved(page)
   for (const [tab, title] of [
-    ['map', 'See how your topics fit together'], ['pages', 'Choose what to create or improve'],
+    ['Map', 'See how your topics fit together'], ['Pages', 'Choose what to create or improve'],
     ['Links (2)', 'Connect related pages on your site'], ['Keyword decisions', 'Understand where each keyword belongs'],
   ]) {
     await page.getByRole('tab', { name: tab, exact: true }).click()
     await expect(page.getByRole('tabpanel').getByRole('heading', { name: title })).toBeVisible()
   }
-  await page.getByRole('tab', { name: 'pages', exact: true }).click()
+  await page.getByRole('tab', { name: 'Pages', exact: true }).click()
   await expect(page.getByRole('button', { name: `Improve existing page: ${method.article_title}`, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: `Create blog: ${method.article_title}`, exact: true })).toHaveCount(0)
   await page.getByLabel('Filter pages').selectOption('create')
@@ -274,4 +274,17 @@ test('starts with Pages and uses the requested tab order', async ({ page }) => {
   const tabs = page.getByRole('tab')
   await expect(tabs).toHaveText(['Pages', 'Map', 'Links (2)', 'Keyword decisions'])
   await expect(page.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute('aria-selected', 'true')
+})
+
+test('a historical map with failed topic discovery is clearly incomplete', async ({ page }) => {
+  await setup(page, true)
+  await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: {
+    ...history, clusters: { ...mapping, spokes: [], authority_coverage: {
+      ...mapping.authority_coverage, actual_spokes: 0, discovery_status: 'unavailable',
+    } },
+  } }))
+  await loadSaved(page)
+  await expect(page.getByText('Topic research incomplete', { exact: false })).toBeVisible()
+  await expect(page.getByText('Intent review passed', { exact: false })).toHaveCount(0)
+  await expect(page.getByRole('status')).toContainText('Use Build topical map above to retry')
 })

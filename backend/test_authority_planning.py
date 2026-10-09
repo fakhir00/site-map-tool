@@ -54,6 +54,60 @@ def fixture_payload(topics):
 
 
 class AuthorityPlanningTests(unittest.TestCase):
+    def test_discovery_recovers_wrapped_and_list_responses(self):
+        proposal = {'phrase': TOPICS[0][0], 'support_phrase': PRIMARY, 'rationale': TOPICS[0][1]}
+        for payload in ({'result': json.dumps({'proposals': [proposal]})}, [proposal], [{'proposals': [proposal]}]):
+            with self.subTest(payload=payload):
+                expanded, status = asyncio.run(expand_inventory(
+                    [{'phrase': PRIMARY}], '', PRIMARY, AsyncMock(return_value=payload)))
+                self.assertEqual(status, 'completed')
+                self.assertEqual(expanded[-1]['phrase'], TOPICS[0][0])
+
+    def test_discovery_retries_transient_failure_and_retains_evidence(self):
+        chat = AsyncMock(side_effect=[TimeoutError(), {'proposals': [
+            {'phrase': TOPICS[0][0], 'support_phrase': PRIMARY, 'rationale': TOPICS[0][1]}]}])
+        diagnostics = []
+        expanded, status = asyncio.run(expand_inventory(
+            [{'phrase': PRIMARY}], '', PRIMARY, chat, diagnostics=diagnostics))
+        self.assertEqual(chat.await_count, 2)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(len(expanded), 2)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(chat.await_args.kwargs['request_timeout'], 60)
+
+    def test_invalid_proposals_are_not_reported_as_successful_research(self):
+        chat = AsyncMock(return_value={'proposals': [
+            {'phrase': 'invented unrelated topic', 'support_phrase': 'not in inventory', 'rationale': 'Guess'}]})
+        diagnostics = []
+        records, status = asyncio.run(expand_inventory(
+            [{'phrase': PRIMARY}], '', PRIMARY, chat, diagnostics=diagnostics))
+        self.assertEqual(status, 'unavailable')
+        self.assertEqual(len(records), 1)
+        self.assertEqual(chat.await_count, 2)
+        self.assertIn('evidence', diagnostics[0])
+
+    def test_failed_discovery_cannot_publish_a_successful_zero_spoke_map(self):
+        payload = fixture_payload([])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
+                TimeoutError(), TimeoutError(), payload, approved_review(payload),
+            ]),
+        ):
+            with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
+                asyncio.run(build_site_architecture([{'phrase': PRIMARY}], primary_keyword=PRIMARY, discover_topics=True))
+
+    def test_failed_discovery_marks_an_inventory_based_map_partial(self):
+        payload = fixture_payload(TOPICS[:1])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
+                TimeoutError(), TimeoutError(), payload, approved_review(payload),
+            ]),
+        ):
+            plan = asyncio.run(build_site_architecture(
+                [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY, discover_topics=True))
+        self.assertEqual(plan['authority_coverage']['status'], 'partial')
+        self.assertIn('timed out', plan['authority_coverage']['discovery_message'])
+
     def test_homepage_only_is_validated_without_any_count_shortfall(self):
         chat = AsyncMock(side_effect=[{'proposals': []}, fixture_payload([]),
                                      approved_review(fixture_payload([]))])
@@ -154,7 +208,7 @@ class AuthorityPlanningTests(unittest.TestCase):
         payload = fixture_payload(TOPICS[:1])
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
             'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-                RuntimeError('discovery unavailable'), payload, RuntimeError('review unavailable'),
+                RuntimeError('discovery unavailable'), RuntimeError('discovery unavailable'), payload, RuntimeError('review unavailable'),
             ]),
         ):
             with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):

@@ -1,5 +1,7 @@
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
+from datetime import timedelta
+from pydantic import BaseModel, Field
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -16,9 +18,52 @@ from workers.pipeline import _process_apify_keywords
 
 
 class ApifyClientTests(TestCase):
+    def test_v3_actor_timeouts_and_typed_response_support_flat_results(self):
+        class Run(BaseModel):
+            status: str
+            default_dataset_id: str = Field(alias='defaultDatasetId')
+        class Actor:
+            def call(self, *, run_input, run_timeout, wait_duration):
+                self.run_timeout, self.wait_duration = run_timeout, wait_duration
+                return Run(status='SUCCEEDED', defaultDatasetId='dataset-v3')
+        actor = Actor()
+        client = MagicMock()
+        client.actor.return_value = actor
+        client.dataset.return_value.iterate_items.return_value = iter([
+            {'url': 'https://specialist.example/', 'title': 'Lunar Age Calculator', 'description': 'Calculate lunar age'},
+        ])
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            results = search_google_via_apify('lunar age calculator', max_results=10)
+        self.assertEqual(actor.run_timeout, timedelta(seconds=90))
+        self.assertEqual(actor.wait_duration, timedelta(seconds=100))
+        client.dataset.assert_called_once_with('dataset-v3')
+        self.assertEqual(results[0]['url'], 'https://specialist.example/')
+        self.assertEqual(results[0]['snippet'], 'Calculate lunar age')
+
+    def test_v3_account_models_and_paid_plan_actor_failures_are_reported(self):
+        class User(BaseModel):
+            id: str
+            plan: dict
+        class Run(BaseModel):
+            default_dataset_id: str = Field(alias='defaultDatasetId')
+        client = MagicMock()
+        client.user.return_value.get.return_value = User(id='test-user', plan={'tier': 'PAID'})
+        client.actor.return_value.runs.return_value.list.return_value.items = [Run(defaultDatasetId='failed-dataset')]
+        client.dataset.return_value.iterate_items.return_value = iter([{'error': 'Actor quota reached'}])
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            status = apify_account_status(force=True)
+        self.assertTrue(status['authenticated'])
+        self.assertFalse(status['available'])
+        self.assertIn('Actor quota reached', status['message'])
+
     def test_account_status_validates_token_without_running_an_actor(self):
         client = MagicMock()
         client.user.return_value.get.return_value = {"id": "user-1"}
+        client.actor.return_value.runs.return_value.list.return_value.items = []
         with (
             patch("scraping.apify_client_module.is_apify_configured", return_value=True),
             patch("scraping.apify_client_module._get_client", return_value=client),
@@ -26,7 +71,8 @@ class ApifyClientTests(TestCase):
             status = apify_account_status(force=True)
 
         self.assertTrue(status["authenticated"])
-        client.actor.assert_not_called()
+        client.actor.return_value.call.assert_not_called()
+        client.actor.return_value.start.assert_not_called()
 
     def test_common_apify_environment_aliases_are_accepted(self):
         configured = Settings(

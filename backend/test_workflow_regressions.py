@@ -50,6 +50,9 @@ class WorkflowTests(unittest.TestCase):
         self.stack.enter_context(patch('app.main.engine', self.async_engine))
         self.stack.enter_context(patch('workers.pipeline.SyncSession', self.sessions))
         self.stack.enter_context(patch('app.scan.router.settings.USE_CELERY', False))
+        self.stack.enter_context(patch('scraping.apify_client_module.research_keywords_via_apify', return_value=[]))
+        self.stack.enter_context(patch('nlp.deepseek_seo.enrich_keywords_with_seo_data', return_value={}))
+        self.stack.enter_context(patch('nlp.dataforseo.is_dataforseo_configured', return_value=False))
         self.stack.enter_context(patch('app.scan.router.settings.DATABASE_URL', f'sqlite+aiosqlite:///{path}'))
         self.client = self.stack.enter_context(TestClient(app))
         with self.sessions() as db:

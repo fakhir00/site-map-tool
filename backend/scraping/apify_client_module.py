@@ -1,8 +1,11 @@
 import logging
 import math
 import time
+import inspect
+from datetime import timedelta
 from typing import List, Dict, Any, Optional
 from apify_client import ApifyClient
+from pydantic import BaseModel
 from app.config import settings
 from scraping.crawler import ScrapedPage
 
@@ -14,6 +17,21 @@ def is_apify_configured() -> bool:
 
 def _get_client() -> ApifyClient:
     return ApifyClient(settings.APIFY_API_TOKEN)
+
+
+def _response_dict(value):
+    # SDK v3 uses typed models; v1/v2 use API-shaped dictionaries.
+    return value.model_dump(mode='json', by_alias=True) if isinstance(value, BaseModel) else value
+
+
+def _call_actor(client, actor_id, *, run_input, timeout_secs, wait_secs):
+    actor = client.actor(actor_id)
+    if 'run_timeout' in inspect.signature(actor.call).parameters:
+        run = actor.call(run_input=run_input, run_timeout=timedelta(seconds=timeout_secs),
+                         wait_duration=timedelta(seconds=wait_secs))
+    else:
+        run = actor.call(run_input=run_input, timeout_secs=timeout_secs, wait_secs=wait_secs)
+    return _response_dict(run)
 
 
 def apify_account_status(force: bool = False) -> Dict[str, Any]:
@@ -32,10 +50,9 @@ def apify_account_status(force: bool = False) -> Dict[str, Any]:
     else:
         try:
             client = _get_client()
-            user = client.user().get()
+            user = _response_dict(client.user().get())
             authenticated = isinstance(user, dict) and bool(user.get("id"))
-            plan_tier = str(((user or {}).get("plan") or {}).get("tier") or "").upper()
-            latest_actor_error = _latest_actor_dataset_error(client) if authenticated and plan_tier == "FREE" else None
+            latest_actor_error = _latest_actor_dataset_error(client) if authenticated else None
             result = {
                 "configured": True,
                 "authenticated": authenticated,
@@ -67,7 +84,7 @@ def _latest_actor_dataset_error(client: ApifyClient) -> str | None:
         runs = client.actor(settings.APIFY_COMPETITOR_ACTOR_ID).runs().list(limit=1, desc=True).items
         if not runs:
             return None
-        dataset_id = runs[0].get("defaultDatasetId")
+        dataset_id = _response_dict(runs[0]).get("defaultDatasetId")
         if not dataset_id:
             return None
         for item in client.dataset(dataset_id).iterate_items():
@@ -114,18 +131,22 @@ def search_google_via_apify(
                 "Running Apify competitor scraper for query: %r page %s",
                 query, page_num,
             )
-            run = client.actor(settings.APIFY_COMPETITOR_ACTOR_ID).call(
+            run = _call_actor(client, settings.APIFY_COMPETITOR_ACTOR_ID,
                 run_input=run_input,
                 timeout_secs=90,
                 wait_secs=100,
             )
             if not run:
+                if diagnostics is not None:
+                    diagnostics.append('Apify returned no run metadata.')
                 logger.error(
                     "Apify SERP scraper returned no run metadata for %r page %s",
                     query, page_num,
                 )
                 continue
             if run.get("status") != "SUCCEEDED":
+                if diagnostics is not None:
+                    diagnostics.append(f"Apify actor did not succeed (status: {run.get('status') or 'unknown'}).")
                 logger.error(
                     "Apify SERP scraper did not succeed for %r page %s: status=%s message=%s",
                     query,
@@ -159,7 +180,7 @@ def search_google_via_apify(
                     except (json.JSONDecodeError, TypeError):
                         serp_results = []
 
-                if isinstance(serp_results, list):
+                if isinstance(serp_results, list) and serp_results:
                     for res in serp_results:
                         if not isinstance(res, dict):
                             continue
@@ -237,7 +258,7 @@ def research_keywords_via_apify(
         }
         try:
             logger.info("Running Apify keyword research for exact seed %r", seed)
-            run = client.actor(actor_id).call(
+            run = _call_actor(client, actor_id,
                 run_input=run_input,
                 timeout_secs=300,
                 wait_secs=310,
@@ -317,7 +338,7 @@ def crawl_competitor_content_via_apify(domain_or_url: str, max_pages: int = 5) -
     
     try:
         logger.info(f"Running Apify website-content-crawler for: {domain_or_url}")
-        run = client.actor("apify/website-content-crawler").call(
+        run = _call_actor(client, "apify/website-content-crawler",
             run_input=run_input,
             timeout_secs=90,
             wait_secs=100,
@@ -362,7 +383,7 @@ def extract_apify_page_content(url: str) -> Optional[ScrapedPage]:
     }
     
     try:
-        run = client.actor("apify/cheerio-scraper").call(
+        run = _call_actor(client, "apify/cheerio-scraper",
             run_input=run_input,
             timeout_secs=60,
             wait_secs=70,

@@ -203,6 +203,7 @@ async def _achat_json(
     temperature: float = 0.2,
     max_tokens: int | None = None,
     use_writing_model: bool = False,
+    request_timeout: float | None = None,
 ) -> Any:
     _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
@@ -216,7 +217,8 @@ async def _achat_json(
     if max_tokens:
         request["max_tokens"] = max_tokens
     from nlp.providers import acomplete
-    response = await acomplete(request, writing=use_writing_model)
+    timeout_options = {"request_timeout": request_timeout} if request_timeout is not None else {}
+    response = await acomplete(request, writing=use_writing_model, **timeout_options)
     return _parse_json_payload(response.choices[0].message.content or "")
 
 
@@ -1175,12 +1177,12 @@ STRICT REJECTION RULES (apply these FIRST):
 - Reject DATING/SOCIAL sites unless the target site is also a dating site.
 - Reject GOVERNMENT/INSTITUTIONAL sites (observatories, .gov, .edu) unless they are a direct content competitor.
 - Reject any domain whose PRIMARY business/purpose is completely different from the target, even if one page ranks for a seed.
-- A site must have its PRIMARY focus or a MAJOR section dedicated to the same narrow topic. Having one calculator or one article is NOT enough.
+- Judge the observed ranking page using its title, snippet and URL. A dedicated page serving the same task and audience is a search competitor even on a broader relevant site. Do not infer an unrelated audience just from a brand name or require unobserved site-wide coverage.
 
 ACCEPTANCE CRITERIA:
-- For a focused tool: accept ONLY sites offering the SAME type of tool to the SAME audience. A general calculator directory qualifies only if it has multiple pages in the same niche.
+- For a focused tool: accept sites whose observed ranking page offers the SAME type of tool to the SAME audience, including relevant calculator collections.
 - For a narrow content site: accept sites with sustained coverage of the same narrow subject.
-- Ranking for a seed proves SERP presence; it does NOT prove direct site-level competition.
+- Ranking alone is insufficient; the page evidence must demonstrate the same task and audience. site_scope_match can be true for a relevant dedicated section; whole-site exclusivity is not required.
 - Quality over quantity: returning 3-5 true competitors is far better than 15 broad sites. Do not force a minimum count.
 - Never return a domain absent from Candidate competitors.
 

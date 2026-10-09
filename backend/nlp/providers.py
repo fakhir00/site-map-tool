@@ -1,5 +1,6 @@
 """AI availability and bounded failover shared by scan and writing requests."""
 import hashlib
+import asyncio
 import threading
 import time
 from typing import Any
@@ -92,13 +93,22 @@ def complete(request: dict, writing=False):
     raise _unavailable()
 
 
-async def acomplete(request: dict, writing=False):
-    for config in configured_providers(writing):
-        if not _eligible(config):
-            continue
+async def acomplete(request: dict, writing=False, request_timeout: float | None = None):
+    configs = [config for config in configured_providers(writing) if _eligible(config)]
+    deadline = time.monotonic() + request_timeout if request_timeout is not None else None
+    for index, config in enumerate(configs):
+        # A bounded caller must leave time for fallback providers. Previously
+        # the discovery deadline cancelled the first provider before failover.
+        timeout = settings.AI_REQUEST_TIMEOUT
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            timeout = min(timeout, remaining / (len(configs) - index))
         try:
-            async with AsyncOpenAI(base_url=config[1], api_key=config[2], timeout=settings.AI_REQUEST_TIMEOUT, max_retries=0) as client:
-                response = await client.chat.completions.create(**_request(config, request))
+            async with asyncio.timeout(timeout):
+                async with AsyncOpenAI(base_url=config[1], api_key=config[2], timeout=timeout, max_retries=0) as client:
+                    response = await client.chat.completions.create(**_request(config, request))
             _record(config, True, 'AI requests are working.')
             return response
         except Exception as exc:

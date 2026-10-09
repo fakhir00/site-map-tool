@@ -741,6 +741,9 @@ def _competitor_gap_completion_message(
     candidates = diagnostics.get("relevant_candidates", 0)
     if not domains:
         reason = discovery_notes[-1] if discovery_notes else "no usable search-provider result was available"
+        if "none had enough" in reason or "none matched the direct-site boundary" in reason:
+            return (f"Scan completed with limited competitor research: search results were found, but no matching "
+                    f"competitor pages were identified ({reason}). Review the seed keywords and site scope.")
         return f"Scan completed with limited competitor research: no direct competitors were discovered ({reason}). Check competitor discovery and provider status."
     if stage == "no_scraped_pages":
         return "Scan completed with limited competitor research: no competitor pages were successfully scraped. Check failed URLs and scrape errors before retrying."
@@ -1300,7 +1303,7 @@ def _discover_competitor_domains(
         snippet: str | None = None,
     ) -> None:
         unwrapped_url = _unwrap_result_url(url)
-        if not _is_relevant_result_url(unwrapped_url, required_terms, negative_terms):
+        if not _is_relevant_result_url(unwrapped_url, required_terms, negative_terms, title, snippet):
             return
         domain = _origin(unwrapped_url)
         root = _registered_domain(domain)
@@ -1316,6 +1319,7 @@ def _discover_competitor_domains(
             "best_rank": rank,
             "titles": [],
             "snippets": [],
+            "ranking_pages": [],
         })
         if unwrapped_url and unwrapped_url not in signal["sample_urls"]:
             signal["sample_urls"].append(unwrapped_url)
@@ -1328,6 +1332,10 @@ def _discover_competitor_domains(
             signal["titles"].append(title[:250])
         if snippet and snippet not in signal["snippets"]:
             signal["snippets"].append(snippet[:500])
+        signal["ranking_pages"].append({
+            "url": unwrapped_url, "query": query,
+            "title": (title or "")[:250], "snippet": (snippet or "")[:500],
+        })
         if root not in competitor_roots:
             competitor_domains.append(domain)
             competitor_roots.add(root)
@@ -1447,7 +1455,7 @@ def _discover_competitor_domains(
             else:
                 diagnostics_out.append(
                     f"Apify returned {apify_result_count} organic results; "
-                    f"{len(balanced_domains)} candidate sites; none matched the direct-site boundary"
+                    f"{len(balanced_domains)} candidate sites; none had enough matching page evidence"
                 )
         return []
 
@@ -1475,6 +1483,13 @@ def _high_confidence_competitor_fallback(
             if seed not in queries:
                 continue
             if _domain_matches_seed_scope(domain, seed):
+                accepted.append(domain)
+                break
+            # Branded homepages and opaque paths can directly serve the task.
+            # Use evidence from one ranking result, not unrelated snippets
+            # pooled across pages or seeds on a large domain.
+            if any(page.get("query") == seed and _ranking_page_matches_seed(page, seed)
+                   for page in signal.get("ranking_pages", [])):
                 accepted.append(domain)
                 break
             seed_terms = _search_ranking_terms([seed])
@@ -1614,22 +1629,37 @@ def _url_has_any_terms(url: str, terms: set[str]) -> bool:
     return bool(path_words & terms)
 
 
-def _is_relevant_result_url(url: str | None, required_terms: set[str], negative_terms: set[str] | None = None) -> bool:
+def _ranking_page_matches_seed(page: dict[str, Any], seed: str) -> bool:
+    ignored = {"a", "an", "and", "or", "the", "for", "with", "near", "best", "free", "online"}
+    def terms(value):
+        return set(re.findall(r"[a-z0-9]+", str(value or "").lower())) - ignored
+    seed_terms = terms(seed)
+    title_terms = terms(page.get("title"))
+    # Retain numeric product identifiers and the complete subject. A generic
+    # calculator or a passing mention in a snippet is insufficient evidence.
+    return len(seed_terms) >= 2 and len(seed_terms & title_terms) >= 2 and seed_terms <= (
+        title_terms | terms(page.get("snippet"))
+    )
+
+
+def _is_relevant_result_url(url: str | None, required_terms: set[str], negative_terms: set[str] | None = None,
+                            title: str | None = None, snippet: str | None = None) -> bool:
     """Filter competitor discovery URLs. Trust Google rankings but block obviously irrelevant URLs."""
     if not url:
         return False
     parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
     lowered = unquote(parsed.path).lower()
     # Block URLs whose path contains negative terms from the audit
     if negative_terms:
         path_words = set(re.findall(r'[a-z]{3,}', lowered))
         if path_words & negative_terms:
             return False
-    # Minimal sanity check: at least one seed term (4+ chars) must appear
-    # in the domain name or URL path. This prevents completely irrelevant
-    # domains from wasting scraping budget.
+    # SERP titles/descriptions carry topic evidence even when the brand or URL
+    # does not contain the keyword. Do not discard that evidence before review.
     if required_terms:
-        domain_and_path = (parsed.netloc + lowered).lower()
+        domain_and_path = f"{parsed.netloc} {lowered} {title or ''} {snippet or ''}".lower()
         long_terms = {term for term in required_terms if len(term) >= 4}
         if long_terms and not any(term in domain_and_path for term in long_terms):
             return False

@@ -71,3 +71,9 @@ class GapDiagnosticTests(unittest.TestCase):
     def test_discovery_and_legacy_results_do_not_invent_a_stage(self):
         self.assertIn('search unavailable', _competitor_gap_completion_message(0, [], {}, ['search unavailable']))
         self.assertIn('diagnostics are unavailable', _competitor_gap_completion_message(0, ['competitor.example'], {}, []))
+
+    def test_valid_search_with_no_matching_pages_does_not_blame_provider_status(self):
+        message = _competitor_gap_completion_message(0, [], {}, [
+            'Apify returned 30 organic results; 4 candidate sites; none had enough matching page evidence'])
+        self.assertIn('Review the seed keywords and site scope', message)
+        self.assertNotIn('provider status', message)

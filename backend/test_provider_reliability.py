@@ -42,6 +42,21 @@ class ProviderReliabilityTests(TestCase):
         first.__aexit__.assert_awaited_once()
         second.__aexit__.assert_awaited_once()
 
+    def test_bounded_discovery_can_reach_fallback_when_first_provider_stalls(self):
+        async def stalled(**kwargs):
+            await asyncio.sleep(1)
+        first, second = MagicMock(), MagicMock()
+        first.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=stalled))))
+        second.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value='recovered')))))
+        first.__aexit__ = AsyncMock()
+        second.__aexit__ = AsyncMock()
+        with patch('nlp.providers.AsyncOpenAI', side_effect=[first, second]) as client:
+            result = asyncio.run(providers.acomplete({'messages': []}, request_timeout=0.1))
+        self.assertEqual(result, 'recovered')
+        self.assertEqual(client.call_count, 2)
+        self.assertLessEqual(client.call_args_list[0].kwargs['timeout'], 0.05)
+        first.__aexit__.assert_awaited_once()
+
     def test_failed_accounts_are_not_retried_for_every_scan_batch(self):
         for config in self.configs:
             providers._record(config, False, 'Insufficient balance.')

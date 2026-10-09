@@ -1493,9 +1493,10 @@ async def _build_site_architecture(
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
     review_deadline = asyncio.get_running_loop().time() + 230
     discovery_status = "not_requested"
+    discovery_diagnostics: list[str] = []
     if discover_topics:
         from nlp.authority import expand_inventory
-        normalized, discovery_status = await expand_inventory(normalized, context, main, _achat_json, max_keywords=MAX_ARCHITECTURE_KEYWORDS)
+        normalized, discovery_status = await expand_inventory(normalized, context, main, _achat_json, max_keywords=MAX_ARCHITECTURE_KEYWORDS, diagnostics=discovery_diagnostics)
     prompt = _prompt(normalized, context, main)
     last_errors: list[str] = []
     for attempt in range(2 if discover_topics else 3):
@@ -1575,6 +1576,14 @@ async def _build_site_architecture(
                 plan["site_domain"] = _clean_domain(site_domain) or _domain_from_context(context)
                 from nlp.authority import finish_authority_plan
                 plan = finish_authority_plan(plan, normalized, context, discovery_status)
+                if discovery_status == "unavailable":
+                    reason = discovery_diagnostics[-1] if discovery_diagnostics else "Topic research was unavailable."
+                    if not plan["spokes"]:
+                        raise ArchitectureAgentError(
+                            f"{reason} No supporting pages could be planned from the supplied keywords. "
+                            "Retry topic research or add more relevant keywords. Your previous saved map is unchanged."
+                        )
+                    plan["authority_coverage"]["discovery_message"] = reason
                 final_errors = validate_architecture(plan, normalized, main)
                 if final_errors:
                     raise ValueError("; ".join(final_errors))
