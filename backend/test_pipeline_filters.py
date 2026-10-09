@@ -988,6 +988,20 @@ class PipelineFilterTests(TestCase):
         self.assertEqual(results[0]["phrase"], "circuit diagram tool")
         self.assertEqual(set(results[0]["url_ids"]), {str(first_id), str(second_id)})
         self.assertEqual(results[0]["frequency"], 2)
+        self.assertEqual(results[0]["evidence"]["excerpt"], "page one text")
+        self.assertEqual(results[0]["evidence"]["heading"], "Circuit Diagram Tool")
+
+    def test_extraction_includes_bounded_evidence_near_the_keyword(self):
+        page = SimpleNamespace(id=uuid.uuid4(), url='https://example.com/circuit',
+                               h1='Circuit design', scraped_text=('Navigation ' * 100) +
+                               'Circuit diagram tool helps draw accurate schematics. ' + ('Footer ' * 100))
+        keywords = SimpleNamespace(primary=[('circuit diagram tool', 1)], lsi=[], entities=[], heading_keywords=[])
+        with patch('nlp.keywords.extract_keywords_from_page', return_value=keywords):
+            results = extract_keywords_from_urls_ai(['circuit diagram'], [page])
+        evidence = next(item['evidence'] for item in results if item['phrase'] == 'circuit diagram tool')
+        self.assertIn('helps draw accurate schematics', evidence['excerpt'])
+        self.assertLessEqual(len(evidence['excerpt']), 480)
+        self.assertEqual(evidence['url'], page.url)
 
     def test_gap_filter_preserves_source_metadata(self):
         source_id = str(uuid.uuid4())

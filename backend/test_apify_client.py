@@ -18,6 +18,19 @@ from workers.pipeline import _process_apify_keywords
 
 
 class ApifyClientTests(TestCase):
+    def test_deeper_search_does_not_repeat_initial_pages(self):
+        client = MagicMock()
+        client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'deeper'}
+        client.dataset.return_value.iterate_items.return_value = iter([
+            {'url': 'https://example.com/circuit', 'title': 'Circuit diagram guide'}])
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            results = search_google_via_apify('circuit diagram', max_results=10, start_page=4)
+        self.assertEqual(len(results), 1)
+        client.actor.return_value.call.assert_called_once()
+        self.assertEqual(client.actor.return_value.call.call_args.kwargs['run_input']['page'], 4)
+
     def test_v3_actor_timeouts_and_typed_response_support_flat_results(self):
         class Run(BaseModel):
             status: str

@@ -45,7 +45,7 @@ class GapDiagnosticTests(unittest.TestCase):
         self.assertEqual(stats['outcome'], 'review_rejected')
         self.assertEqual(stats['relevant_candidates'], 1)
         message = _competitor_gap_completion_message(count, ['competitor.example'], stats, [])
-        self.assertIn('quality review selected no new gaps', message)
+        self.assertIn('No additional uncovered opportunities were confirmed', message)
         self.assertNotIn('provider', message.lower())
         self.assertNotIn('retry', message.lower())
 

@@ -102,6 +102,7 @@ def search_google_via_apify(
     max_results: int = 30,
     country_code: str = "us",
     diagnostics: list[str] | None = None,
+    start_page: int = 1,
 ) -> List[Dict[str, Any]]:
     """
     Search Google using the configured competitor discovery Actor.
@@ -118,7 +119,8 @@ def search_google_via_apify(
     pages_to_scrape = max(1, math.ceil(max_results / 10))
     provider_failed = False
 
-    for page_num in range(1, pages_to_scrape + 1):
+    first_page = max(1, int(start_page))
+    for page_num in range(first_page, first_page + pages_to_scrape):
         run_input = {
             "keyword": query,
             "limit": "10",

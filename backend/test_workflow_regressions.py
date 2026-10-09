@@ -6,6 +6,7 @@ from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 import uuid
@@ -51,6 +52,7 @@ class WorkflowTests(unittest.TestCase):
         self.stack.enter_context(patch('workers.pipeline.SyncSession', self.sessions))
         self.stack.enter_context(patch('app.scan.router.settings.USE_CELERY', False))
         self.stack.enter_context(patch('scraping.apify_client_module.research_keywords_via_apify', return_value=[]))
+        self.stack.enter_context(patch('scraping.apify_client_module.search_google_via_apify', return_value=[]))
         self.stack.enter_context(patch('nlp.deepseek_seo.enrich_keywords_with_seo_data', return_value={}))
         self.stack.enter_context(patch('nlp.dataforseo.is_dataforseo_configured', return_value=False))
         self.stack.enter_context(patch('app.scan.router.settings.DATABASE_URL', f'sqlite+aiosqlite:///{path}'))
@@ -276,6 +278,129 @@ class WorkflowTests(unittest.TestCase):
         project = self.client.get(f'/api/projects/{pid}').json()
         self.assertEqual(project['status'], 'complete')
         self.assertGreaterEqual(project['total_keywords'], 1)
+
+    def test_gap_recovery_scrapes_new_matching_pages_with_a_hard_cap(self):
+        from workers.pipeline import _research_additional_gap_pages
+        from scraping.crawler import ScrapedPage
+        pid = uuid.UUID(self.project())
+        job_id = self.seed_job(str(pid))
+        known_url = 'https://competitor.example/circuit'
+        with self.sessions() as db:
+            db.add(Url(project_id=pid, url=known_url, source_type='competitor', status='scraped'))
+            db.commit()
+        results = [
+            {'url': url, 'title': title} for url, title in [
+                (known_url, 'Circuit diagram guide'),
+                ('https://own.example/circuit', 'Circuit diagram guide'),
+                ('https://unrelated.example/', 'Dog age calculator'),
+                ('https://new.example/circuit', 'Circuit diagram guide'),
+                ('https://extra.example/circuit', 'Circuit diagram guide'),
+            ]
+        ]
+        stats = {}
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module.search_google_via_apify', return_value=results,
+        ) as search, patch('scraping.crawler.scrape_page', side_effect=lambda url, **kw:
+                          ScrapedPage(url=url, text='Circuit diagram guide and instructions', word_count=6)) as scrape, patch(
+            'workers.pipeline.settings.GAP_RECOVERY_PAGE_LIMIT', 1,
+        ):
+            domains = _research_additional_gap_pages(pid, job_id, ['circuit diagram'], 'https://own.example',
+                                                     'gb', set(), stats, deadline=time.monotonic() + 60)
+        self.assertEqual(domains, ['https://new.example'])
+        self.assertEqual(stats['recovery_pages'], 1)
+        self.assertEqual(scrape.call_args.args[0], 'https://new.example/circuit')
+        scrape.assert_called_once()
+        self.assertEqual(search.call_args.kwargs['start_page'], 4)
+        self.assertEqual(search.call_args.kwargs['country_code'], 'gb')
+        with self.sessions() as db:
+            pages = db.execute(select(Url).where(Url.project_id == pid)).scalars().all()
+            self.assertEqual(len(pages), 2)
+            self.assertTrue(all(page.status == 'scraped' for page in pages))
+
+    def test_full_scan_recovers_after_the_first_review_rejects_every_candidate(self):
+        from scraping.crawler import ScrapedPage
+        pid = self.project()
+        def extract(seeds, urls, **kwargs):
+            return [dict(phrase='circuit diagram troubleshooting', type='lsi', url_ids=[str(page.id)])
+                    for page in urls]
+        verdicts = []
+        def review(seeds, candidates, **kwargs):
+            verdicts.append(candidates)
+            return [] if len(verdicts) == 1 else candidates
+        with ExitStack() as mocks:
+            mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit'}, set())))
+            mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=['https://competitor.example']))
+            mocks.enter_context(patch('workers.pipeline._discover_content_urls', side_effect=lambda domain, *a, **kw: [domain + '/circuit']))
+            mocks.enter_context(patch('scraping.crawler.scrape_page', side_effect=lambda url, **kw:
+                                     ScrapedPage(url=url, text='Circuit diagram troubleshooting guide', word_count=4)))
+            mocks.enter_context(patch('scraping.apify_client_module.is_apify_configured', return_value=True))
+            search = mocks.enter_context(patch('scraping.apify_client_module.search_google_via_apify', return_value=[
+                {'url': 'https://new.example/circuit', 'title': 'Circuit diagram troubleshooting'}]))
+            mocks.enter_context(patch('nlp.openrouter.extract_keywords_from_urls_ai', side_effect=extract))
+            mocks.enter_context(patch('nlp.openrouter.filter_keyword_gap_recommendations', side_effect=review))
+            mocks.enter_context(patch('nlp.openrouter.generate_ai_keywords_sync', return_value=[]))
+            mocks.enter_context(patch('workers.pipeline._own_content_keyword_phrases', return_value=set()))
+            response = self.client.post(f'/api/projects/{pid}/scan/start')
+        self.assertEqual(response.status_code, 200, response.text)
+        project = self.client.get(f'/api/projects/{pid}').json()
+        jobs = self.client.get(f'/api/projects/{pid}/scan/jobs').json()
+        self.assertEqual(project['status'], 'complete', jobs)
+        self.assertEqual(project['total_keywords'], 1)
+        self.assertEqual(project['urls_processed'], 3)
+        self.assertEqual(len(verdicts), 2)
+        self.assertGreater(len(verdicts[1]), len(verdicts[0]))
+        self.assertFalse(jobs[0]['error_message'])
+        self.assertEqual(search.call_args.kwargs['start_page'], 4)
+
+    def test_gap_recovery_stops_for_pause_deadline_and_full_url_budget(self):
+        from workers.pipeline import _research_additional_gap_pages
+        pid = uuid.UUID(self.project())
+        job_id = self.seed_job(str(pid))
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module.search_google_via_apify', return_value=[],
+        ) as search:
+            for deadline, limit in [(0, 200), (time.monotonic() + 60, 0)]:
+                with patch('workers.pipeline.settings.MAX_URLS_PER_SCAN', limit):
+                    self.assertEqual(_research_additional_gap_pages(
+                        pid, job_id, ['circuit diagram'], 'https://own.example', 'us', set(), {},
+                        deadline=deadline), [])
+            paused_job_id = self.seed_job(str(pid), status='paused')
+            self.assertEqual(_research_additional_gap_pages(
+                pid, paused_job_id, ['circuit diagram'], 'https://own.example', 'us', set(), {},
+                deadline=time.monotonic() + 60), [])
+            search.assert_not_called()
+
+    def test_gap_recovery_deduplicates_seeds_and_bounds_extra_searches(self):
+        from workers.pipeline import _research_additional_gap_pages
+        pid = uuid.UUID(self.project())
+        job_id = self.seed_job(str(pid))
+        stats = {}
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module.search_google_via_apify', return_value=[],
+        ) as search, patch('workers.pipeline.settings.GAP_RECOVERY_SEARCH_LIMIT', 2):
+            self.assertEqual(_research_additional_gap_pages(
+                pid, job_id, ['circuit diagram', 'circuit diagram', 'circuit drawing', 'circuit maker'],
+                'https://own.example', 'us', set(), stats, deadline=time.monotonic() + 60), [])
+        self.assertEqual([call.args[0] for call in search.call_args_list], ['circuit diagram', 'circuit drawing'])
+        self.assertEqual(stats['recovery_searches'], 2)
+        self.assertEqual(stats['recovery_pages'], 0)
+
+    def test_gap_recovery_stops_on_provider_failure(self):
+        from workers.pipeline import _research_additional_gap_pages
+        pid = uuid.UUID(self.project())
+        job_id = self.seed_job(str(pid))
+        def unavailable(*args, **kwargs):
+            kwargs['diagnostics'].append('Actor quota reached')
+            return []
+        stats = {}
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module.search_google_via_apify', side_effect=unavailable,
+        ) as search:
+            self.assertEqual(_research_additional_gap_pages(
+                pid, job_id, ['circuit diagram', 'circuit drawing'], 'https://own.example', 'us', set(), stats,
+                deadline=time.monotonic() + 60), [])
+            search.assert_called_once()
+        self.assertEqual(stats['recovery_provider_notes'], ['Actor quota reached'])
 
     def test_generate_does_not_pad_empty_ai_results_and_project_uses_specialist_architect(self):
         pid = self.project()

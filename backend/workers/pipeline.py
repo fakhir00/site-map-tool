@@ -446,6 +446,30 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             evidence_out=competitor_evidence,
             diagnostics=gap_diagnostics,
         )
+        if not competitor_gap_count:
+            # Search beyond the initial SERP pages once, then review the enlarged
+            # corpus. Release the DB connection during this network work.
+            recovery_locale = project.search_locale
+            db.close()
+            db = None
+            recovered_domains = _research_additional_gap_pages(
+                project_uuid, job_uuid, seed_keywords, own_domain,
+                recovery_locale, negative_terms, gap_diagnostics,
+                deadline=scan_started + settings.SCAN_MAX_SECONDS,
+            )
+            db, project, job = _load_pipeline_state(project_uuid, job_uuid)
+            if not project or not job or project.status != "running" or job.status != "running":
+                return
+            if gap_diagnostics.get("recovery_pages", 0):
+                competitor_domains = list(dict.fromkeys(competitor_domains + recovered_domains))
+                competitor_evidence.clear()
+                competitor_gap_count = _process_competitor_keyword_gaps(
+                    db, project_uuid, seed_keywords, topic_terms, negative_terms,
+                    audit_summary, extract_keywords_from_urls_ai,
+                    filter_keyword_gap_recommendations, classify_keyword_tiers,
+                    verify_cluster_intent, evidence_out=competitor_evidence,
+                    diagnostics=gap_diagnostics,
+                )
         logger.info("[%s] Competitor gap diagnostics: %s", project_id, gap_diagnostics)
         logger.info(
             "[%s] Competitor keyword gap pass stored %s keywords in %.1fs",
@@ -751,9 +775,10 @@ def _competitor_gap_completion_message(
         return (f"Scan completed: {pages} competitor pages were scraped, but extraction and topic filtering "
                 "returned no relevant candidates. Check page text, seed keywords and site scope; provider failure is not established.")
     if stage == "review_rejected":
-        return (f"Scan completed: quality review selected no new gaps from {candidates} relevant candidates "
-                f"on {pages} scraped competitor pages. Candidates may overlap existing coverage or lack a useful distinct intent. "
-                "For broader topic planning, build the Hub Spoke map from your site context.")
+        expanded = " This includes additional pages from a deeper search." if diagnostics.get("recovery_pages") else ""
+        return (f"Scan completed: reviewed {candidates} relevant keywords across {pages} competitor pages."
+                f"{expanded} No additional uncovered opportunities were confirmed. "
+                "Your keyword results are ready to review; use Hub Spoke to organize them into pages and improvements.")
     if stage == "quality_rejected":
         return (f"Scan completed: review returned candidates from {pages} scraped competitor pages, but none passed "
                 "the final phrase, topic and source-brand checks. Check the site scope and scan diagnostics.")
@@ -761,6 +786,78 @@ def _competitor_gap_completion_message(
         return (f"Scan completed: the accepted competitor candidates are already represented in your site's extracted content. "
                 "No new competitor gaps were stored. Use Hub Spoke to plan distinct topics or improvements to existing pages.")
     return "Scan completed with no new competitor gaps. Stage diagnostics are unavailable for this run; check the scan logs before deciding whether to retry."
+
+
+def _research_additional_gap_pages(
+    project_id: uuid.UUID, job_id: uuid.UUID, seed_keywords: list[str],
+    own_domain: str, locale: str, negative_terms: set[str] | None,
+    diagnostics: dict[str, Any], *, deadline: float,
+) -> list[str]:
+    """One bounded deeper-SERP pass, with fresh sessions and the usual scan fences."""
+    from app.models import Url
+    from scraping.apify_client_module import is_apify_configured, search_google_via_apify
+    from scraping.crawler import scrape_page
+
+    diagnostics.update(recovery_searches=0, recovery_pages=0)
+    if not is_apify_configured():
+        return []
+    with get_db() as db:
+        existing = set(db.execute(select(Url.url).where(Url.project_id == project_id)).scalars().all())
+    capacity = min(max(0, settings.GAP_RECOVERY_PAGE_LIMIT), max(0, settings.MAX_URLS_PER_SCAN - len(existing)))
+    if not capacity:
+        return []
+    own_root = _registered_domain(own_domain)
+    required_terms = _search_required_terms(seed_keywords)
+    start_page = (max(20, settings.GOOGLE_SERP_RESULT_LIMIT) + 9) // 10 + 1
+    domains: list[str] = []
+    attempted = 0
+    seeds = list(dict.fromkeys(seed.strip() for seed in seed_keywords if seed.strip()))
+    for seed in seeds[:max(0, settings.GAP_RECOVERY_SEARCH_LIMIT)]:
+        if attempted >= capacity or time.monotonic() >= deadline or not _scan_is_active(None, project_id, job_id):
+            break
+        notes: list[str] = []
+        results = search_google_via_apify(
+            seed, max_results=10, country_code=locale or "us", start_page=start_page, diagnostics=notes,
+        )
+        diagnostics["recovery_searches"] += 1
+        if notes:
+            diagnostics.setdefault("recovery_provider_notes", []).extend(notes)
+        for result in results:
+            if attempted >= capacity or time.monotonic() >= deadline or not _scan_is_active(None, project_id, job_id):
+                break
+            url = _unwrap_result_url(result.get("url"))
+            root = _registered_domain(url or "")
+            if (not url or url in existing or root == own_root or _is_blocked_competitor_root(root)
+                or not _is_relevant_result_url(url, required_terms, negative_terms, result.get("title"), result.get("snippet"))
+                or not _ranking_page_matches_seed(result, seed)):
+                continue
+            existing.add(url)
+            attempted += 1
+            domain = _origin(url)
+            try:
+                scraped = scrape_page(url, delay_min=settings.SCRAPE_DELAY_MIN,
+                                      delay_max=settings.SCRAPE_DELAY_MAX,
+                                      timeout=settings.REQUEST_TIMEOUT, max_retries=settings.MAX_RETRIES)
+            except Exception as exc:
+                logger.warning("Gap recovery scrape failed for %s: %s", url, exc)
+                continue
+            if not _scan_is_active(None, project_id, job_id):
+                break
+            with get_db() as db:
+                _queue_url(db, project_id, job_id, url, "competitor", domain)
+                db.flush()
+                row = db.execute(select(Url).where(Url.project_id == project_id, Url.url == url)).scalar_one()
+                if _apply_scrape_result(row, scraped):
+                    diagnostics["recovery_pages"] += 1
+                    if domain not in domains:
+                        domains.append(domain)
+                db.commit()
+        # Quota/authentication outages will not improve by charging more calls.
+        if notes and not results:
+            break
+    logger.info("[%s] Gap recovery: %s searches, %s additional scraped pages", project_id,
+                diagnostics["recovery_searches"], diagnostics["recovery_pages"])
+    return domains
 
 
 def _process_competitor_keyword_gaps(

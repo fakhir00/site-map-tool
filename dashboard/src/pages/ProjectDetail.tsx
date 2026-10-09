@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Pause, Play, RefreshCw, Timer, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Globe2, Info, Pause, Play, RefreshCw, Timer, X } from 'lucide-react'
 import { api, type Project, type ProjectSource, type ProjectStats, type ScanJob, type ScanProgress } from '../lib/api'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -136,6 +136,7 @@ export function ProjectDetail() {
   const visibleJobError = activeJobError
   const latestJobError = visibleJobError && visibleJobError !== dismissedError ? visibleJobError : null
   const isCompletionWarning = status === 'complete' && Boolean(latestJobError)
+  const isCompletionNote = isCompletionWarning && latestJobError?.startsWith('Scan completed:')
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error
 
   return (
@@ -218,13 +219,14 @@ export function ProjectDetail() {
       )}
 
       {latestJobError && (
-        <div className={`relative flex items-start gap-3 rounded-lg px-4 py-3 pr-10 text-sm ${isCompletionWarning ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300' : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300'}`}>
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className={`relative flex items-start gap-3 rounded-lg px-4 py-3 pr-10 text-sm ${isCompletionNote ? 'border border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300' : isCompletionWarning ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300' : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300'}`}>
+          {isCompletionNote ? <Info className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
           <p>{latestJobError}</p>
           <button 
             type="button" 
+            aria-label="Dismiss scan message"
             onClick={() => setDismissedError(latestJobError)}
-            className="absolute right-3 top-3 text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-200"
+            className="absolute right-3 top-3 text-current opacity-70 hover:opacity-100"
           >
             <X className="h-4 w-4" />
           </button>
