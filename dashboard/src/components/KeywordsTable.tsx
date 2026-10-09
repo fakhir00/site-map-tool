@@ -81,7 +81,6 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   const [search, setSearch] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [type, setType] = useState('')
-  const [volumeSort, setVolumeSort] = useState('search_volume_desc')
   const [exportError, setExportError] = useState('')
   const [articleError, setArticleError] = useState('')
   const [writingKeywordId, setWritingKeywordId] = useState<string | null>(null)
@@ -92,7 +91,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   }, [search])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['keywords', projectId, page, searchQuery, type, volumeSort],
+    queryKey: ['keywords', projectId, page, searchQuery, type],
     queryFn: () => {
       const params = new URLSearchParams({
         page: page.toString(),
@@ -100,7 +99,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
       })
       if (searchQuery) params.append('search', searchQuery)
       if (type) params.append('keyword_type', type)
-      params.append('sort_by', volumeSort)
+      params.append('sort_by', 'created_at')
 
       return api.get<KeywordListResponse>(`/projects/${projectId}/keywords?${params}`)
     },
@@ -235,19 +234,6 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
             <option value="heading">Heading</option>
           </select>
 
-          <select
-            aria-label="Sort by search volume"
-            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 dark:focus:ring-cyan-600"
-            onChange={(event) => {
-              setVolumeSort(event.target.value)
-              setPage(1)
-              setSelectedIds(new Set())
-            }}
-            value={volumeSort}
-          >
-            <option value="search_volume_desc">Volume: High to low</option>
-            <option value="search_volume_asc">Volume: Low to high</option>
-          </select>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -357,8 +343,6 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                   <th className="px-5 py-3 font-semibold">Intent</th>
                   <th className="px-5 py-3 font-semibold">Type</th>
                   <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
-                  <th className="px-5 py-3 text-right font-semibold">Volume</th>
-                  <th className="px-5 py-3 text-right font-semibold">Difficulty</th>
                   <th className="px-5 py-3 font-semibold">Sources</th>
                   <th className="px-5 py-3 text-right font-semibold">Write</th>
                   <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
@@ -368,7 +352,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                 {keywords.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={10}>
+                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={8}>
                       No keyword gaps found yet.
                     </td>
                   </tr>
@@ -400,12 +384,6 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                       </td>
                       <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
                       <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">{keyword.frequency}</td>
-                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {keyword.search_volume?.toLocaleString() ?? '—'}
-                      </td>
-                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {keyword.difficulty != null ? Math.round(keyword.difficulty) : '—'}
-                      </td>
                       <td className="px-5 py-4">
                         <div className="flex max-w-[360px] flex-wrap gap-1.5">
                           {sourceDomains(keyword).slice(0, 4).map((source) => (

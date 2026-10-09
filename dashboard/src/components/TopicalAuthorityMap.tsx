@@ -25,7 +25,7 @@ function fallbackLinks(pages: PageDetail[]): MapLink[] {
 
 export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
   const briefRef = useRef<HTMLElement>(null)
-  const [tab, setTab] = useState<'map' | 'pages' | 'links' | 'keywords'>('map')
+  const [tab, setTab] = useState<'map' | 'pages' | 'links' | 'keywords'>('pages')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [selectedTarget, setSelectedTarget] = useState<string | null>(mapping.master_hub?.target_keyword || null)
@@ -83,12 +83,12 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
     </Card>
     <Card className="overflow-hidden p-0">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
-        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Map views">{(['map', 'pages', 'links', 'keywords'] as const).map(view => <button key={view} type="button" id={`map-tab-${view}`} role="tab" tabIndex={tab === view ? 0 : -1} aria-controls="map-panel" aria-selected={tab === view} onKeyDown={event => {
-          const views = ['map', 'pages', 'links', 'keywords'] as const
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Map views">{(['pages', 'map', 'links', 'keywords'] as const).map(view => <button key={view} type="button" id={`map-tab-${view}`} role="tab" tabIndex={tab === view ? 0 : -1} aria-controls="map-panel" aria-selected={tab === view} onKeyDown={event => {
+          const views = ['pages', 'map', 'links', 'keywords'] as const
           const index = views.indexOf(view)
-          const next = event.key === 'ArrowRight' ? (index + 1) % 4 : event.key === 'ArrowLeft' ? (index + 3) % 4 : event.key === 'Home' ? 0 : event.key === 'End' ? 3 : -1
+          const next = event.key === 'ArrowRight' ? (index + 1) % views.length : event.key === 'ArrowLeft' ? (index + views.length - 1) % views.length : event.key === 'Home' ? 0 : event.key === 'End' ? views.length - 1 : -1
           if (next >= 0) { event.preventDefault(); setTab(views[next]); document.getElementById(`map-tab-${views[next]}`)?.focus() }
-        }} onClick={() => setTab(view)} className={`rounded-lg px-3 py-2 text-sm font-semibold capitalize ${tab === view ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{view === 'keywords' ? 'Keyword decisions' : view === 'links' ? `Links (${links.length})` : view}</button>)}</div>
+        }} onClick={() => setTab(view)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === view ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{view === 'keywords' ? 'Keyword decisions' : view === 'links' ? `Links (${links.length})` : view === 'pages' ? 'Pages' : 'Map'}</button>)}</div>
         <div className="flex flex-wrap gap-2"><label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 dark:border-slate-700"><Search className="h-4 w-4 text-slate-400" /><input aria-label="Search map" placeholder="Find a topic or page…" value={query} onChange={event => setQuery(event.target.value)} className="w-40 bg-transparent py-2 text-sm outline-none" /></label><select aria-label="Filter pages" value={filter} onChange={event => setFilter(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="all">All pages</option><option value="create">New pages to create</option><option value="article">Blogs</option><option value="tool">Pages and tools</option><option value="update">Existing pages</option><option value="research">Research ideas</option></select></div>
       </div>
       <div className={`grid ${selected ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
