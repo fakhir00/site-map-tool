@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 import uuid
 import json
+import asyncio
 
 from app.keywords.router import _is_displayable_keyword
 from app.models import Keyword
@@ -12,6 +13,7 @@ from nlp.openrouter import (
     extract_keywords_from_urls_ai,
     filter_keyword_gap_recommendations,
     generate_ai_keywords_sync,
+    generate_ai_keywords,
     judge_competitor_domains,
 )
 from nlp.keywords import (
@@ -322,6 +324,47 @@ class PipelineFilterTests(TestCase):
             "phrase": "lunar age calculator for newborns",
             "type": "long-tail",
         }])
+
+    def test_ai_duplicate_only_batch_requests_new_alternatives_in_both_paths(self):
+        duplicate = {'phrase': 'lunar age calculator by birth date', 'type': 'long-tail'}
+        replacement = {'phrase': 'how to calculate lunar age', 'type': 'long-tail',
+                       'support_source': 'seed', 'support_phrase': 'lunar age calculator'}
+        for async_mode in (False, True):
+            with self.subTest(async_mode=async_mode), patch('nlp.openrouter.is_ai_configured', return_value=True), patch(
+                'nlp.openrouter._achat_json' if async_mode else 'nlp.openrouter._chat_json',
+                side_effect=[[duplicate], [replacement]],
+            ) as chat:
+                kwargs = dict(apply_gap_filter=False, exclude_phrases={duplicate['phrase']})
+                result = asyncio.run(generate_ai_keywords(['lunar age calculator'], **kwargs)) if async_mode else generate_ai_keywords_sync(['lunar age calculator'], **kwargs)
+                self.assertEqual([item['phrase'] for item in result], [replacement['phrase']])
+                self.assertEqual(chat.call_count, 2)
+
+    def test_ai_keeps_observed_queries_when_legacy_output_omits_citations(self):
+        with patch('nlp.openrouter.is_ai_configured', return_value=True), patch(
+            'nlp.openrouter._chat_json', return_value=[{'phrase': 'lunar age leap month', 'type': 'long-tail'}],
+        ):
+            result = generate_ai_keywords_sync(['lunar age calculator'],
+                evidence_phrases=['lunar age leap month'], apply_gap_filter=False)
+        self.assertEqual([item['phrase'] for item in result], ['lunar age leap month'])
+        self.assertFalse(_keyword_generation_support_is_valid(
+            {'phrase': 'lunar age pricing'}, ['lunar age calculator'], ['lunar age leap month'], None))
+
+    def test_question_seed_accepts_subject_preserving_provider_variations(self):
+        seed = ['how to convert english to katakana']
+        self.assertTrue(_keyword_matches_topic('english names in katakana', seed, set(), set()))
+        self.assertFalse(_keyword_matches_topic('english names in arabic', seed, set(), set()))
+        self.assertFalse(_keyword_matches_topic('english grammar course', seed, set(), set()))
+
+    def test_ai_repair_can_shorten_a_long_question_without_losing_its_subject(self):
+        seed = 'how to convert english to katakana'
+        with patch('nlp.openrouter.is_ai_configured', return_value=True), patch(
+            'nlp.openrouter._chat_json', side_effect=[[], [{
+                'phrase': 'english names in katakana', 'type': 'long-tail',
+                'support_source': 'seed', 'support_phrase': seed,
+            }]],
+        ):
+            result = generate_ai_keywords_sync([seed], apply_gap_filter=False)
+        self.assertEqual([item['phrase'] for item in result], ['english names in katakana'])
 
     def test_generator_discards_keywords_with_fabricated_support(self):
         payload = [

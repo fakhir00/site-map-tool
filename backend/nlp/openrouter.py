@@ -57,12 +57,15 @@ def _keyword_generation_support_is_valid(
     support = clean_phrase(str(item.get("support_phrase") or ""))
     if not support:
         # Some providers occasionally return the previous two-field schema.
-        # Accept that response only when the complete seed phrase appears in
-        # the keyword. This retains useful direct long-tails without allowing
-        # broad semantic guesses to bypass provenance checks.
+        # Accept exact observed evidence as well as complete seed long-tails.
+        # A missing citation must not discard a query already in our inputs.
         if source:
             return False
         phrase = clean_phrase(str(item.get("phrase") or ""))
+        observed = {clean_phrase(value) for value in (evidence_phrases or []) if value}
+        observed.update(_audit_keyword_evidence(audit_summary))
+        if phrase and phrase in observed:
+            return True
         return any(
             re.search(rf"\b{re.escape(seed)}\b", phrase)
             for seed in normalize_seed_keywords(seed_keywords)
@@ -429,12 +432,13 @@ async def generate_ai_keywords(
     if topic_terms is None:
         topic_terms = seed_keyword_terms(seed_keywords)
     target_count = max(5, min(int(target_count), 60))
-    excluded = sorted(exclude_phrases or set())[-400:]
+    excluded_set = {clean_phrase(value) for value in (exclude_phrases or set())}
+    excluded = sorted(excluded_set)[-400:]
     evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
     audit_evidence = _audit_keyword_evidence(audit_summary)
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate up to {target_count} high-quality, distinct keyword opportunities and aim to fill the requested count when the Gold Hunter evidence supports it. At least 80% should be useful page-level primary or long-tail searches; use entity and heading types sparingly.
+Generate up to {target_count} useful keyword opportunities supported by the supplied site context. Include primary searches and supporting questions, comparisons and troubleshooting queries. Multiple keywords may belong on the same page; page grouping happens later in Hub Spoke.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
@@ -456,7 +460,7 @@ Quality rules:
 - Use the Gold Hunter Agent summary in every batch. Match its specific niche, target audience, core action, capabilities, content opportunities, boundaries, and search intents.
 - Prioritize easy-to-rank opportunities: specific long-tail queries, narrow problems, questions, comparisons, and use cases with clear intent and likely weaker competition than the head term.
 - Prefer keywords a focused EMD can realistically rank for before broad, high-authority head terms. Never invent search-volume or difficulty numbers.
-- For each seed, explore supported how-to, question, problem, audience, feature, comparison, and narrow use-case angles. Keep only angles that deserve a useful page and have a distinct real search intent.
+- For each seed, explore supported how-to, question, problem, audience, feature, comparison, and narrow use-case angles. A useful section or improvement to an existing page is sufficient; do not require a separate page for each keyword.
 - Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
 - Each result must cite exactly one supplied seed, one exact competitor phrase, or a short exact phrase from the website context as its support. Never claim support that is absent from the inputs.
 - A phrase must represent a query a real member of the target audience would search. Do not create variants merely to reach the requested count.
@@ -466,9 +470,9 @@ Quality rules:
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
 - Reject bogus, random, generic, broad, off-topic, or awkward phrases.
 - Do not invent fake brands, fake products, fake people, or fake entities.
-- Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
+- Keep phrases natural, lowercase, 2 to 8 words, and suitable for an SEO keyword table.
 - Every phrase must either preserve a meaningful seed/anchor term or combine an anchor with a concrete capability, audience need, or content opportunity from the Gold Hunter evidence. Stay within two semantic hops of the EMD.
-- When competitor or audit support is unavailable, preserve one complete seed phrase unchanged inside the keyword and use that seed as the support.
+- When competitor or audit support is unavailable, cite an exact supplied seed as support and preserve its subject and task. Natural wording and shorter queries are allowed; do not force a long question seed verbatim into every keyword.
 - For LSI keywords, include the seed term plus a semantic modifier instead of drifting to a broad synonym-only phrase.
 
 Type definitions:
@@ -503,7 +507,7 @@ Each object must have:
             if isinstance(kw, dict) and kw.get("phrase"):
                 phrase = clean_phrase(str(kw["phrase"]))
                 kw_type = normalize_keyword_type(kw.get("type"))
-                if phrase in seen_phrases:
+                if phrase in seen_phrases or phrase in excluded_set:
                     continue
                 if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
                     continue
@@ -530,10 +534,12 @@ Seeds: {json.dumps(seed_keywords)}
 Site context: {audit_summary or "No additional context"}
 Do not repeat: {json.dumps(excluded)}
 
-Every phrase MUST contain one complete supplied seed exactly as written and add
-a natural supported question, comparison, problem, audience, feature, or use-case
-modifier. Stay inside the exact site topic. Reject awkward padding and unrelated
-ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
+Return new queries rather than repeating the excluded phrases. Preserve the
+subject and task of a supplied seed, using natural wording, 2 to 8 words.
+Explore useful questions, comparisons, problems and supported use cases, including
+queries that belong in a section of a page. Reject awkward padding and unrelated
+ideas. Each object must include `phrase`, `type` (`primary` or `long-tail`),
+`support_source`: `seed`, and `support_phrase`: one exact supplied seed.
 """,
                 temperature=0.2,
                 max_tokens=max(2200, target_count * 75),
@@ -544,7 +550,7 @@ ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
                 if not isinstance(kw, dict) or not kw.get("phrase"):
                     continue
                 phrase = clean_phrase(str(kw["phrase"]))
-                if phrase in seen_phrases or phrase in excluded:
+                if phrase in seen_phrases or phrase in excluded_set:
                     continue
                 if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
                     continue
@@ -616,12 +622,13 @@ def generate_ai_keywords_sync(
     if topic_terms is None:
         topic_terms = seed_keyword_terms(seed_keywords)
     target_count = max(5, min(int(target_count), 60))
-    excluded = sorted(exclude_phrases or set())[-400:]
+    excluded_set = {clean_phrase(value) for value in (exclude_phrases or set())}
+    excluded = sorted(excluded_set)[-400:]
     evidence = list(dict.fromkeys(evidence_phrases or []))[:300]
     audit_evidence = _audit_keyword_evidence(audit_summary)
     prompt = f"""
 You are an expert SEO keyword strategist. Use the seed keywords as the strict topic boundary.
-Generate up to {target_count} high-quality, distinct keyword opportunities and aim to fill the requested count when the Gold Hunter evidence supports it. At least 80% should be useful page-level primary or long-tail searches; use entity and heading types sparingly.
+Generate up to {target_count} useful keyword opportunities supported by the supplied site context. Include primary searches and supporting questions, comparisons and troubleshooting queries. Multiple keywords may belong on the same page; page grouping happens later in Hub Spoke.
 
 Seed keywords:
 {json.dumps(seed_keywords)}
@@ -643,7 +650,7 @@ Quality rules:
 - Use the Gold Hunter Agent summary in every batch. Match its specific niche, target audience, core action, capabilities, content opportunities, boundaries, and search intents.
 - Prioritize easy-to-rank opportunities: specific long-tail queries, narrow problems, questions, comparisons, and use cases with clear intent and likely weaker competition than the head term.
 - Prefer keywords a focused EMD can realistically rank for before broad, high-authority head terms. Never invent search-volume or difficulty numbers.
-- For each seed, explore supported how-to, question, problem, audience, feature, comparison, and narrow use-case angles. Keep only angles that deserve a useful page and have a distinct real search intent.
+- For each seed, explore supported how-to, question, problem, audience, feature, comparison, and narrow use-case angles. A useful section or improvement to an existing page is sufficient; do not require a separate page for each keyword.
 - Prefer genuine content gaps supported by the competitor evidence. You may form a useful long-tail from an observed concept, but do not invent a disconnected topic.
 - Each result must cite exactly one supplied seed, one exact competitor phrase, or a short exact phrase from the website context as its support. Never claim support that is absent from the inputs.
 - A phrase must represent a query a real member of the target audience would search. Do not create variants merely to reach the requested count.
@@ -653,9 +660,9 @@ Quality rules:
 - If a keyword does not directly relate to the user intent of the seed keyword, discard it.
 - Reject bogus, random, generic, broad, off-topic, or awkward phrases.
 - Do not invent fake brands, fake products, fake people, or fake entities.
-- Keep phrases natural, lowercase, 2 to 6 words, and suitable for an SEO keyword table.
+- Keep phrases natural, lowercase, 2 to 8 words, and suitable for an SEO keyword table.
 - Every phrase must either preserve a meaningful seed/anchor term or combine an anchor with a concrete capability, audience need, or content opportunity from the Gold Hunter evidence. Stay within two semantic hops of the EMD.
-- When competitor or audit support is unavailable, preserve one complete seed phrase unchanged inside the keyword and use that seed as the support.
+- When competitor or audit support is unavailable, cite an exact supplied seed as support and preserve its subject and task. Natural wording and shorter queries are allowed; do not force a long question seed verbatim into every keyword.
 - For LSI keywords, include the seed term plus a semantic modifier instead of drifting to a broad synonym-only phrase.
 
 Type definitions:
@@ -690,7 +697,7 @@ Each object must have:
             if isinstance(kw, dict) and kw.get("phrase"):
                 phrase = clean_phrase(str(kw["phrase"]))
                 kw_type = normalize_keyword_type(kw.get("type"))
-                if phrase in seen_phrases:
+                if phrase in seen_phrases or phrase in excluded_set:
                     continue
                 if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
                     continue
@@ -717,10 +724,12 @@ Seeds: {json.dumps(seed_keywords)}
 Site context: {audit_summary or "No additional context"}
 Do not repeat: {json.dumps(excluded)}
 
-Every phrase MUST contain one complete supplied seed exactly as written and add
-a natural supported question, comparison, problem, audience, feature, or use-case
-modifier. Stay inside the exact site topic. Reject awkward padding and unrelated
-ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
+Return new queries rather than repeating the excluded phrases. Preserve the
+subject and task of a supplied seed, using natural wording, 2 to 8 words.
+Explore useful questions, comparisons, problems and supported use cases, including
+queries that belong in a section of a page. Reject awkward padding and unrelated
+ideas. Each object must include `phrase`, `type` (`primary` or `long-tail`),
+`support_source`: `seed`, and `support_phrase`: one exact supplied seed.
 """,
                 temperature=0.2,
                 max_tokens=max(2200, target_count * 75),
@@ -731,7 +740,7 @@ ideas. Return objects with only `phrase` and `type` (`primary` or `long-tail`).
                 if not isinstance(kw, dict) or not kw.get("phrase"):
                     continue
                 phrase = clean_phrase(str(kw["phrase"]))
-                if phrase in seen_phrases or phrase in excluded:
+                if phrase in seen_phrases or phrase in excluded_set:
                     continue
                 if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
                     continue

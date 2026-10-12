@@ -234,6 +234,7 @@ def research_keywords_via_apify(
     country_code: str = "us",
     language: str | None = None,
     max_results_per_seed: int | None = None,
+    diagnostics: list[str] | None = None,
 ) -> List[Dict[str, Any]]:
     """Run the keyword research Actor once for every seed and merge its results."""
     if not is_apify_configured():
@@ -266,6 +267,8 @@ def research_keywords_via_apify(
                 wait_secs=310,
             )
             if not run or run.get("status") != "SUCCEEDED":
+                if diagnostics is not None:
+                    diagnostics.append(f"Apify keyword research did not succeed (status: {(run or {}).get('status') or 'unknown'}).")
                 logger.error(
                     "Apify keyword research did not succeed for %r: status=%s message=%s",
                     seed,
@@ -277,14 +280,19 @@ def research_keywords_via_apify(
             for item in client.dataset(run["defaultDatasetId"]).iterate_items():
                 if not isinstance(item, dict):
                     continue
+                if item.get("error"):
+                    if diagnostics is not None:
+                        diagnostics.append(f"Apify keyword research: {str(item['error'])[:300]}")
+                    logger.warning("Apify keyword research returned an error row for %r", seed)
+                    continue
                 phrase = str(item.get("keyword") or item.get("phrase") or "").strip().lower()
                 if not phrase:
                     continue
                 normalized = {
                     "phrase": phrase,
-                    "search_volume": _number_or_none(item.get("volume") or item.get("search_volume"), int),
-                    "difficulty": _number_or_none(item.get("sd") or item.get("difficulty"), float),
-                    "cpc": _number_or_none(item.get("cpc_usd") or item.get("cpc"), float),
+                    "search_volume": _number_or_none(item.get("volume") if item.get("volume") is not None else item.get("search_volume"), int),
+                    "difficulty": _number_or_none(item.get("sd") if item.get("sd") is not None else item.get("difficulty"), float),
+                    "cpc": _number_or_none(item.get("cpc_usd") if item.get("cpc_usd") is not None else item.get("cpc"), float),
                     "intent": str(item.get("intent") or "").strip().lower() or None,
                     "seed_keywords": [seed],
                 }
@@ -300,6 +308,8 @@ def research_keywords_via_apify(
                 else:
                     merged[phrase] = normalized
         except Exception as exc:
+            if diagnostics is not None:
+                diagnostics.append(f"Apify keyword research request failed ({type(exc).__name__}).")
             logger.error("Apify keyword research failed for exact seed %r: %s", seed, exc)
 
     logger.info(

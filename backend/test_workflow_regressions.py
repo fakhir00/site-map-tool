@@ -267,6 +267,45 @@ class WorkflowTests(unittest.TestCase):
             scraper.assert_not_called()
             self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['status'], 'complete')
 
+    def test_scan_persists_and_displays_competitor_ai_and_both_research_sources(self):
+        from scraping.crawler import ScrapedPage
+        from nlp.dataforseo import KeywordResearchResult
+        pid = self.project()
+        def extract(seeds, urls, **kwargs):
+            page = next(iter(urls))
+            return [dict(phrase='circuit diagram troubleshooting', type='lsi', url_ids=[str(page.id)])]
+        generated = [dict(phrase=phrase, type='long-tail', support_source='seed', support_phrase='circuit diagram')
+                     for phrase in ['circuit diagram for beginners', 'circuit diagram common mistakes']]
+        with ExitStack() as mocks:
+            mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit'}, set())))
+            mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=['https://competitor.example']))
+            mocks.enter_context(patch('workers.pipeline._discover_content_urls', side_effect=lambda domain, *a, **kw: [domain + '/circuit']))
+            mocks.enter_context(patch('scraping.crawler.scrape_page', side_effect=lambda url, **kw:
+                ScrapedPage(url=url, text='Circuit diagram troubleshooting guide', word_count=4)))
+            mocks.enter_context(patch('scraping.apify_client_module.is_apify_configured', return_value=True))
+            mocks.enter_context(patch('scraping.apify_client_module.research_keywords_via_apify', return_value=[
+                dict(phrase='circuit diagram symbols', search_volume=0, difficulty=0)]))
+            mocks.enter_context(patch('nlp.dataforseo.is_dataforseo_configured', return_value=True))
+            mocks.enter_context(patch('nlp.dataforseo.collect_keyword_research', return_value=KeywordResearchResult([
+                dict(phrase='circuit diagram tutorial', search_volume=20, difficulty=5)], 0, 0, 1)))
+            mocks.enter_context(patch('nlp.openrouter.extract_keywords_from_urls_ai', side_effect=extract))
+            mocks.enter_context(patch('nlp.openrouter.filter_keyword_gap_recommendations', side_effect=lambda seeds, rows, **kw: rows))
+            mocks.enter_context(patch('nlp.openrouter.is_ai_configured', return_value=True))
+            mocks.enter_context(patch('nlp.openrouter._chat_json', return_value=generated))
+            mocks.enter_context(patch('workers.pipeline._own_content_keyword_phrases', return_value=set()))
+            self.assertEqual(self.client.post(f'/api/projects/{pid}/scan/start').status_code, 200)
+        project = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(project['status'], 'complete', self.client.get(f'/api/projects/{pid}/scan/jobs').text)
+        self.assertEqual(project['total_keywords'], 5)
+        keywords = self.client.get(f'/api/projects/{pid}/keywords').json()
+        self.assertEqual(keywords['total'], 5)
+        rows = {row['phrase']: row for row in keywords['items']}
+        self.assertEqual(rows['circuit diagram symbols']['search_volume'], 0)
+        self.assertEqual(rows['circuit diagram symbols']['sources'][0]['source_type'], 'provider')
+        self.assertEqual(rows['circuit diagram tutorial']['sources'][0]['source_domain'], 'DataForSEO')
+        self.assertEqual(rows['circuit diagram for beginners']['sources'][0]['source_type'], 'ai')
+        self.assertEqual(rows['circuit diagram troubleshooting']['sources'][0]['source_type'], 'competitor')
+
     def test_empty_enrichment_retains_verified_seed_and_completes(self):
         pid = self.project()
         with ExitStack() as mocks:

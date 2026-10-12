@@ -18,6 +18,24 @@ from workers.pipeline import _process_apify_keywords
 
 
 class ApifyClientTests(TestCase):
+    def test_keyword_research_preserves_zero_metrics_and_exposes_actor_errors(self):
+        client = MagicMock()
+        client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}
+        client.dataset.return_value.iterate_items.return_value = iter([
+            {'error': 'Keyword provider quota reached'},
+            {'keyword': 'lunar age leap month', 'volume': 0, 'sd': 0, 'cpc_usd': 0},
+        ])
+        notes = []
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ), patch('scraping.apify_client_module.settings.APIFY_KEYWORD_MIN_VOLUME', 0):
+            rows = research_keywords_via_apify(['lunar age calculator'], diagnostics=notes)
+        self.assertEqual(rows[0]['search_volume'], 0)
+        self.assertEqual(rows[0]['difficulty'], 0)
+        self.assertEqual(rows[0]['cpc'], 0)
+        self.assertIn('quota reached', notes[0])
+        self.assertEqual(client.actor.return_value.call.call_args.kwargs['run_input']['min_volume'], 0)
+
     def test_deeper_search_does_not_repeat_initial_pages(self):
         client = MagicMock()
         client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'deeper'}

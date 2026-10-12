@@ -127,7 +127,7 @@ class DataForSeoTests(TestCase):
             "source": "dataforseo",
         }])
 
-    def test_queries_each_seed_with_exact_keyword_suggestions(self):
+    def test_queries_each_seed_and_allows_natural_wording_variations(self):
         seeds = [
             "lunar age calculator",
             "calculate lunar age",
@@ -157,7 +157,7 @@ class DataForSeoTests(TestCase):
             [call.args[2]["keyword"] for call in request.call_args_list],
             seeds,
         )
-        self.assertTrue(first_payload["exact_match"])
+        self.assertFalse(first_payload["exact_match"])
         self.assertTrue(first_payload["include_seed_keyword"])
         self.assertNotIn("filters", first_payload)
         self.assertEqual(first_payload["limit"], 150)

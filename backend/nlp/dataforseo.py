@@ -268,7 +268,10 @@ def collect_keyword_research(
                     **base,
                     "limit": per_seed_limit,
                     "keyword": seed,
-                    "exact_match": True,
+                    # Long question seeds otherwise return little beyond the
+                    # seed itself. Keep the seed as input, allow natural wording
+                    # variations, then enforce site relevance at ingestion.
+                    "exact_match": False,
                     "include_seed_keyword": True,
                     "ignore_synonyms": False,
                     "order_by": [

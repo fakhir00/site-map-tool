@@ -379,6 +379,10 @@ def is_topic_relevant_keyword(
     negative_terms: set[str] | None = None,
 ) -> bool:
     """Keep candidates inside the primary entity and functional site scope."""
+    # Question seeds often contain a request verb rather than an entity:
+    # "how to convert English to Katakana" also supports "English names in
+    # Katakana". Retain the actual subjects, not every word of the question.
+    query_actions = {"calculate", "convert", "create", "generate", "write", "draw"}
     cleaned = clean_phrase(phrase)
     normalized_seeds = normalize_seed_keywords(seed_keywords)
     primary_seed = normalized_seeds[0] if normalized_seeds else ""
@@ -427,7 +431,7 @@ def is_topic_relevant_keyword(
     # and its function/subject. This expands useful volume across all 3-5 seeds
     # without letting a generic shared word redefine the EMD topic.
     for seed in normalized_seeds:
-        seed_anchors = seed_keyword_terms([seed]) - BROAD_TOPIC_TERMS
+        seed_anchors = seed_keyword_terms([seed]) - BROAD_TOPIC_TERMS - query_actions
         seed_scope = site_scope_terms(seed)
         if seed_anchors and (raw_terms & seed_anchors) and (raw_terms & seed_scope):
             return True
@@ -439,7 +443,7 @@ def is_topic_relevant_keyword(
             return True
 
     primary_seeds = normalized_seeds[:1]
-    primary_anchors = seed_keyword_terms(primary_seeds) - BROAD_TOPIC_TERMS
+    primary_anchors = seed_keyword_terms(primary_seeds) - BROAD_TOPIC_TERMS - query_actions
     primary_scope = site_scope_terms(primary_seeds[0]) if primary_seeds else set()
     semantic_anchors = {
         term.removeprefix("__anchor__")

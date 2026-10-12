@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     APIFY_KEYWORD_ACTOR_ID: str = "qt4rCkNegFVRVWugm"
     APIFY_COMPETITOR_ACTOR_ID: str = "563JCPLOqM1kMmbbP"
     APIFY_KEYWORD_RESULT_LIMIT: int = 100
-    APIFY_KEYWORD_MIN_VOLUME: int = 10
+    APIFY_KEYWORD_MIN_VOLUME: int = 0
     APIFY_KEYWORD_LANGUAGE: str = "en"
     DATAFORSEO_LOGIN: str = ""
     DATAFORSEO_PASSWORD: str = ""

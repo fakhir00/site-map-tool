@@ -1142,7 +1142,10 @@ def _process_apify_keywords(
             diagnostics.append("Apify keyword research skipped because no API token is configured")
         return 0
 
-    researched = research_keywords_via_apify(seed_keywords, country_code=search_locale)
+    research_notes: list[str] = []
+    researched = research_keywords_via_apify(seed_keywords, country_code=search_locale, diagnostics=research_notes)
+    if diagnostics is not None:
+        diagnostics.extend(research_notes)
     accepted: list[dict[str, Any]] = []
     for item in researched:
         phrase = clean_phrase(str(item.get("phrase") or ""))
@@ -1153,7 +1156,7 @@ def _process_apify_keywords(
         accepted.append({**item, "phrase": phrase})
 
     if not accepted:
-        if diagnostics is not None:
+        if diagnostics is not None and not research_notes:
             diagnostics.append(
                 f"Apify returned {len(researched)} keyword candidates for {len(seed_keywords)} seeds; none passed relevance checks"
             )
