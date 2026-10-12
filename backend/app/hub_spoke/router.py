@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user
 from app.database import get_db
-from app.models import HubSpokeHistory, Keyword, Project, User
+from app.models import HubSpokeHistory, Keyword, Project, Url, User
 from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture, normalize_keyword_records, usable_keywords
 from nlp.keywords import clean_phrase, is_publishable_keyword, normalize_seed_keywords
 
@@ -187,22 +187,32 @@ async def import_project_keywords(
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    context = _context_with_seed_keywords(
+        project.audit_summary or "", project.target_keywords or [], project.own_domain or project.domain,
+    )
+    canonical_primary = _primary_keyword_from_context(context)
     rows = await db.execute(
         select(Keyword.phrase, Keyword.keyword_type, Keyword.search_volume, Keyword.difficulty, Keyword.frequency)
         .where(Keyword.project_id == project.id)
         .order_by(Keyword.frequency.desc(), Keyword.created_at.asc()).limit(5000)
     )
-    keyword_data = normalize_keyword_records([{
+    records = [{
         "phrase": phrase, "type": keyword_type, "search_volume": search_volume,
         "difficulty": difficulty, "frequency": frequency,
-    } for phrase, keyword_type, search_volume, difficulty, frequency in rows.all()])
-    selected = clean_phrase(primary_keyword)
+    } for phrase, keyword_type, search_volume, difficulty, frequency in rows.all()]
+    # Architecture needs the existing site as well as missing topics. Import
+    # owned titles as planning inventory, never persist them as new keyword gaps.
+    own_titles = await db.execute(select(Url.h1).where(
+        Url.project_id == project.id, Url.source_type == "own", Url.status == "scraped",
+        Url.h1.is_not(None),
+    ).order_by(Url.url).limit(200))
+    records.extend({"phrase": title, "type": "heading", "search_volume": None, "difficulty": None}
+                   for title in own_titles.scalars().all() if is_publishable_keyword(title, min_words=2))
+    keyword_data = normalize_keyword_records(records, canonical_primary)
+    selected = clean_phrase(primary_keyword) or canonical_primary
     keyword_data.sort(key=lambda item: item["phrase"] != selected)
     if not keyword_data:
         raise HTTPException(status_code=404, detail="This Gap Hunter scan has no keywords to import yet.")
-    context = _context_with_seed_keywords(
-        project.audit_summary or "", project.target_keywords or [], project.own_domain or project.domain,
-    )
     return {
         "project_id": project.id, "project_name": project.name,
         "keywords": [item["phrase"] for item in keyword_data], "keyword_data": keyword_data,

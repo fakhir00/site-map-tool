@@ -66,10 +66,17 @@ async def list_keywords(
     keywords = filtered_keywords[start:start + page_size]
 
     sources_by_keyword = await _keyword_sources_map(db, [kw.id for kw in keywords], limit_per_keyword=10)
+    competitor_counts = dict((await db.execute(
+        select(KeywordUrl.keyword_id, func.count(func.distinct(Url.id)))
+        .join(Url, Url.id == KeywordUrl.url_id)
+        .where(KeywordUrl.keyword_id.in_([kw.id for kw in keywords]), Url.source_type == "competitor")
+        .group_by(KeywordUrl.keyword_id)
+    )).all()) if keywords else {}
     items = []
     for kw in keywords:
         sources = sources_by_keyword.get(kw.id, [])
         kw_out = KeywordOut.model_validate(kw)
+        kw_out.competitor_pages = competitor_counts.get(kw.id, 0)
         kw_out.source_urls = [source.url for source in sources]
         kw_out.sources = sources
         items.append(kw_out)

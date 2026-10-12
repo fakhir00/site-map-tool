@@ -178,6 +178,7 @@ class KeywordOut(BaseModel):
     phrase: str
     keyword_type: str
     frequency: int
+    competitor_pages: int = 0
     search_volume: Optional[int]
     difficulty: Optional[float]
     seo_recommendation: Optional[str] = None

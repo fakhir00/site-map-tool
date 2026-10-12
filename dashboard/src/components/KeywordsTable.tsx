@@ -383,7 +383,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                         <KeywordIntentBadge keywordPhrase={keyword.phrase} />
                       </td>
                       <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
-                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">{keyword.frequency}</td>
+                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">{keyword.competitor_pages ?? keywordSources(keyword).filter(source => source.source_type === 'competitor').length}</td>
                       <td className="px-5 py-4">
                         <div className="flex max-w-[360px] flex-wrap gap-1.5">
                           {sourceDomains(keyword).slice(0, 4).map((source) => (

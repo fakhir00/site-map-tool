@@ -14,6 +14,7 @@ from nlp.openrouter import (
     filter_keyword_gap_recommendations,
     generate_ai_keywords_sync,
     generate_ai_keywords,
+    research_keyword_queries_from_pages,
     judge_competitor_domains,
 )
 from nlp.keywords import (
@@ -845,6 +846,58 @@ class PipelineFilterTests(TestCase):
             )[0],
             "lunar age calculator",
         )
+
+    def test_brand_domain_keeps_audited_main_topic_ahead_of_trivia_pages(self):
+        seeds = _scan_seed_keywords(['wolf trivia quiz', 'owl trivia quiz'], 'https://animalsoulquiz.com',
+                                   json.dumps({'primary_keyword': 'spirit animal quiz'}))
+        self.assertEqual(seeds[0], 'spirit animal quiz')
+
+    def test_competitor_research_retains_useful_query_depth_with_real_quotes(self):
+        animals = ['wolf', 'owl', 'bear', 'eagle', 'fox', 'deer', 'lion', 'butterfly']
+        pages = [{"id": str(uuid.uuid4()), "url": f'https://competitor.example/{animal}',
+                  "heading": f'{animal} spirit animal',
+                  "text": f'The {animal} spirit animal represents personality traits, strengths and growth areas.'}
+                 for animal in animals]
+        def response(**kwargs):
+            # Follow the same six-page batching contract as the real provider.
+            page_batch = json.loads(kwargs['user_prompt'].split('Pages: ', 1)[1].split('\nExtract up to', 1)[0])
+            return {'keywords': [
+                {'phrase': f"{page['heading']} {suffix}", 'page_id': page['id'],
+                 'source_quote': page['text'], 'type': 'long-tail'}
+                for page in page_batch for suffix in ('meaning', 'personality traits', 'strengths')
+            ]}
+        with patch('nlp.openrouter.is_ai_configured', return_value=True), patch(
+            'nlp.openrouter._chat_json', side_effect=response,
+        ) as chat:
+            result = research_keyword_queries_from_pages(['spirit animal quiz'], pages, 'Spirit animal profiles')
+        self.assertEqual(len(result), 24)
+        self.assertEqual(chat.call_count, 2)
+        self.assertTrue(all(item['url_ids'] and item['evidence']['excerpt'] for item in result))
+
+    def test_competitor_research_rejects_invented_quotes_and_unknown_sources(self):
+        page = {'id': 'observed', 'url': 'https://competitor.example/wolf',
+                'heading': 'Wolf spirit animal', 'text': 'Wolves represent loyalty and intelligence.'}
+        payload = {'keywords': [
+            {'phrase': 'wolf spirit animal meaning', 'page_id': 'invented', 'source_quote': page['text']},
+            {'phrase': 'wolf spirit animal traits', 'page_id': 'observed', 'source_quote': 'Invented text about wolves'},
+            {'phrase': 'dog food delivery', 'page_id': 'observed', 'source_quote': page['text']},
+        ]}
+        with patch('nlp.openrouter.is_ai_configured', return_value=True), patch(
+            'nlp.openrouter._chat_json', return_value=payload,
+        ):
+            self.assertEqual(research_keyword_queries_from_pages(['spirit animal quiz'], [page], ''), [])
+
+    def test_ai_quality_review_can_reject_existing_trivia_even_when_it_is_a_seed(self):
+        candidate = {'phrase': 'wolf trivia quiz', 'type': 'primary',
+                     'support_source': 'seed', 'support_phrase': 'wolf trivia quiz'}
+        with patch('nlp.openrouter.is_ai_configured', return_value=True), patch(
+            'nlp.openrouter._chat_json', side_effect=[[candidate], []],
+        ) as chat:
+            result = generate_ai_keywords_sync(['spirit animal quiz', 'wolf trivia quiz'],
+                audit_summary='OWN SITE COVERAGE: Wolf Trivia Quiz already exists. Primary purpose: spirit animal profiles.',
+                apply_gap_filter=True)
+        self.assertEqual(result, [])
+        self.assertEqual(chat.call_count, 2)
 
     def test_emd_entity_fence_rejects_homonyms_and_broad_niche_terms(self):
         self.assertTrue(keyword_matches_emd_entity("chinese lunar age", "lunar age calculator"))

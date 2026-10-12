@@ -245,7 +245,7 @@ class WorkflowTests(unittest.TestCase):
             first_url = next(iter(urls))
             return [dict(phrase='circuit board layout', type='lsi', url_ids=[str(first_url.id)])]
         with ExitStack() as mocks:
-            mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit'}, set())))
+            mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit', '__scope__board'}, set())))
             mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=['https://competitor.example']))
             mocks.enter_context(patch('workers.pipeline._discover_content_urls', side_effect=lambda domain, *args, **kwargs: [domain + '/blog/circuit-guide']))
             scraper = mocks.enter_context(patch('scraping.crawler.scrape_page', side_effect=lambda url, **kwargs: ScrapedPage(url=url, text='Circuit design content', word_count=3)))
@@ -258,6 +258,7 @@ class WorkflowTests(unittest.TestCase):
             project = self.client.get(f'/api/projects/{pid}').json()
             self.assertEqual(project['status'], 'complete', self.client.get(f'/api/projects/{pid}/scan/jobs').text)
             self.assertEqual(project['total_keywords'], 1)
+            self.assertEqual(self.client.get(f'/api/projects/{pid}/keywords').json()['items'][0]['phrase'], 'circuit board layout')
             self.assertEqual(project['urls_processed'], 2)
             self.seed_job(pid, status='paused')
             scraper.reset_mock()
@@ -304,9 +305,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(rows['circuit diagram symbols']['sources'][0]['source_type'], 'provider')
         self.assertEqual(rows['circuit diagram tutorial']['sources'][0]['source_domain'], 'DataForSEO')
         self.assertEqual(rows['circuit diagram for beginners']['sources'][0]['source_type'], 'ai')
+        self.assertEqual(rows['circuit diagram for beginners']['competitor_pages'], 0)
+        self.assertEqual(rows['circuit diagram troubleshooting']['competitor_pages'], 1)
         self.assertEqual(rows['circuit diagram troubleshooting']['sources'][0]['source_type'], 'competitor')
 
-    def test_empty_enrichment_retains_verified_seed_and_completes(self):
+    def test_empty_enrichment_does_not_disguise_seeds_as_ai_research(self):
         pid = self.project()
         with ExitStack() as mocks:
             mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=(set(), set())))
@@ -316,7 +319,13 @@ class WorkflowTests(unittest.TestCase):
             self.client.post(f'/api/projects/{pid}/scan/start')
         project = self.client.get(f'/api/projects/{pid}').json()
         self.assertEqual(project['status'], 'complete')
-        self.assertGreaterEqual(project['total_keywords'], 1)
+        self.assertEqual(project['total_keywords'], 0)
+        with self.sessions() as db:
+            self.assertEqual(db.execute(select(Url).where(Url.project_id == uuid.UUID(pid), Url.source_type == 'ai')).scalars().all(), [])
+        # Site context can still seed the architecture without becoming a fake gap.
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}')
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertIn('circuit diagram', imported.json()['keywords'])
 
     def test_gap_recovery_scrapes_new_matching_pages_with_a_hard_cap(self):
         from workers.pipeline import _research_additional_gap_pages
@@ -684,6 +693,49 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(total, 100)
         generator.assert_not_called()
+
+    def test_research_batches_use_owned_content_and_distinct_topic_focuses(self):
+        pid = uuid.UUID(self.project())
+        generator = Mock(return_value=[])
+        with self.sessions() as db:
+            db.add_all([
+                Url(project_id=pid, url='https://animalsoulquiz.com/', source_type='own', status='scraped',
+                    h1='Discover Your Spirit Animal', scraped_text='55 spirit animal profiles with meanings and traits.'),
+                Url(project_id=pid, url='https://animalsoulquiz.com/wolf-trivia-quiz', source_type='own', status='scraped',
+                    h1='Wolf Trivia Quiz', scraped_text='Test your wolf knowledge.'),
+            ])
+            db.commit()
+            total = _ensure_minimum_keyword_count(db, pid, ['spirit animal quiz'], {'spirit', 'animal'}, set(),
+                json.dumps({'primary_keyword': 'spirit animal quiz'}), generator,
+                lambda: ('https://ai.generated', 'AI Recommendations'))
+            self.assertEqual(total, 0)
+            self.assertFalse(db.execute(select(Keyword).where(Keyword.project_id == pid)).scalars().all())
+        calls = generator.call_args_list
+        self.assertGreater(len(calls), 1)
+        self.assertEqual(len({call.kwargs['research_focus'] for call in calls}), len(calls))
+        self.assertTrue(all(call.kwargs['apply_gap_filter'] for call in calls))
+        context = json.loads(calls[0].kwargs['audit_summary'])
+        self.assertEqual(context['primary_keyword'], 'spirit animal quiz')
+        self.assertIn('Wolf Trivia Quiz', {page['heading'] for page in context['OWN SITE COVERAGE']})
+
+    def test_hub_import_anchors_sparse_legacy_results_to_the_sites_main_topic(self):
+        pid = uuid.UUID(self.project())
+        with self.sessions() as db:
+            project = db.get(Project, pid)
+            project.domain = 'https://animalsoulquiz.com'
+            project.audit_summary = json.dumps({'primary_keyword': 'spirit animal quiz'})
+            project.target_keywords = ['wolf trivia quiz', 'owl trivia quiz']
+            db.add(Keyword(project_id=pid, phrase='wolf trivia quiz'))
+            db.add(Url(project_id=pid, url='https://animalsoulquiz.com/wolf-spirit-animal', source_type='own',
+                       status='scraped', h1='Wolf Spirit Animal Meaning', scraped_text='Wolf symbolism and traits.'))
+            db.commit()
+        response = self.client.get(f'/api/hub-spoke/project-import/{pid}')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['keywords'][0], 'spirit animal quiz')
+        self.assertIn('wolf spirit animal meaning', response.json()['keywords'])
+        self.assertEqual(json.loads(response.json()['context'])['primary_keyword'], 'spirit animal quiz')
+        with self.sessions() as db:
+            self.assertEqual(db.execute(select(Keyword.phrase).where(Keyword.project_id == pid)).scalars().all(), ['wolf trivia quiz'])
 
     def test_bulk_keyword_delete_cannot_touch_another_project(self):
         first_project_id = uuid.UUID(self.project())

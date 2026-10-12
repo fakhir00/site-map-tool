@@ -101,6 +101,7 @@ export type ScanJob = {
 
 export type Keyword = {
   id: string
+  competitor_pages?: number
   phrase: string
   keyword_type: 'top-pick' | 'primary' | 'lsi' | 'entity' | 'heading' | 'long-tail'
   frequency: number

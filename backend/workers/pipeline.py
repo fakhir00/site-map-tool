@@ -503,8 +503,6 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
         if not project or not job or project.status != "running" or job.status != "running":
             return
         _sync_project_counts(db, project)
-        if not project.total_keywords:
-            raise RuntimeError("No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry.")
 
         # ── DeepSeek SEO Enrichment ──────────────────────────────────
         try:
@@ -778,7 +776,7 @@ def _competitor_gap_completion_message(
         expanded = " This includes additional pages from a deeper search." if diagnostics.get("recovery_pages") else ""
         return (f"Scan completed: reviewed {candidates} relevant keywords across {pages} competitor pages."
                 f"{expanded} No additional uncovered opportunities were confirmed. "
-                "Your keyword results are ready to review; use Hub Spoke to organize them into pages and improvements.")
+                "Use Hub Spoke to explore topics and improvements from your site context.")
     if stage == "quality_rejected":
         return (f"Scan completed: review returned candidates from {pages} scraped competitor pages, but none passed "
                 "the final phrase, topic and source-brand checks. Check the site scope and scan diagnostics.")
@@ -875,6 +873,7 @@ def _process_competitor_keyword_gaps(
     diagnostics: dict[str, Any] | None = None,
 ) -> int:
     from app.models import Url
+    from types import SimpleNamespace
 
     stats = diagnostics if diagnostics is not None else {}
     stats.update(scraped_pages=0, relevant_candidates=0, reviewed_candidates=0,
@@ -899,12 +898,19 @@ def _process_competitor_keyword_gaps(
     url_stream = db.execute(
         base_query.order_by(Url.source_domain.asc(), Url.url.asc())
     ).yield_per(10).scalars()
+    # Snapshot the bounded scan corpus before AI research; do not leave a
+    # database cursor/connection idle during several provider requests.
+    pages = [SimpleNamespace(id=page.id, url=page.url, h1=page.h1, scraped_text=page.scraped_text)
+             for page in url_stream]
+    db.commit()
 
     extracted = extract_keywords_from_urls_ai(
         seed_keywords,
-        url_stream,
+        pages,
         topic_terms=topic_terms,
         negative_terms=negative_terms,
+        semantic_research=True,
+        research_context=audit_summary,
     )
     stats["extracted_candidates"] = len(extracted)
     extracted = [
@@ -931,6 +937,7 @@ def _process_competitor_keyword_gaps(
         f"URL: {page.url}\nHeading: {page.h1 or ''}\n{(page.scraped_text or '')[:4000]}"
         for page in own_pages
     )
+    db.commit()
     filtered = filter_keyword_gap_recommendations(
         seed_keywords,
         extracted,
@@ -1968,8 +1975,7 @@ def _scan_seed_keywords(
         pass
 
     if audit_primary and audit_primary not in seeds:
-        if not seeds or _domain_matches_seed_scope(domain or "", audit_primary):
-            seeds.append(audit_primary)
+        seeds.append(audit_primary)
 
     ordered = _order_seeds_by_emd(seeds, domain)
     if any(_domain_matches_seed_scope(domain or "", seed) for seed in ordered):
@@ -1998,6 +2004,10 @@ def _scan_seed_keywords(
                     if seed == recovery_seed or keyword_matches_emd_entity(seed, recovery_seed)
                 ][:5]
 
+    # Brand domains need not spell their actual topic (animal soul / spirit
+    # animal, for example). Keep the audited main task ahead of minor pages.
+    if audit_primary:
+        return [audit_primary, *(seed for seed in ordered if seed != audit_primary)][:5]
     return _order_seeds_by_emd(ordered, domain)[:5]
 
 
@@ -2793,6 +2803,25 @@ def _keyword_matches_topic(
     return is_topic_relevant_keyword(phrase, seed_keywords, topic_terms, negative_terms)
 
 
+def _keyword_research_context(db: Session, project_id: uuid.UUID, audit_summary: str | None) -> str:
+    """Give expansion and quality review the real site, not just extracted n-grams."""
+    import json
+    from app.models import Url
+    try:
+        context = json.loads(audit_summary or "{}")
+    except (TypeError, ValueError):
+        context = {"audit_summary": audit_summary or ""}
+    if not isinstance(context, dict):
+        context = {"audit_summary": audit_summary or ""}
+    for source, key, limit in (("own", "OWN SITE COVERAGE", 24), ("competitor", "competitor_page_evidence", 18)):
+        pages = db.execute(select(Url).where(
+            Url.project_id == project_id, Url.source_type == source, Url.status == "scraped",
+        ).order_by(func.length(Url.url), Url.url).limit(limit)).scalars().all()
+        context[key] = [{"url": page.url, "heading": page.h1 or "", "text": (page.scraped_text or "")[:1800]}
+                        for page in pages]
+    return json.dumps(context, ensure_ascii=True)
+
+
 def _ensure_minimum_keyword_count(
     db: Session,
     project_id: uuid.UUID,
@@ -2817,26 +2846,24 @@ def _ensure_minimum_keyword_count(
         return len(existing)
     own_phrases = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     excluded = existing | own_phrases
+    research_context = _keyword_research_context(db, project_id, audit_summary)
+    research_focuses = (
+        "Core tasks, foundational explanations and reader questions",
+        "Entities and result types: meanings, attributes and interpretation grounded in the pages",
+        "Comparisons, alternatives and choosing between supported options",
+        "Practical examples, edge cases, misconceptions and troubleshooting",
+        "Missing depth and next steps within the site's demonstrated capabilities",
+    )
     ai_url_str, ai_source_domain = ai_generated_source()
     ai_url = db.execute(
         select(Url).where(Url.project_id == project_id, Url.url == ai_url_str)
     ).scalar_one_or_none()
-    if not ai_url:
-        ai_url = Url(
-            project_id=project_id,
-            url=ai_url_str,
-            source_type="ai",
-            source_domain=ai_source_domain,
-            status="scraped",
-        )
-        db.add(ai_url)
-        db.flush()
-
     ai_existing = set(db.execute(
         select(Keyword.phrase)
         .join(KeywordUrl, KeywordUrl.keyword_id == Keyword.id)
         .where(Keyword.project_id == project_id, KeywordUrl.url_id == ai_url.id)
-    ).scalars().all())
+    ).scalars().all()) if ai_url else set()
+    db.commit()
     for batch_number in range(max(1, int(settings.AI_KEYWORD_GENERATION_MAX_BATCHES))):
         # AI fills a real research shortfall. Forcing a separate AI quota after
         # evidence-backed sources reach the goal encourages padded variants.
@@ -2848,11 +2875,12 @@ def _ensure_minimum_keyword_count(
             seed_keywords,
             topic_terms=topic_terms,
             negative_terms=negative_terms,
-            audit_summary=audit_summary,
-            apply_gap_filter=False,
+            audit_summary=research_context,
+            apply_gap_filter=True,
             target_count=requested,
             exclude_phrases=excluded,
             evidence_phrases=evidence_phrases,
+            research_focus=research_focuses[batch_number % len(research_focuses)],
         ) or []
 
         accumulator: dict[str, dict[str, Any]] = {}
@@ -2865,13 +2893,20 @@ def _ensure_minimum_keyword_count(
             accumulator[phrase] = {
                 "type": item.get("type", "long-tail"),
                 "count": 1,
-                "url_ids": {ai_url.id},
+                "url_ids": set(),
                 "score": 1.0,
                 "source": "sitemap_ai",
                 "tier": "outlier",
             }
 
         if accumulator:
+            if not ai_url:
+                ai_url = Url(project_id=project_id, url=ai_url_str, source_type="ai",
+                             source_domain=ai_source_domain, status="scraped")
+                db.add(ai_url)
+                db.flush()
+            for item in accumulator.values():
+                item["url_ids"] = {ai_url.id}
             _store_keywords(db, project_id, accumulator)
             existing.update(accumulator)
             ai_existing.update(accumulator)
@@ -2891,38 +2926,7 @@ def _ensure_minimum_keyword_count(
     final_count = db.execute(
         select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
     ).scalar_one()
-    if final_count == 0:
-        # Search providers, competitor sites, or the AI provider can all be
-        # temporarily unavailable. Gold Hunter seeds are still verified user
-        # inputs and provide a truthful baseline without invented variants.
-        baseline: dict[str, dict[str, Any]] = {}
-        for raw_seed in seed_keywords:
-            phrase = clean_phrase(raw_seed)
-            if not phrase:
-                continue
-            baseline[phrase] = {
-                "type": "primary",
-                "count": 1,
-                "url_ids": {ai_url.id},
-                "score": 1.0,
-                "source": "sitemap_ai",
-                "tier": "outlier",
-            }
-        if baseline:
-            _store_keywords(db, project_id, baseline)
-            final_count = db.execute(
-                select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
-            ).scalar_one()
-            logger.warning(
-                "[%s] External keyword enrichment returned no results; retained %s verified seed keywords.",
-                project_id,
-                final_count,
-            )
     if final_count < target:
-        if final_count == 0:
-            raise RuntimeError(
-                "No keyword gaps could be generated. Check the AI provider configuration and whether competitor pages can be reached, then retry."
-            )
         logger.warning(
             "[%s] Produced %s evidence-backed keywords (research goal %s). Refusing to pad the result with unsupported variants.",
             project_id,
