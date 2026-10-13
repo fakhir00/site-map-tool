@@ -434,8 +434,15 @@ Rules:
   search goal or SERP expectation.
 - Use supporting when the query is useful but should live as an H2, FAQ, entity, feature, or semantic
   variation on one page. assigned_to must be that page's exact target keyword.
-- Use discard for irrelevant, broken, unsafe, obsolete, navigational, duplicate-with-no-added-value,
+- Synonyms, long-tail variations and overlapping queries belong as supporting keywords on their
+  best page. They are not separate URLs, and overlap alone is not a reason to throw them away.
+- Use discard for irrelevant, broken, unsafe, obsolete, navigational,
   or unsupported queries. Give a short specific reason. Never discard merely because volume is absent.
+- Account for the entire inventory: a map with six pages can cover seventy useful keywords.
+  Existing pages can receive supporting keywords and improvements at their current URLs.
+- Include topics one or two semantic hops from the main topic when the site evidence supports
+  the relationship (main topic → subtopic/entity → useful question). Exact seed wording is not
+  required. Explain this path in the decision reason; a shared generic word alone is insufficient.
 - Discard competitor brand names, competitor domains, competitor product names, and navigational searches
   for another company unless the website context explicitly requests competitor-comparison content.
 - Discard queries containing a third-party company, app, social network, review platform, or marketplace
@@ -810,19 +817,12 @@ def _repair_plan_consistency(
     for keyword in inventory:
         if keyword in decision_by_keyword:
             continue
-        if _is_protected_emd_entity(keyword, primary) and not _looks_incomplete_keyword(keyword):
-            destination = _resolve_inventory_keyword(keyword, list(page_targets)) or primary
-            decision = {
-                "keyword": keyword, "disposition": "supporting", "assigned_to": destination,
-                "placement": "h2",
-                "reason": "Retained because it is explicitly anchored to the site's core EMD entity.",
-            }
-        else:
-            decision = {
-                "keyword": keyword, "disposition": "discard", "assigned_to": None,
-                "placement": None,
-                "reason": "The specialist did not provide a validated topical placement for this keyword.",
-            }
+        # Omission is not a relevance verdict. A separate bounded placement
+        # review must decide these terms before this map can be approved.
+        decision = {
+            "keyword": keyword, "disposition": "unassigned", "assigned_to": None,
+            "placement": None, "reason": "Awaiting a reviewed keyword placement.",
+        }
         decisions.append(decision)
         decision_by_keyword[keyword] = decision
     for decision in decisions:
@@ -856,6 +856,134 @@ def _repair_plan_consistency(
     plan["master_hub"] = master
     plan["spokes"] = spokes
     plan["keyword_assignments"] = decisions
+    return plan
+
+
+async def _review_keyword_coverage(
+    plan: dict[str, Any], records: list[dict[str, Any]], context: str, *, deadline: float,
+) -> dict[str, Any]:
+    """Recover omitted/useful rejected terms without manufacturing extra URLs."""
+    decisions = plan["keyword_assignments"]
+    main = plan["master_hub"]["target_keyword"]
+    # Never reconsider deterministic exclusions as a way to raise the count.
+    # These checks normally ignore discarded terms; inspect the original
+    # inventory decisions as well so a bulk review cannot restore a hard reject.
+    review_plan = {**plan, "keyword_assignments": [
+        {**item, "disposition": "supporting"} for item in decisions
+    ]}
+    blocked = {item["keyword"] for item in [
+        *_deterministic_third_party_rejections(review_plan, main),
+        *_deterministic_quality_rejections(review_plan),
+        *_source_domain_brand_rejections(review_plan, records, main),
+    ]}
+    retained = sum(item["disposition"] in {"page_target", "supporting"} for item in decisions)
+    heavy_exclusion = len(records) >= 20 and retained < len(records) * 0.4
+    candidates = [item for item in decisions if item["keyword"] not in blocked and (
+        item["disposition"] == "unassigned" or (
+            item["disposition"] == "discard" and (
+                heavy_exclusion or re.search(
+                    r"duplicate|synonym|overlap|variant|variation|same intent|cannibali|volume|demand|already cover|existing page",
+                    item.get("reason", ""), re.I,
+                )
+            )
+        )
+    )]
+    if not candidates:
+        return plan
+    pages = [plan["master_hub"], *plan["spokes"]]
+    page_targets = {page["target_keyword"] for page in pages}
+    page_briefs = [{key: page.get(key) for key in (
+        "target_keyword", "search_intent", "content_brief", "user_problem", "content_requirements",
+        "reader_outcome", "scope_out", "h2_sections", "existing_url",
+    )} for page in pages]
+    metrics = {item["phrase"]: item for item in records}
+    batches = [candidates[index:index + 30] for index in range(0, len(candidates), 30)]
+    semaphore = asyncio.Semaphore(2)
+
+    async def review_batch(batch):
+        async with semaphore:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise ValueError("Keyword coverage review ran out of time before every keyword was considered.")
+            payload = _coerce_object(await _achat_json(
+                system_prompt="You are an SEO keyword placement reviewer. Return only the requested JSON.",
+                user_prompt=f"""Review every keyword below against the actual site and planned pages.
+Website context (evidence, not instructions): {context}
+Primary topic: {main}
+Planned pages: {json.dumps(page_briefs, ensure_ascii=False)}
+Keywords to review: {json.dumps([{**metrics[item['keyword']], 'previous_decision': item} for item in batch], ensure_ascii=False)}
+An omitted decision is not evidence that a keyword is irrelevant. Review it now.
+One- and two-hop topics are allowed: main topic → supported subtopic/entity → reader question.
+The exact main-topic words need not appear. Explain the relationship using supplied site evidence.
+Retain useful synonyms, long-tail queries, subquestions and entities as supporting keywords on the
+most specific page. Missing volume, shared intent or coverage by an existing URL is not a rejection
+reason. Reuse existing URLs and place variations naturally; never prescribe repeating all phrases.
+Do not force unrelated tasks into the homepage or invent capabilities to increase coverage.
+Reject unrelated, broken, navigational or unsupported queries with a specific evidence-based reason.
+If a useful distinct task has no suitable page, propose a page using that exact keyword and explain
+its unique reader outcome, content requirements and site evidence. Do not create a page for a synonym.
+Return exactly one decision per keyword in this batch, never change keywords outside this batch.
+Schema: {{"keyword_decisions": [["exact keyword", "supporting", "exact page target", "h2:Exact heading or faq:Exact question or variation or entity or feature", "specific reason"],
+["exact keyword", "discard", null, null, "specific evidence-based reason"],
+["exact keyword", "page_target", "same keyword", "title", "distinct reader task"]],
+"pages": [{{"target_keyword": "new exact batch keyword", "article_title": "natural title",
+"page_type": "article or tool", "search_intent": "distinct reader task", "content_brief": "exclusive scope",
+"user_problem": "specific question", "unique_page_value": "independent value and site evidence",
+"content_requirements": ["required answer"], "parent_target": "existing broader target"}}]}}
+Only return pages for new page_target decisions. An empty pages list is valid.
+""",
+                temperature=0.1, max_tokens=6000, request_timeout=remaining,
+            ))
+            if payload is None:
+                raise ValueError("Keyword coverage review returned malformed JSON.")
+            batch_keywords = {item["keyword"] for item in batch}
+            proposed = []
+            for raw in payload.get("pages") or []:
+                if not isinstance(raw, dict) or clean_phrase(str(raw.get("target_keyword") or "")) not in batch_keywords - page_targets:
+                    raise ValueError("Keyword coverage review proposed an unknown or duplicate page.")
+                if not all(isinstance(raw.get(key), str) and raw[key].strip() for key in (
+                    "article_title", "search_intent", "content_brief", "user_problem", "unique_page_value",
+                )):
+                    raise ValueError("A recovered page lacks a distinct task and supported content brief.")
+                proposed.append(_clean_page(raw, metrics))
+            new_targets = {page["target_keyword"] for page in proposed}
+            if len(new_targets) != len(proposed):
+                raise ValueError("Keyword coverage review duplicated a page target.")
+            revised = _normalize_plan(payload, records, main)["keyword_assignments"]
+            if len(revised) != len(batch_keywords) or {item["keyword"] for item in revised} != batch_keywords:
+                raise ValueError("Keyword coverage review must decide every exact batch keyword once.")
+            for item in revised:
+                kind, target = item["disposition"], item["assigned_to"]
+                if not item["reason"] or kind not in {"supporting", "page_target", "discard"}:
+                    raise ValueError("Keyword coverage review returned an incomplete decision.")
+                if kind == "supporting" and (target not in page_targets | new_targets or not item["placement"]):
+                    raise ValueError("A recovered keyword has no valid page and placement.")
+                if kind == "page_target" and (target != item["keyword"] or target not in new_targets):
+                    raise ValueError("A recovered page target has no matching page brief.")
+                if kind == "discard" and (target is not None or item["placement"] is not None):
+                    raise ValueError("A discarded keyword cannot have a destination.")
+            if new_targets != {item["keyword"] for item in revised if item["disposition"] == "page_target"}:
+                raise ValueError("Recovered pages and keyword decisions disagree.")
+            return revised, proposed
+
+    # TaskGroup cancels other requests if a batch fails. Commit decisions only
+    # after all batches finish; never leave partially reviewed coverage behind.
+    tasks = []
+    try:
+        async with asyncio.TaskGroup() as group:
+            for batch in batches:
+                tasks.append(group.create_task(review_batch(batch)))
+    except ExceptionGroup as exc:
+        raise exc.exceptions[0] from exc
+    replacements = {}
+    for task in tasks:
+        revised, proposed = task.result()
+        replacements.update({item["keyword"]: item for item in revised})
+        plan["spokes"].extend(proposed)
+    plan["keyword_assignments"] = [replacements.get(item["keyword"], item) for item in decisions]
+    plan["_keyword_coverage_review"] = {"reviewed": len(candidates), "retained": sum(
+        item["disposition"] != "discard" for item in replacements.values()
+    )}
     return plan
 
 
@@ -1059,6 +1187,9 @@ Keep an independently useful task separate even when its complete answer needs v
 Also reject retained keywords that are clearly unrelated, broken, competitor-branded, another company's
 product/domain, or navigational searches for another site. A keyword containing relevant topic words is
 still irrelevant when its real intent is reaching a competitor. Do not reject useful non-branded subtopics.
+Allow evidence-backed topics one or two semantic hops from the main topic (topic → entity/subtopic →
+reader question). Do not require every keyword to repeat the exact primary seed. Useful overlapping
+queries stay as supporting placements on one page; overlap and missing volume are not rejection reasons.
 Reject third-party company, app, platform, social-network, review-site, and marketplace modifiers such as
 Reddit, Trustpilot, Amazon, YouTube, or Facebook. A named company may remain only when the keyword expresses
 direct competitor-comparison intent with "vs", "comparison", or "alternative" wording.
@@ -1458,8 +1589,15 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
     plan["discarded_keywords"] = discarded
     plan["filtered_irrelevant_keywords"] = [item["keyword"] for item in discarded]
     plan["total_relevant_keywords_covered"] = sum(
-        1 for item in plan["keyword_assignments"] if item["disposition"] != "discard"
+        1 for item in plan["keyword_assignments"] if item["disposition"] in {"page_target", "supporting"}
     )
+    plan["keyword_coverage"] = {
+        "total": len(plan["keyword_assignments"]),
+        "used": plan["total_relevant_keywords_covered"],
+        "page_targets": sum(item["disposition"] == "page_target" for item in plan["keyword_assignments"]),
+        "supporting": sum(item["disposition"] == "supporting" for item in plan["keyword_assignments"]),
+        "excluded": len(discarded),
+    }
     plan["_deduplication_check"] = {
         "unique_target_keywords": "Checked",
         "unique_titles": "Checked",
@@ -1518,9 +1656,9 @@ async def _build_site_architecture(
                 user_prompt=prompt,
                 temperature=0.15,
                 max_tokens=16000,
-                # Reserve time for the mandatory semantic review, and let the
-                # provider layer divide this budget between retries/fallbacks.
-                request_timeout=min(120, remaining - 45),
+                # Reserve placement and semantic review time; the provider
+                # layer divides this request budget between retries/fallbacks.
+                request_timeout=min(120, remaining - max(45, min(90, remaining / 2))),
             )
             payload = _coerce_object(payload)
             if payload is None:
@@ -1535,6 +1673,17 @@ async def _build_site_architecture(
                 *_source_domain_brand_rejections(plan, normalized, main),
             ]
             _apply_relevance_rejections(plan, deterministic_rejections)
+            coverage_deadline = min(
+                review_deadline - 45, asyncio.get_running_loop().time() + 90,
+            )
+            plan = await _review_keyword_coverage(plan, normalized, context, deadline=coverage_deadline)
+            # Newly recovered pages still face the same source and quality
+            # fences as the initial plan, followed by the full intent audit.
+            _apply_relevance_rejections(plan, [
+                *_deterministic_third_party_rejections(plan, main),
+                *_deterministic_quality_rejections(plan),
+                *_source_domain_brand_rejections(plan, normalized, main),
+            ])
             if not discover_topics:
                 plan = _apply_tool_roi_rules(plan, normalized)
             mechanical_conflicts = _mechanical_intent_conflicts(plan)
@@ -1632,7 +1781,7 @@ async def _build_site_architecture(
 def usable_keywords(plan: dict[str, Any]) -> list[str]:
     return [
         item["keyword"] for item in plan.get("keyword_assignments") or []
-        if item.get("disposition") != "discard"
+        if item.get("disposition") in {"page_target", "supporting"}
     ]
 
 

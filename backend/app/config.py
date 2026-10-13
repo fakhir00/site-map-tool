@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     APIFY_KEYWORD_RESULT_LIMIT: int = 100
     APIFY_KEYWORD_MIN_VOLUME: int = 0
     APIFY_KEYWORD_LANGUAGE: str = "en"
+    APIFY_KEYWORD_EXPANSION_SEED_LIMIT: int = 3
     DATAFORSEO_LOGIN: str = ""
     DATAFORSEO_PASSWORD: str = ""
     DATAFORSEO_API_LOGIN: str = ""

@@ -28,6 +28,17 @@ const currentLinkInstructions = (value: string) => value.replace(/\b(?:The\s+)?(
 
 export const CONTENT_COMPLETENESS = 'Every page = enough content to completely satisfy its unique intent.'
 export const isExistingPage = (page: PageDetail) => Boolean(page.existing_url) || page.action === 'update'
+export const pageKeywords = (page: PageDetail) => [...new Set([page.target_keyword, ...(page.targeted_keywords || [])].filter((keyword): keyword is string => Boolean(keyword)))]
+export function keywordCoverage(mapping: Mapping) {
+  const decisions = new Map((mapping.keyword_assignments || []).map(item => [item.keyword, item]))
+  const pages = [mapping.master_hub, ...(mapping.spokes || [])].filter((page): page is PageDetail => Boolean(page))
+  const used = new Set(pages.flatMap(pageKeywords).filter(keyword => decisions.get(keyword)?.disposition !== 'discard'))
+  const excluded = new Set([...decisions.values()].filter(item => item.disposition === 'discard').map(item => item.keyword))
+  const inventory = new Set([...(mapping._keyword_metrics || []).map(item => item.phrase), ...decisions.keys(), ...used, ...excluded])
+  const primary = new Set(pages.map(page => page.target_keyword).filter(Boolean))
+  return { total: inventory.size, used: used.size, supporting: [...used].filter(keyword => !primary.has(keyword)).length,
+    excluded: excluded.size, unassigned: [...inventory].filter(keyword => !used.has(keyword) && !excluded.has(keyword)).length }
+}
 export const pageEditor = (page: PageDetail) => ['tool', 'page', 'landing_page', 'service', 'product'].includes(page.page_type || '') ? 'page' : 'blog'
 export const pageActionLabel = (page: PageDetail) => isExistingPage(page) ? 'Improve existing page' : pageEditor(page) === 'page' ? 'Create page' : 'Create blog'
 export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'

@@ -18,6 +18,64 @@ from workers.pipeline import _process_apify_keywords
 
 
 class ApifyClientTests(TestCase):
+    def test_sparse_research_expands_supported_subtopics_and_merges_real_metrics(self):
+        client = MagicMock()
+        client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}
+        client.dataset.return_value.iterate_items.side_effect = [
+            iter([{'keyword': 'spirit animal quiz', 'volume': 100}]),
+            iter([{'keyword': 'wolf personality traits', 'volume': 80}, {'keyword': 'spirit animal quiz', 'volume': 100}]),
+            iter([{'keyword': 'owl personality traits', 'volume': 60}]),
+            iter([{'keyword': 'bear personality traits', 'volume': 40}]),
+        ]
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            rows = research_keywords_via_apify(['spirit animal quiz', 'Spirit Animal Quiz'], expansion_seeds=[
+                'spirit animal quiz', 'wolf personality traits', 'owl personality traits', 'bear personality traits', 'fox personality traits',
+            ])
+        queries = [call.kwargs['run_input']['keyword'] for call in client.actor.return_value.call.call_args_list]
+        self.assertEqual(queries, ['spirit animal quiz', 'wolf personality traits', 'owl personality traits', 'bear personality traits'])
+        self.assertEqual(len(rows), 4)
+        by_phrase = {row['phrase']: row for row in rows}
+        self.assertEqual(by_phrase['wolf personality traits']['search_volume'], 80)
+        self.assertEqual(by_phrase['spirit animal quiz']['seed_keywords'], ['spirit animal quiz', 'wolf personality traits'])
+        self.assertNotIn('fox personality traits', by_phrase)
+
+    def test_healthy_expansion_stops_extra_queries_and_quota_does_not_retry(self):
+        for quota in (False, True):
+            with self.subTest(quota=quota):
+                client = MagicMock()
+                client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}
+                client.dataset.return_value.iterate_items.side_effect = [
+                    iter([{'keyword': 'spirit animal quiz'}]),
+                    iter([{'error': 'Quota exceeded'}] if quota else [
+                        {'keyword': f'{animal} personality {subject}', 'volume': 10}
+                        for animal in ('wolf', 'owl', 'bear', 'fox', 'eagle')
+                        for subject in ('traits', 'strengths', 'weaknesses', 'compatibility')
+                    ]),
+                ]
+                with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+                    'scraping.apify_client_module._get_client', return_value=client,
+                ):
+                    rows = research_keywords_via_apify(['spirit animal quiz'], expansion_seeds=[
+                        'wolf personality traits', 'owl personality traits', 'bear personality traits',
+                    ])
+                self.assertEqual(client.actor.return_value.call.call_count, 2)
+                self.assertEqual(len(rows), 1 if quota else 21)
+
+    def test_seed_only_dataset_reports_low_expansion_without_inventing_keywords(self):
+        client = MagicMock()
+        client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}
+        client.dataset.return_value.iterate_items.return_value = iter([{'keyword': 'spirit animal quiz', 'volume': 0}])
+        notes = []
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            rows = research_keywords_via_apify(['spirit animal quiz'], diagnostics=notes)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['search_volume'], 0)
+        self.assertIn('little or no keyword expansion', notes[0])
+
     def test_keyword_quota_stops_remaining_seeds_and_keeps_partial_results(self):
         client = MagicMock()
         client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}

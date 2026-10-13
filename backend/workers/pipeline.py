@@ -1156,7 +1156,13 @@ def _process_apify_keywords(
         return 0
 
     research_notes: list[str] = []
-    researched = research_keywords_via_apify(seed_keywords, country_code=search_locale, diagnostics=research_notes)
+    expansion_seeds = sorted(
+        term.removeprefix("__research_seed__") for term in topic_terms or set()
+        if term.startswith("__research_seed__")
+    )
+    researched = research_keywords_via_apify(
+        seed_keywords, country_code=search_locale, diagnostics=research_notes, expansion_seeds=expansion_seeds,
+    )
     if diagnostics is not None:
         diagnostics.extend(research_notes)
     accepted: list[dict[str, Any]] = []
@@ -2552,11 +2558,14 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
         anchor_terms = set(result.get("anchor_terms", []))
         scope_terms = set(result.get("scope_terms", []))
         negative_terms = set(result.get("negative_terms", [])) | mechanical_negative_terms
-        if core_terms or anchor_terms or scope_terms:
+        related_pairs = set(result.get("related_pairs", []))
+        if core_terms or anchor_terms or scope_terms or related_pairs:
             marked = (
                 core_terms
                 | {f"__anchor__{term}" for term in anchor_terms}
                 | {f"__scope__{term}" for term in (scope_terms | mechanical_scope)}
+                | {f"__related__{pair}" for pair in related_pairs}
+                | {f"__research_seed__{seed}" for seed in result.get("research_seeds", [])}
             )
             return marked, negative_terms
     except Exception as e:

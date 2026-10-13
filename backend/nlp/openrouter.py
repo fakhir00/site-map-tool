@@ -298,13 +298,14 @@ I have a website defined by these Seed Keywords: {json.dumps(target_keywords)}
 And this Context/Audit Summary:
 {audit_summary or "No summary provided. Rely solely on seed keywords."}
 
-Your task is to analyze the semantic core of this website and break it down into three distinct JSON arrays to be used as a Python stopword/gate filter.
+Analyze the semantic core of this website for keyword research and relevance filtering.
 
 1. "anchor_terms": Exact names, synonyms, or very close first-hop names for the PRIMARY entity in the first seed/EMD. These must keep the same topical niche, not merely be words mentioned for comparison. Example: lunar -> moon is valid; solar is not. Circuit -> electrical or electronic can be valid. Limit to 8 terms.
 2. "scope_terms": Functions or subject qualifiers that must accompany an anchor to describe this exact site. Example for lunar age calculator: age, calendar, birth, date, conversion, calculate. Example for circuit diagram maker: diagram, schematic, wiring, electronics, design. Limit to 30 terms.
-3. "core_terms": Other close entities that are useful for ranking but are not sufficient relevance proof by themselves. Limit to 30 terms.
+3. "core_terms": Vocabulary describing the site's niche. These words alone do not establish relevance. Limit to 30 terms.
 4. "generic_terms": Generic modifiers that DO NOT define the niche (for example tool, app, system, calculator). Limit to 30 terms.
 5. "negative_terms": Terms from common alternate meanings of the primary words and unrelated niches. For lunar age, include astronomy drift such as planet, mars, eclipse, orbit, astronomy, and space while retaining legitimate lunar-calendar comparisons. Never put an anchor synonym itself (such as moon) in negative_terms. Limit to 30 terms.
+6. "related_topics": Up to 8 useful subtopics one or two semantic hops from the site's primary topic. Each needs an entity, specific subject qualifiers, a natural research query, and an EXACT supporting excerpt from the supplied positive site context or seeds. For an animal-personality site, wolf → personality/traits/meaning can be valid. No unrelated homonyms, generic shared-word matches or unsupported capabilities. Comparison mentions alone do not support another tool (lunar age does not imply a Korean age calculator). An empty list is valid when the site evidence is insufficient.
 
 Ensure all terms are lowercase strings.
 Do not output anything except valid JSON matching this schema:
@@ -313,7 +314,8 @@ Do not output anything except valid JSON matching this schema:
   "scope_terms": ["..."],
   "core_terms": ["..."],
   "generic_terms": ["..."],
-  "negative_terms": ["..."]
+  "negative_terms": ["..."],
+  "related_topics": [{{"entity": "wolf", "qualifiers": ["personality", "traits"], "research_query": "wolf personality traits", "evidence": "exact excerpt from the supplied context or seeds"}}]
 }}
 """
     try:
@@ -321,13 +323,15 @@ Do not output anything except valid JSON matching this schema:
             system_prompt="You output only valid JSON.",
             user_prompt=prompt,
             temperature=0.1,
-            max_tokens=2000,
+            max_tokens=3000,
         )
         if isinstance(payload, dict):
             # Ensure we only have single words
             def _extract_words(term_list):
                 words = set()
-                for term in term_list:
+                for term in term_list if isinstance(term_list, list) else []:
+                    if not isinstance(term, str):
+                        continue
                     for w in str(term).lower().replace("-", " ").split():
                         w = ''.join(c for c in w if c.isalnum())
                         if len(w) > 1:
@@ -341,6 +345,31 @@ Do not output anything except valid JSON matching this schema:
                 "generic_terms": _extract_words(payload.get("generic_terms", [])),
                 "negative_terms": _extract_words(payload.get("negative_terms", []))
             }
+            from nlp.keywords import clean_phrase, is_publishable_keyword, keyword_terms, GENERIC_TOOL_TERMS, STOPWORDS
+            evidence_units = [clean_phrase(seed) for seed in target_keywords] + _audit_keyword_evidence(audit_summary)
+            related_pairs, research_seeds = set(), []
+            related_topics = payload.get("related_topics") or []
+            for topic in related_topics[:8] if isinstance(related_topics, list) else []:
+                if not isinstance(topic, dict):
+                    continue
+                evidence = clean_phrase(str(topic.get("evidence") or ""))
+                if len(evidence) < 8 or not any(evidence in clean_phrase(unit) for unit in evidence_units):
+                    continue
+                entity = clean_phrase(str(topic.get("entity") or ""))
+                entity_words = set(entity.split())
+                if (not 1 <= len(entity_words) <= 3
+                        or not keyword_terms(entity, min_len=2) - GENERIC_TOOL_TERMS - STOPWORDS
+                        or entity_words & set(res["negative_terms"])):
+                    continue
+                qualifiers = set(_extract_words(topic.get("qualifiers") or [])) - GENERIC_TOOL_TERMS - STOPWORDS - entity_words - set(res["negative_terms"])
+                related_pairs.update(f"{entity}|{qualifier}" for qualifier in qualifiers)
+                query = clean_phrase(str(topic.get("research_query") or ""))
+                query_words = set(query.split())
+                if (qualifiers & query_words and entity_words.issubset(query_words)
+                        and is_publishable_keyword(query, min_words=2, negative_terms=set(res["negative_terms"]))):
+                    research_seeds.append(query)
+            res["related_pairs"] = sorted(related_pairs)
+            res["research_seeds"] = list(dict.fromkeys(research_seeds))
             _semantic_cache[cache_key] = res
             return res
     except Exception as exc:

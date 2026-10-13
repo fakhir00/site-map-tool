@@ -464,7 +464,7 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(len(targets), len(set(targets)))
         self.assertIn("south node meaning", targets)
 
-    def test_omitted_keywords_are_recovered_only_when_anchored_to_the_emd_entity(self):
+    def test_omitted_keywords_require_review_instead_of_implicit_rejection(self):
         primary = "dental pro 7 reviews"
         records = normalize_keyword_records([
             {"phrase": primary},
@@ -488,9 +488,9 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(plan["master_hub"]["page_type"], "article")
         decisions = {item["keyword"]: item for item in plan["keyword_assignments"]}
         self.assertEqual(decisions["dental pro ingredients"]["disposition"], "supporting")
-        self.assertEqual(decisions["dental pro 7 side effects"]["disposition"], "supporting")
-        self.assertEqual(decisions["dental implants"]["disposition"], "discard")
-        self.assertEqual(decisions["amd dental clinic"]["disposition"], "discard")
+        for keyword in ("dental pro 7 side effects", "dental implants", "amd dental clinic"):
+            self.assertEqual(decisions[keyword]["disposition"], "unassigned")
+        self.assertTrue(any("invalid disposition" in error for error in validate_architecture(plan, records, primary)))
 
     def test_spoke_tool_requires_enough_search_volume_for_the_effort(self):
         records = normalize_keyword_records([

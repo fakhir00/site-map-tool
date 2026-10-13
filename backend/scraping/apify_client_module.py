@@ -247,8 +247,9 @@ def research_keywords_via_apify(
     language: str | None = None,
     max_results_per_seed: int | None = None,
     diagnostics: list[str] | None = None,
+    expansion_seeds: List[str] | None = None,
 ) -> List[Dict[str, Any]]:
-    """Run the keyword research Actor once for every seed and merge its results."""
+    """Research seeds, then try bounded site-supported subtopics on sparse results."""
     if not is_apify_configured():
         logger.warning("Apify not configured. Skipping keyword research.")
         return []
@@ -261,8 +262,15 @@ def research_keywords_via_apify(
     merged: Dict[str, Dict[str, Any]] = {}
     limit_reached = False
 
-    for raw_seed in seed_keywords:
+    seeds = list(dict.fromkeys(str(seed or "").strip().lower() for seed in seed_keywords if str(seed or "").strip()))
+    additional = [seed for seed in dict.fromkeys(
+        str(seed or "").strip().lower() for seed in expansion_seeds or []
+    ) if seed and seed not in seeds][:max(0, min(3, settings.APIFY_KEYWORD_EXPANSION_SEED_LIMIT))]
+    attempted = 0
+    for index, raw_seed in enumerate([*seeds, *additional]):
         if limit_reached:
+            break
+        if index >= len(seeds) and len(merged) >= min(20, result_limit):
             break
         seed = str(raw_seed or "").strip()
         if not seed:
@@ -275,6 +283,7 @@ def research_keywords_via_apify(
             "min_volume": max(0, settings.APIFY_KEYWORD_MIN_VOLUME),
         }
         try:
+            attempted += 1
             logger.info("Running Apify keyword research for exact seed %r", seed)
             run = _call_actor(client, actor_id,
                 run_input=run_input,
@@ -337,8 +346,13 @@ def research_keywords_via_apify(
     logger.info(
         "Apify keyword research returned %s unique keywords across %s seeds",
         len(merged),
-        len([seed for seed in seed_keywords if str(seed or "").strip()]),
+        attempted,
     )
+    if diagnostics is not None and not limit_reached and len(merged) <= 1:
+        diagnostics.append(
+            f"Apify keyword research returned {len(merged)} unique keywords across {attempted} queries; "
+            "the provider supplied little or no keyword expansion. Other research sources are still used."
+        )
     return list(merged.values())
 
 

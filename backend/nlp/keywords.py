@@ -382,21 +382,32 @@ def is_topic_relevant_keyword(
     # Question seeds often contain a request verb rather than an entity:
     # "how to convert English to Katakana" also supports "English names in
     # Katakana". Retain the actual subjects, not every word of the question.
-    query_actions = {"calculate", "convert", "create", "generate", "write", "draw"}
+    query_actions = {"calculate", "convert", "create", "generate", "write", "draw", "quiz", "quizzes", "test", "tests"}
     cleaned = clean_phrase(phrase)
     normalized_seeds = normalize_seed_keywords(seed_keywords)
     primary_seed = normalized_seeds[0] if normalized_seeds else ""
+    raw_terms = set(cleaned.split()) - STOPWORDS
+    # A bridge is an explicit, evidence-backed entity/subject relationship,
+    # not generic core vocabulary or a single shared word.
+    related_match = False
+    for term in topic_terms or set():
+        if term.startswith("__related__"):
+            entity, _, qualifier = term.removeprefix("__related__").partition("|")
+            entity_words = set(entity.split()) - STOPWORDS
+            if entity_words and entity_words.issubset(raw_terms) and qualifier in raw_terms - entity_words:
+                related_match = True
+                break
     if primary_seed and (
         has_external_platform_modifier(cleaned, primary_seed)
         or has_unrelated_leading_entity(cleaned, primary_seed)
         or (
             is_protected_product_emd(primary_seed)
             and not keyword_matches_emd_entity(cleaned, primary_seed)
+            and not related_match
         )
     ):
         return False
     phrase_terms = keyword_terms(cleaned, min_len=2)
-    raw_terms = set(cleaned.split()) - STOPWORDS
     if not phrase_terms or (negative_terms and phrase_terms & negative_terms):
         # Generic seed words are intentionally removed from keyword_terms, but
         # an exact seed-anchored phrase is still relevant by definition.
@@ -457,6 +468,12 @@ def is_topic_relevant_keyword(
     } | primary_scope
     candidate_anchors = raw_terms & (primary_anchors | semantic_anchors)
     candidate_scope = raw_terms & scope_terms
+
+    # Only explicit, evidence-backed entity/subject pairs may bridge away from
+    # the primary anchor. Generic core vocabulary is not such evidence (e.g.
+    # mentioning Korea in a lunar-calendar audit does not admit Korean age).
+    if related_match:
+        return True
 
     # A distinctive EMD/primary entity by itself is not enough: "lunar
     # eclipse" and "circuit court" are different subjects. Requiring a site

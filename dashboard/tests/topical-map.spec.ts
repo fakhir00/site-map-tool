@@ -28,6 +28,41 @@ async function loadSaved(page: Page) {
   await expect(page.getByRole('heading', { name: 'Your topical authority map', exact: true })).toBeVisible()
 }
 
+test('shows every supporting keyword across a large saved map and preserves them in the writer', async ({ page }) => {
+  await setup(page, true)
+  const animals = ['wolf', 'owl', 'bear', 'fox', 'eagle', 'deer']
+  const variants = ['personality traits', 'personality strengths', 'personality weaknesses', 'personality compatibility', 'personality at work', 'personality in relationships', 'spiritual symbolism', 'quiz result meaning', 'spirit animal characteristics', 'spirit animal interpretation', 'personality description']
+  const home = { ...master, target_keyword: 'spirit animal quiz', targeted_keywords: [], article_title: 'Spirit Animal Quiz' }
+  const profiles = animals.map(animal => ({ ...method, target_keyword: `${animal} spirit animal meaning`, article_title: `${animal} Personality Profile`, existing_url: `https://example.com/${animal}/`, targeted_keywords: variants.map(variant => `${animal} ${variant}`) }))
+  const saved = { ...history, clusters: { ...mapping, master_hub: home, spokes: profiles, keyword_assignments: [
+    { keyword: home.target_keyword, disposition: 'page_target', assigned_to: home.target_keyword, reason: 'Main quiz task' },
+    ...profiles.flatMap(profile => [
+      { keyword: profile.target_keyword, disposition: 'page_target', assigned_to: profile.target_keyword, reason: 'Animal result profile' },
+      ...profile.targeted_keywords.map(keyword => ({ keyword, disposition: 'supporting', assigned_to: profile.target_keyword, placement: 'h2:Personality traits', reason: 'Explain this animal personality result' })),
+    ]),
+  ] } }
+  await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: saved }))
+  await loadSaved(page)
+  await expect(page.getByLabel('Keyword coverage')).toContainText('73 of 73 keywords used across 7 pages')
+  await expect(page.getByLabel('Keyword coverage')).toContainText('66 supporting keywords')
+  await page.locator('summary').filter({ hasText: '12 keywords covered' }).first().click()
+  await expect(page.getByRole('tabpanel')).toContainText('wolf personality strengths')
+  await page.getByRole('button', { name: 'View brief for wolf Personality Profile', exact: true }).click()
+  await page.getByRole('complementary', { name: 'Page brief' }).getByRole('button', { name: 'Improve existing page', exact: true }).click()
+  await expect(page).toHaveURL(/write-blog/)
+  const brief = page.getByLabel('Architecture brief', { exact: true })
+  for (const keyword of profiles[0].targeted_keywords) await expect(brief).toContainText(keyword)
+  await expect(brief).toContainText('https://example.com/wolf/')
+})
+
+test('reports missing placements in legacy maps instead of counting them as used', async ({ page }) => {
+  await setup(page, true)
+  await page.route(`**/api/hub-spoke/history/${id}`, route => route.fulfill({ json: { ...history, clusters: { ...mapping, _keyword_metrics: [{ phrase: 'lunar age leap year' }] } } }))
+  await loadSaved(page)
+  await expect(page.getByLabel('Keyword coverage')).toContainText('5 of 6 keywords used across 3 pages')
+  await expect(page.getByLabel('Keyword coverage')).toContainText('1 keyword has no recorded placement')
+})
+
 test('builds a map with an explicit main topic and exports actual URL links', async ({ page }) => {
   await setup(page)
   let submitted: Record<string, unknown> | undefined
