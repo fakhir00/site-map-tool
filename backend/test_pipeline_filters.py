@@ -955,6 +955,40 @@ class PipelineFilterTests(TestCase):
             "dental pro 7 vs oramd", ["https://oramd.com"], primary,
         ))
 
+    def test_descriptive_competitor_domains_do_not_turn_topic_queries_into_brands(self):
+        scope = {"animal", "soul", "quiz", "__anchor__spirit", "__scope__personality"}
+        for phrase, domain in [
+            ("spirit animal quiz", "spiritanimalquiz.com"),
+            ("spirit animal quiz meanings", "spiritanimalquiz.com"),
+            ("spirit animal quizzes", "spiritanimalquizzes.com"),
+            ("animal personality quiz", "animalpersonalityquiz.com"),
+        ]:
+            with self.subTest(phrase=phrase, domain=domain):
+                self.assertFalse(_phrase_mentions_unrelated_source_brand(
+                    phrase, [f"https://{domain}"], "animal soul quiz", topic_terms=scope,
+                ))
+
+    def test_query_contained_in_hostname_is_not_a_brand_mention(self):
+        for phrase in ["animal quiz", "spirit animal"]:
+            with self.subTest(phrase=phrase):
+                self.assertFalse(_phrase_mentions_unrelated_source_brand(
+                    phrase, ["https://spiritanimalquiz.com"], "animal soul quiz",
+                ))
+
+    def test_topic_domain_exemption_keeps_actual_source_brands_out(self):
+        scope = {"animal", "spirit", "quiz", "proprofs"}
+        for phrase, domain in [
+            ("proprofs spirit animal quiz", "proprofs.com"),
+            ("super spirit animal quiz", "superspiritanimalquiz.com"),
+        ]:
+            with self.subTest(phrase=phrase):
+                self.assertTrue(_phrase_mentions_unrelated_source_brand(
+                    phrase, [f"https://{domain}"], "animal soul quiz", topic_terms=scope,
+                ))
+        self.assertTrue(_phrase_mentions_unrelated_source_brand(
+            "call nature dental pro 7", ["https://callnature.framer.ai"], "dental pro 7",
+        ))
+
     def test_gap_ai_cannot_rewrite_a_relevant_source_into_an_unrelated_homonym(self):
         refined = _build_ai_refined_accumulator(
             {

@@ -877,7 +877,8 @@ def _process_competitor_keyword_gaps(
 
     stats = diagnostics if diagnostics is not None else {}
     stats.update(scraped_pages=0, relevant_candidates=0, reviewed_candidates=0,
-                 quality_candidates=0, covered_candidates=0, stored_gaps=0)
+                 quality_candidates=0, covered_candidates=0, stored_gaps=0,
+                 phrase_rejected=0, topic_rejected=0, source_brand_rejected=0)
 
     base_query = (
         select(Url)
@@ -955,20 +956,16 @@ def _process_competitor_keyword_gaps(
         stats["outcome"] = "review_rejected"
         return 0
     from nlp.keywords import is_publishable_keyword
-    filtered = [
-        item for item in filtered
-        if is_publishable_keyword(
-            str(item.get("phrase") or ""),
-            min_words=2,
-            negative_terms=negative_terms,
-        )
-        and _keyword_matches_topic(
-            str(item.get("phrase") or ""),
-            seed_keywords,
-            topic_terms,
-            negative_terms,
-        )
-    ]
+    usable = []
+    for item in filtered:
+        phrase = str(item.get("phrase") or "")
+        if not is_publishable_keyword(phrase, min_words=2, negative_terms=negative_terms):
+            stats["phrase_rejected"] += 1
+        elif not _keyword_matches_topic(phrase, seed_keywords, topic_terms, negative_terms):
+            stats["topic_rejected"] += 1
+        else:
+            usable.append(item)
+    filtered = usable
     filtered = _with_source_url_ids(filtered, extracted)
     source_ids = {
         url_id
@@ -985,6 +982,7 @@ def _process_competitor_keyword_gaps(
         ).all():
             source_domain_by_id[url_id] = source_domain or _origin(url) or ""
     primary_seed = seed_keywords[0] if seed_keywords else ""
+    before_brand_check = len(filtered)
     filtered = [
         item for item in filtered
         if not _phrase_mentions_unrelated_source_brand(
@@ -995,8 +993,10 @@ def _process_competitor_keyword_gaps(
                 if source_domain_by_id.get(url_id)
             ],
             primary_seed,
+            topic_terms=topic_terms,
         )
     ]
+    stats["source_brand_rejected"] = before_brand_check - len(filtered)
     logger.info(
         "Competitor keyword filter retained %s of %s extracted phrases",
         len(filtered),
@@ -3022,7 +3022,7 @@ def _keyword_gap_candidate_rows(
             for url_id in url_ids
             if url_id in domain_by_url_id
         })
-        if _phrase_mentions_unrelated_source_brand(phrase, domains, seed_keywords[0]):
+        if _phrase_mentions_unrelated_source_brand(phrase, domains, seed_keywords[0], topic_terms=topic_terms):
             continue
         score = _gap_candidate_score(phrase, data, domains, topic_terms, negative_terms)
         candidates.append({
@@ -3050,6 +3050,7 @@ def _phrase_mentions_unrelated_source_brand(
     phrase: str,
     source_domains: list[str],
     primary_keyword: str,
+    topic_terms: set[str] | None = None,
 ) -> bool:
     """Reject navigational company/app phrases while preserving the EMD and explicit comparisons."""
     from nlp.keywords import clean_phrase, emd_entity_terms
@@ -3075,15 +3076,42 @@ def _phrase_mentions_unrelated_source_brand(
         brand_compact = re.sub(r"[^a-z0-9]", "", brand_label)
         if len(brand_compact) < 4:
             continue
-        mentions_brand = brand_compact in phrase_compact or (
-            len(phrase_compact) >= 5 and phrase_compact in brand_compact
-        )
+        # A short query appearing inside a hostname is not a brand mention:
+        # "spirit animal" is a topic, not navigation to spiritanimalquizzes.com.
+        mentions_brand = brand_compact in phrase_compact
         source_is_emd = bool(primary_compact) and (
             primary_compact in brand_compact or brand_compact in primary_compact
         )
-        if mentions_brand and not source_is_emd:
+        descriptive_domain = _domain_label_uses_topic_words(brand_compact, primary_keyword, topic_terms)
+        if mentions_brand and not source_is_emd and not descriptive_domain:
             return True
     return False
+
+
+def _domain_label_uses_topic_words(label: str, primary_keyword: str, topic_terms: set[str] | None) -> bool:
+    """Recognize descriptive topic domains without exempting unrelated brand names."""
+    from nlp.keywords import clean_phrase
+
+    words = set(clean_phrase(primary_keyword).split())
+    for term in topic_terms or set():
+        words.update(clean_phrase(term.removeprefix("__anchor__").removeprefix("__scope__")).split())
+    words = {word for word in words if len(word) >= 3}
+    plurals = {word + "s" for word in words}
+    plurals |= {word[:-1] + "ies" for word in words if word.endswith("y")}
+    plurals |= {word + "es" for word in words if word.endswith(("s", "x", "ch", "sh"))}
+    plurals |= {word + "zes" for word in words if word.endswith("z")}
+    words |= plurals
+    # Require the WHOLE hostname label to consist of at least two known topic
+    # words. A shared word inside an unrelated brand is never sufficient.
+    segments = {0: 0}
+    for start in range(len(label)):
+        if start not in segments:
+            continue
+        for word in words:
+            if label.startswith(word, start):
+                end = start + len(word)
+                segments[end] = max(segments.get(end, 0), segments[start] + 1)
+    return segments.get(len(label), 0) >= 2
 
 
 def _gap_candidate_score(

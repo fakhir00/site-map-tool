@@ -7,14 +7,16 @@ from workers.pipeline import _competitor_gap_completion_message, _process_compet
 
 
 class GapDiagnosticTests(unittest.TestCase):
-    def run_stage(self, *, page_count=2, extracted=None, reviewed=None, covered=False):
+    def run_stage(self, *, page_count=2, extracted=None, reviewed=None, covered=False,
+                  primary='lunar age calculator', topic_terms=None,
+                  source_domain='https://competitor.example', phrase='lunar age calculator'):
         db = MagicMock()
         db.execute.return_value.scalar.return_value = page_count
         db.execute.return_value.scalars.return_value.all.return_value = [
             SimpleNamespace(url='https://own.example/', h1='Age tool', scraped_text='Lunar age calculator')]
         source_id = uuid.uuid4()
-        db.execute.return_value.all.return_value = [(source_id, 'https://competitor.example', 'https://competitor.example/age')]
-        candidate = {'phrase': 'lunar age calculator', 'url_ids': [str(source_id)]}
+        db.execute.return_value.all.return_value = [(source_id, source_domain, source_domain + '/guide')]
+        candidate = {'phrase': phrase, 'url_ids': [str(source_id)]}
         extracted = [candidate] if extracted is None else extracted
         reviewed = [candidate] if reviewed is None else reviewed
         stats = {}
@@ -22,7 +24,7 @@ class GapDiagnosticTests(unittest.TestCase):
             'workers.pipeline._own_content_keyword_phrases', return_value={'lunar age calculator'} if covered else set()
         ):
             count = _process_competitor_keyword_gaps(
-                db, uuid.uuid4(), ['lunar age calculator'], {'lunar', 'age'}, set(), '',
+                db, uuid.uuid4(), [primary], topic_terms if topic_terms is not None else {'lunar', 'age'}, set(), '',
                 MagicMock(return_value=extracted), MagicMock(return_value=reviewed), MagicMock(), MagicMock(),
                 diagnostics=stats,
             )
@@ -54,6 +56,37 @@ class GapDiagnosticTests(unittest.TestCase):
         self.assertEqual(stats['outcome'], 'quality_rejected')
         self.assertEqual(stats['reviewed_candidates'], 1)
         self.assertEqual(stats['quality_candidates'], 0)
+        self.assertEqual(stats['phrase_rejected'], 1)
+        self.assertEqual(stats['source_brand_rejected'], 0)
+
+    def test_topic_rejection_is_counted_separately(self):
+        stats, count = self.run_stage(reviewed=[{'phrase': 'dog grooming tips'}])
+        self.assertEqual(count, 0)
+        self.assertEqual(stats['topic_rejected'], 1)
+        self.assertEqual(stats['phrase_rejected'], 0)
+
+    def test_source_brand_rejection_is_counted_separately(self):
+        stats, count = self.run_stage(phrase='competitor lunar age calculator')
+        self.assertEqual(count, 0)
+        self.assertEqual(stats['source_brand_rejected'], 1)
+        self.assertEqual(stats['phrase_rejected'], 0)
+        self.assertEqual(stats['topic_rejected'], 0)
+
+    def test_animal_soul_site_keeps_reviewed_spirit_animal_queries(self):
+        for phrase, domain in [
+            ('spirit animal quiz meanings', 'https://spiritanimalquiz.com'),
+            ('spirit animal quizzes', 'https://spiritanimalquizzes.com'),
+        ]:
+            with self.subTest(phrase=phrase):
+                stats, count = self.run_stage(
+                    primary='animal soul quiz',
+                    topic_terms={'animal', 'soul', 'quiz', '__anchor__spirit',
+                                 '__scope__quiz', '__scope__quizzes'},
+                    phrase=phrase, source_domain=domain,
+                )
+                self.assertEqual(count, 1)
+                self.assertEqual(stats['stored_gaps'], 1)
+                self.assertEqual(stats['source_brand_rejected'], 0)
 
     def test_covered_candidates_are_not_a_research_failure(self):
         stats, count = self.run_stage(covered=True)
