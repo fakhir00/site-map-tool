@@ -35,8 +35,8 @@ class ProviderReliabilityTests(TestCase):
         first, second = MagicMock(), MagicMock()
         first.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=TimeoutError())))))
         second.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value='ok')))))
-        first.__aexit__ = AsyncMock()
-        second.__aexit__ = AsyncMock()
+        first.__aexit__ = AsyncMock(return_value=False)
+        second.__aexit__ = AsyncMock(return_value=False)
         with patch('nlp.providers.AsyncOpenAI', side_effect=[first, second]):
             self.assertEqual(asyncio.run(providers.acomplete({'messages': []})), 'ok')
         first.__aexit__.assert_awaited_once()
@@ -48,8 +48,8 @@ class ProviderReliabilityTests(TestCase):
         first, second = MagicMock(), MagicMock()
         first.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=stalled))))
         second.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value='recovered')))))
-        first.__aexit__ = AsyncMock()
-        second.__aexit__ = AsyncMock()
+        first.__aexit__ = AsyncMock(return_value=False)
+        second.__aexit__ = AsyncMock(return_value=False)
         with patch('nlp.providers.AsyncOpenAI', side_effect=[first, second]) as client:
             result = asyncio.run(providers.acomplete({'messages': []}, request_timeout=0.1))
         self.assertEqual(result, 'recovered')
@@ -64,6 +64,113 @@ class ProviderReliabilityTests(TestCase):
             with self.assertRaisesRegex(providers.ProviderUnavailableError, 'Insufficient balance'):
                 providers.complete({'messages': []})
         client.assert_not_called()
+
+    def test_sync_single_provider_retries_temporary_server_error_once(self):
+        self.configs[:] = self.configs[:1]
+        error = RuntimeError('secret-one provider response')
+        error.status_code = 503
+        client = MagicMock()
+        create = client.__enter__.return_value.chat.completions.create
+        create.side_effect = [error, 'recovered']
+        with patch('nlp.providers.OpenAI', return_value=client), patch('nlp.providers.time.sleep'):
+            self.assertEqual(providers.complete({'messages': []}), 'recovered')
+        self.assertEqual(create.call_count, 2)
+        self.assertTrue(providers.provider_status()['providers'][0]['available'])
+
+    def test_transient_exhaustion_does_not_disable_next_planning_stage(self):
+        self.configs[:] = self.configs[:1]
+        create = AsyncMock(side_effect=[TimeoutError(), TimeoutError(), 'next stage recovered'])
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+        client.__aexit__ = AsyncMock(return_value=False)
+
+        async def run():
+            with self.assertRaisesRegex(providers.ProviderUnavailableError, 'timed out'):
+                await providers.acomplete({'messages': []})
+            self.assertEqual(create.await_count, 2)
+            self.assertEqual(await providers.acomplete({'messages': []}), 'next stage recovered')
+
+        with patch('nlp.providers.AsyncOpenAI', return_value=client), patch('nlp.providers.asyncio.sleep', new=AsyncMock()):
+            asyncio.run(run())
+        self.assertEqual(create.await_count, 3)
+        self.assertEqual(client.__aexit__.await_count, 3)
+
+    def test_invalid_request_is_not_retried_or_allowed_to_disable_other_requests(self):
+        self.configs[:] = self.configs[:1]
+        error = RuntimeError('secret-one rejected payload')
+        error.status_code = 400
+        client = MagicMock()
+        create = client.__enter__.return_value.chat.completions.create
+        create.side_effect = [error, 'valid request succeeded']
+        with patch('nlp.providers.OpenAI', return_value=client):
+            with self.assertRaisesRegex(providers.ProviderUnavailableError, 'rejected the request'):
+                providers.complete({'messages': []})
+            self.assertEqual(create.call_count, 1)
+            self.assertEqual(providers.complete({'messages': []}), 'valid request succeeded')
+        self.assertEqual(create.call_count, 2)
+
+    def test_actual_balance_failure_is_not_retried_and_keeps_account_cooldown(self):
+        self.configs[:] = self.configs[:1]
+        error = RuntimeError('secret-one rejected account')
+        error.status_code = 402
+        client = MagicMock()
+        create = client.__enter__.return_value.chat.completions.create
+        create.side_effect = error
+        with patch('nlp.providers.OpenAI', return_value=client):
+            for _ in range(2):
+                with self.assertRaisesRegex(providers.ProviderUnavailableError, 'Insufficient balance'):
+                    providers.complete({'messages': []})
+        self.assertEqual(create.call_count, 1)
+
+    def test_exhausted_async_deadline_does_not_start_another_request(self):
+        self.configs[:] = self.configs[:1]
+        async def stalled(**kwargs):
+            await asyncio.sleep(1)
+        create = AsyncMock(side_effect=stalled)
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+        client.__aexit__ = AsyncMock(return_value=False)
+        with patch('nlp.providers.AsyncOpenAI', return_value=client):
+            with self.assertRaisesRegex(providers.ProviderUnavailableError, 'timed out'):
+                asyncio.run(providers.acomplete({'messages': []}, request_timeout=0.01))
+        create.assert_awaited_once()
+        client.__aexit__.assert_awaited_once()
+
+    def test_explicit_planning_budget_can_exceed_default_short_request_timeout(self):
+        self.configs[:] = self.configs[:1]
+        async def slow_plan(**kwargs):
+            await asyncio.sleep(0.03)
+            return 'complete plan'
+        create = AsyncMock(side_effect=slow_plan)
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+        client.__aexit__ = AsyncMock(return_value=False)
+        with patch('nlp.providers.AsyncOpenAI', return_value=client), patch(
+            'nlp.providers.settings.AI_REQUEST_TIMEOUT', 0.01,
+        ):
+            self.assertEqual(asyncio.run(providers.acomplete({'messages': []}, request_timeout=0.2)), 'complete plan')
+        create.assert_awaited_once()
+
+    def test_cancellation_is_not_retried_or_recorded_as_provider_failure(self):
+        async def cancelled(**kwargs):
+            raise asyncio.CancelledError()
+        create = AsyncMock(side_effect=cancelled)
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+        client.__aexit__ = AsyncMock(return_value=False)
+        with patch('nlp.providers.AsyncOpenAI', return_value=client):
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(providers.acomplete({'messages': []}))
+        create.assert_awaited_once()
+        self.assertIsNone(providers.provider_status()['providers'][0]['available'])
+
+    def test_failure_diagnostics_are_specific_and_sanitized(self):
+        error = RuntimeError('secret-one raw body with user content')
+        error.status_code = 503
+        self.assertIn('HTTP 503', providers._failure(error))
+        self.assertIn('timed out', providers._failure(TimeoutError('secret-one')))
+        self.assertIn('connect', providers._failure(ConnectionError('secret-one')))
+        self.assertNotIn('secret-one', providers._failure(error))
 
     def test_status_does_not_make_billed_calls_or_claim_untested_provider_works(self):
         with patch('nlp.providers.OpenAI') as client:

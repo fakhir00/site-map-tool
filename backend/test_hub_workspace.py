@@ -4,7 +4,7 @@ import json
 import unittest
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
@@ -73,6 +73,59 @@ def specialist_payload() -> dict:
 
 
 class HubWorkspaceTests(unittest.TestCase):
+    def test_complete_plan_recovers_from_temporary_failure_in_each_ai_stage(self):
+        from nlp import providers
+        payload = specialist_payload()
+        records = [{'phrase': item['keyword']} for item in payload['keyword_assignments']]
+
+        def response(content):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(content)))])
+
+        for failed_stage in range(3):
+            with self.subTest(stage=('discovery', 'planning', 'review')[failed_stage]):
+                replies = [response({'proposals': []}), response(payload), response(approved_review(payload))]
+                replies.insert(failed_stage, TimeoutError())
+                create = AsyncMock(side_effect=replies)
+                client = MagicMock()
+                client.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+                client.__aexit__ = AsyncMock(return_value=False)
+                with (
+                    patch.dict(providers._status, {}, clear=True),
+                    patch('nlp.providers.configured_providers', return_value=[
+                        ('DeepSeek', 'https://offline.example', 'offline-key', 'deepseek-chat'),
+                    ]),
+                    patch('nlp.providers.AsyncOpenAI', return_value=client),
+                    patch('nlp.providers.asyncio.sleep', new=AsyncMock()),
+                ):
+                    plan = asyncio.run(build_site_architecture(
+                        records, primary_keyword='circuit diagram maker', discover_topics=True,
+                    ))
+                self.assertEqual(plan['_semantic_audit_status'], 'passed')
+                self.assertEqual(len(plan['spokes']), 1)
+                self.assertEqual(create.await_count, 4)
+
+    def test_planning_and_review_pass_deadlines_to_provider_failover(self):
+        payload = specialist_payload()
+        records = [{'phrase': item['keyword']} for item in payload['keyword_assignments']]
+        chat = AsyncMock(side_effect=[payload, approved_review(payload)])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=chat,
+        ):
+            asyncio.run(build_site_architecture(records, primary_keyword='circuit diagram maker'))
+        self.assertGreater(chat.call_args_list[0].kwargs['request_timeout'], 45)
+        self.assertLessEqual(chat.call_args_list[0].kwargs['request_timeout'], 120)
+        self.assertLessEqual(chat.call_args_list[1].kwargs['request_timeout'], 45)
+
+    def test_exhausted_provider_failure_is_not_sent_back_as_a_plan_validation_error(self):
+        from nlp.providers import ProviderUnavailableError
+        chat = AsyncMock(side_effect=ProviderUnavailableError('AI unavailable. DeepSeek: request timed out.'))
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=chat,
+        ):
+            with self.assertRaisesRegex(ArchitectureAgentError, 'previous saved map is unchanged'):
+                asyncio.run(build_site_architecture([{'phrase': 'circuit diagram maker'}]))
+        chat.assert_awaited_once()
+
     def test_product_review_emd_keeps_product_terms_without_admitting_broad_dental_noise(self):
         primary = "dental pro 7 reviews"
         self.assertTrue(_is_core_entity_relevant("dental pro ingredients", primary))

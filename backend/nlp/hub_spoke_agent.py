@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from nlp.keywords import clean_phrase, is_publishable_keyword, looks_incomplete_search_query
 from nlp.intent_policy import INTENT_CLUSTERING_RULES, one_page_test_passes, requires_feature_page_test
 from nlp.openrouter import _achat_json, is_ai_configured
+from nlp.providers import ProviderUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -986,6 +987,7 @@ def validate_architecture(
 
 async def _audit_intent_cannibalization(
     plan: dict[str, Any], context: str, review_feedback: list[str] | None = None,
+    *, request_timeout: float = 45,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]]:
     """Use a separate review pass to catch semantic overlap hidden by different wording."""
     pages = [plan["master_hub"], *plan["spokes"]]
@@ -1089,6 +1091,7 @@ Only add that clarification where the parent already discusses a related support
 """,
         temperature=0,
         max_tokens=8000,
+        request_timeout=request_timeout,
     )
     audit = _coerce_object(audit)
     if audit is None or not isinstance(audit.get("conflicts"), list):
@@ -1501,6 +1504,12 @@ async def _build_site_architecture(
     last_errors: list[str] = []
     for attempt in range(2 if discover_topics else 3):
         try:
+            remaining = review_deadline - asyncio.get_running_loop().time()
+            if remaining <= 45:
+                raise ArchitectureAgentError(
+                    "The AI service did not leave enough time to build and review the plan. "
+                    "Your previous saved map is unchanged. Please retry planning."
+                )
             payload = await _achat_json(
                 system_prompt=(
                     "You are a meticulous senior SEO information architect. Account for every supplied "
@@ -1509,6 +1518,9 @@ async def _build_site_architecture(
                 user_prompt=prompt,
                 temperature=0.15,
                 max_tokens=16000,
+                # Reserve time for the mandatory semantic review, and let the
+                # provider layer divide this budget between retries/fallbacks.
+                request_timeout=min(120, remaining - 45),
             )
             payload = _coerce_object(payload)
             if payload is None:
@@ -1535,8 +1547,15 @@ async def _build_site_architecture(
                 for _review in range(review_limit):
                     try:
                         remaining = max(0.01, review_deadline - asyncio.get_running_loop().time())
-                        async with asyncio.timeout(min(45, remaining)):
-                            conflicts, rejections, audit_errors = await _audit_intent_cannibalization(plan, context, last_errors)
+                        review_timeout = min(45, remaining)
+                        async with asyncio.timeout(review_timeout + 1):
+                            conflicts, rejections, audit_errors = await _audit_intent_cannibalization(
+                                plan, context, last_errors, request_timeout=review_timeout,
+                            )
+                    except ProviderUnavailableError:
+                        # The provider layer already retried/fell back. Keep
+                        # this a service failure, not an architecture verdict.
+                        raise
                     except Exception as exc:
                         conflicts = []
                         rejections = []
@@ -1592,6 +1611,11 @@ async def _build_site_architecture(
             logger.warning("SEO architecture agent validation failed: %s", "; ".join(last_errors))
         except ArchitectureAgentError:
             raise
+        except ProviderUnavailableError as exc:
+            raise ArchitectureAgentError(
+                "The AI service could not finish building and reviewing your plan after automatic recovery. "
+                "Your previous saved map is unchanged. " + str(exc)
+            ) from exc
         except Exception as exc:
             last_errors = [str(exc) or type(exc).__name__]
             logger.warning("SEO architecture agent attempt %s failed: %s", attempt + 1, last_errors[0])
