@@ -763,6 +763,12 @@ def _competitor_gap_completion_message(
     candidates = diagnostics.get("relevant_candidates", 0)
     if not domains:
         reason = discovery_notes[-1] if discovery_notes else "no usable search-provider result was available"
+        from scraping.apify_client_module import apify_limit_reached
+        if apify_limit_reached(discovery_notes):
+            return ("Scan completed with limited competitor research: the Apify search allowance is exhausted, "
+                    "and backup searches did not confirm matching competitor pages. "
+                    "Check the search-provider allowance in Settings. "
+                    "Available keyword results have been kept.")
         if "none had enough" in reason or "none matched the direct-site boundary" in reason:
             return (f"Scan completed with limited competitor research: search results were found, but no matching "
                     f"competitor pages were identified ({reason}). Review the seed keywords and site scope.")
@@ -1392,7 +1398,8 @@ def _discover_competitor_domains(
     apify_diagnostics: list[str] = []
     fallback_result_count = 0
     
-    from scraping.apify_client_module import search_google_via_apify, is_apify_configured
+    from scraping.apify_client_module import search_google_via_apify, is_apify_configured, apify_limit_reached
+    apify_search_available = is_apify_configured()
 
     def selected(domains: list[str]) -> list[str]:
         if ranking_urls_out is not None:
@@ -1456,7 +1463,7 @@ def _discover_competitor_domains(
         
         # 1. Primary explicit search for this specific keyword
         primary_results_added = False
-        if is_apify_configured():
+        if apify_search_available:
             apify_results = search_google_via_apify(
                 kw,
                 max_results=serp_limit,
@@ -1464,6 +1471,8 @@ def _discover_competitor_domains(
                 diagnostics=apify_diagnostics,
             )
             apify_result_count += len(apify_results)
+            if apify_limit_reached(apify_diagnostics):
+                apify_search_available = False
             logger.info("Apify returned %s organic results for exact seed %r", len(apify_results), kw)
             for rank, res in enumerate(apify_results, start=1):
                 before = len(competitor_domains)
@@ -1477,23 +1486,28 @@ def _discover_competitor_domains(
 
         if not primary_results_added and len(competitor_domains) - start_count < per_kw_limit:
             remaining = per_kw_limit - (len(competitor_domains) - start_count)
+            result_details: dict[str, dict[str, str]] = {}
             for rank, href in enumerate(
-                _search_result_urls(kw, include_google=True, locale=search_locale, max_results=remaining),
+                _search_result_urls(kw, include_google=True, locale=search_locale, max_results=remaining,
+                                    result_details_out=result_details),
                 start=1,
             ):
                 fallback_result_count += 1
-                add_domain(href, kw, "google_page_1", rank)
+                detail = result_details.get(href) or {}
+                add_domain(href, kw, detail.get("source") or "fallback_search", rank,
+                           detail.get("title"), detail.get("snippet"))
                 if len(competitor_domains) - start_count >= per_kw_limit:
                     break
 
     # Hosted search engines commonly challenge datacenter IPs. Use a cached,
-    # exact-seed DataForSEO SERP only when every existing discovery route found
-    # nothing. Usually the first seed supplies enough domains, limiting spend to
+    # exact-seed DataForSEO SERP when existing routes have no usable page
+    # evidence. Bare candidate URLs must not suppress this fallback. Usually
+    # the first seed supplies enough domains, limiting spend to
     # a single small SERP request rather than charging on every scan path.
-    if not competitor_domains:
+    if not _high_confidence_competitor_fallback(competitor_domains, candidate_signals, seed_keywords, 1):
         try:
-            from nlp.dataforseo import search_competitors
-            for kw in seed_keywords:
+            from nlp.dataforseo import search_competitors, is_dataforseo_configured
+            for kw in seed_keywords if is_dataforseo_configured() else []:
                 with get_db() as provider_db:
                     provider_results = search_competitors(
                         provider_db, kw, locale=search_locale, max_results=serp_limit,
@@ -1503,7 +1517,9 @@ def _discover_competitor_domains(
                         res.get("url"), kw, "dataforseo_serp", rank,
                         res.get("title"), res.get("snippet"),
                     )
-                if len(competitor_domains) >= max(3, min(competitor_limit, per_kw_limit)):
+                if len(_high_confidence_competitor_fallback(
+                    competitor_domains, candidate_signals, seed_keywords, competitor_limit,
+                )) >= max(3, min(competitor_limit, per_kw_limit)):
                     break
         except Exception as exc:
             logger.warning("DataForSEO competitor discovery fallback failed: %s", exc)
@@ -1659,8 +1675,10 @@ def _search_result_urls(
     include_google: bool = False,
     locale: str = "us",
     max_results: int | None = None,
+    result_details_out: dict[str, dict[str, str]] | None = None,
 ) -> list[str]:
     urls: list[str] = []
+    details: dict[str, dict[str, str]] = {}
 
     def add_results(results: list[str]) -> bool:
         for url in results:
@@ -1670,16 +1688,20 @@ def _search_result_urls(
                 continue
             if normalized not in urls:
                 urls.append(normalized)
+            if result_details_out is not None and normalized in details:
+                result_details_out[normalized] = details[normalized]
             if max_results is not None and len(urls) >= max_results:
                 return True
         return False
 
+    detail_options = {"result_details_out": details} if result_details_out is not None else {}
     if include_google:
-        if add_results(_search_google_result_urls(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT, locale=locale)):
+        if add_results(_search_google_result_urls(query, max_results=settings.GOOGLE_SERP_RESULT_LIMIT,
+                                                 locale=locale, **detail_options)):
             return urls
-    if add_results(_search_bing_result_urls(query)):
+    if add_results(_search_bing_result_urls(query, **detail_options)):
         return urls
-    add_results(_search_duckduckgo_html_urls(query))
+    add_results(_search_duckduckgo_html_urls(query, **detail_options))
     return list(dict.fromkeys(urls))
 
 
@@ -1806,7 +1828,8 @@ def _is_relevant_content_url(url: str, required_terms: set[str], negative_terms:
     return True
 
 
-def _search_google_result_urls(query: str, max_results: int = 10, locale: str = "us") -> list[str]:
+def _search_google_result_urls(query: str, max_results: int = 10, locale: str = "us",
+                               result_details_out: dict[str, dict[str, str]] | None = None) -> list[str]:
     try:
         import requests
         import urllib3
@@ -1835,17 +1858,40 @@ def _search_google_result_urls(query: str, max_results: int = 10, locale: str = 
         if response.status_code >= 400:
             logger.info("Google search returned HTTP %s for %r", response.status_code, query)
             return []
-        return _extract_google_result_urls(response.text, max_results=max_results)
+        return _extract_google_result_urls(response.text, max_results=max_results,
+                                           result_details_out=result_details_out)
     except Exception as exc:
         logger.info("Google search failed for %r: %s", query, exc)
         return []
 
 
-def _extract_google_result_urls(html: str, max_results: int = 10) -> list[str]:
+def _extract_google_result_urls(html: str, max_results: int = 10,
+                                result_details_out: dict[str, dict[str, str]] | None = None) -> list[str]:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "html.parser")
     candidates: list[str] = []
+    # Bind evidence to the individual result link. Pooling text from a large
+    # wrapper can accidentally attach one site's snippet to another URL.
+    for heading in soup.select("h3"):
+        link = heading.find_parent("a", href=True) or heading.select_one("a[href]")
+        if not link:
+            continue
+        url = _normalize_google_href(link.get("href"))
+        if not url:
+            continue
+        candidates.append(url)
+        snippet = ""
+        for parent in link.parents:
+            if parent.name in {"body", "html"} or len(parent.select("h3")) > 1:
+                break
+            description = parent.select_one(".VwiC3b, .IsZvec, .aCOpRe, .BNeawe.s3v9rd")
+            if description:
+                snippet = description.get_text(" ", strip=True)
+                break
+        if result_details_out is not None:
+            result_details_out[url] = {"title": heading.get_text(" ", strip=True)[:250],
+                                       "snippet": snippet[:500], "source": "google_html"}
     containers = soup.select("div.g, div.MjjYud, div[data-sokoban-container]")
     for container in containers:
         link = container.select_one("a[href]")
@@ -1897,7 +1943,8 @@ def _is_blocked_search_result_root(root: str) -> bool:
     }
 
 
-def _search_bing_result_urls(query: str) -> list[str]:
+def _search_bing_result_urls(query: str,
+                             result_details_out: dict[str, dict[str, str]] | None = None) -> list[str]:
     try:
         import requests
         import urllib3
@@ -1914,13 +1961,28 @@ def _search_bing_result_urls(query: str) -> list[str]:
         if response.status_code >= 400:
             return []
         soup = BeautifulSoup(response.text, "html.parser")
-        return [link.get("href", "") for link in soup.select("li.b_algo h2 a") if link.get("href")]
+        urls = []
+        for result in soup.select("li.b_algo"):
+            link = result.select_one("h2 a[href]")
+            if not link:
+                continue
+            url = _unwrap_result_url(link.get("href"))
+            if not url:
+                continue
+            urls.append(url)
+            if result_details_out is not None:
+                snippet = result.select_one(".b_caption p, p")
+                result_details_out[url] = {"title": link.get_text(" ", strip=True)[:250],
+                                           "snippet": snippet.get_text(" ", strip=True)[:500] if snippet else "",
+                                           "source": "bing_html"}
+        return urls
     except Exception as exc:
         logger.info("Bing search failed for %r: %s", query, exc)
         return []
 
 
-def _search_duckduckgo_html_urls(query: str) -> list[str]:
+def _search_duckduckgo_html_urls(query: str,
+                                result_details_out: dict[str, dict[str, str]] | None = None) -> list[str]:
     try:
         import requests
         import urllib3
@@ -1937,7 +1999,19 @@ def _search_duckduckgo_html_urls(query: str) -> list[str]:
         if response.status_code >= 400:
             return []
         soup = BeautifulSoup(response.text, "html.parser")
-        return [link.get("href", "") for link in soup.select("a.result__a") if link.get("href")]
+        urls = []
+        for link in soup.select("a.result__a[href]"):
+            url = _unwrap_result_url(link.get("href"))
+            if not url:
+                continue
+            urls.append(url)
+            if result_details_out is not None:
+                result = link.find_parent(class_="result")
+                snippet = result.select_one(".result__snippet") if result else None
+                result_details_out[url] = {"title": link.get_text(" ", strip=True)[:250],
+                                           "snippet": snippet.get_text(" ", strip=True)[:500] if snippet else "",
+                                           "source": "duckduckgo_html"}
+        return urls
     except Exception as exc:
         logger.info("DuckDuckGo HTML search failed for %r: %s", query, exc)
         return []
@@ -2091,6 +2165,8 @@ def _domain_matches_seed_scope(domain: str, seed: str) -> bool:
 def _unwrap_result_url(url: str | None) -> str | None:
     if not url:
         return None
+    if url.startswith('/l/?'):
+        url = 'https://duckduckgo.com' + url
     parsed = urlparse(url)
     if parsed.netloc.endswith("duckduckgo.com"):
         wrapped = parse_qs(parsed.query).get("uddg")

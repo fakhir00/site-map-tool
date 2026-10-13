@@ -15,6 +15,13 @@ _ACCOUNT_STATUS_CACHE: tuple[float, Dict[str, Any]] | None = None
 def is_apify_configured() -> bool:
     return bool(settings.APIFY_API_TOKEN)
 
+
+def apify_limit_reached(messages: list[str]) -> bool:
+    """Recognize account/actor limits that more searches cannot resolve."""
+    markers = ("free tier limit reached", "quota reached", "quota exceeded", "usage limit reached",
+               "usage limit exceeded", "insufficient credits", "paid plan is required")
+    return any(marker in str(message).lower() for message in messages for marker in markers)
+
 def _get_client() -> ApifyClient:
     return ApifyClient(settings.APIFY_API_TOKEN)
 
@@ -147,8 +154,9 @@ def search_google_via_apify(
                 )
                 continue
             if run.get("status") != "SUCCEEDED":
+                status_message = run.get('statusMessage') or run.get('status_message') or ''
                 if diagnostics is not None:
-                    diagnostics.append(f"Apify actor did not succeed (status: {run.get('status') or 'unknown'}).")
+                    diagnostics.append(f"Apify actor did not succeed (status: {run.get('status') or 'unknown'}). {status_message}"[:500])
                 logger.error(
                     "Apify SERP scraper did not succeed for %r page %s: status=%s message=%s",
                     query,
@@ -156,6 +164,8 @@ def search_google_via_apify(
                     run.get("status"),
                     run.get("statusMessage") or run.get("status_message") or "none",
                 )
+                if apify_limit_reached([status_message]):
+                    break
                 continue
 
             for item in client.dataset(run["defaultDatasetId"]).iterate_items():
@@ -214,6 +224,8 @@ def search_google_via_apify(
                 message = f"{type(exc).__name__}: {exc}"
                 if message not in diagnostics:
                     diagnostics.append(message)
+            if apify_limit_reached([str(exc)]):
+                break
             continue
 
         if provider_failed or len(all_results) >= max_results:
@@ -247,8 +259,11 @@ def research_keywords_via_apify(
     locale = (country_code or "us").strip().lower()[:2]
     result_language = (language or settings.APIFY_KEYWORD_LANGUAGE or "en").strip().lower()[:2]
     merged: Dict[str, Dict[str, Any]] = {}
+    limit_reached = False
 
     for raw_seed in seed_keywords:
+        if limit_reached:
+            break
         seed = str(raw_seed or "").strip()
         if not seed:
             continue
@@ -267,8 +282,12 @@ def research_keywords_via_apify(
                 wait_secs=310,
             )
             if not run or run.get("status") != "SUCCEEDED":
+                limit_reached = apify_limit_reached([
+                    (run or {}).get("statusMessage") or (run or {}).get("status_message") or "",
+                ])
                 if diagnostics is not None:
-                    diagnostics.append(f"Apify keyword research did not succeed (status: {(run or {}).get('status') or 'unknown'}).")
+                    diagnostics.append("Apify keyword research allowance is exhausted." if limit_reached else
+                                       f"Apify keyword research did not succeed (status: {(run or {}).get('status') or 'unknown'}).")
                 logger.error(
                     "Apify keyword research did not succeed for %r: status=%s message=%s",
                     seed,
@@ -281,6 +300,7 @@ def research_keywords_via_apify(
                 if not isinstance(item, dict):
                     continue
                 if item.get("error"):
+                    limit_reached = limit_reached or apify_limit_reached([str(item['error'])])
                     if diagnostics is not None:
                         diagnostics.append(f"Apify keyword research: {str(item['error'])[:300]}")
                     logger.warning("Apify keyword research returned an error row for %r", seed)
@@ -308,8 +328,10 @@ def research_keywords_via_apify(
                 else:
                     merged[phrase] = normalized
         except Exception as exc:
+            limit_reached = apify_limit_reached([str(exc)])
             if diagnostics is not None:
-                diagnostics.append(f"Apify keyword research request failed ({type(exc).__name__}).")
+                diagnostics.append("Apify keyword research allowance is exhausted." if limit_reached else
+                                   f"Apify keyword research request failed ({type(exc).__name__}).")
             logger.error("Apify keyword research failed for exact seed %r: %s", seed, exc)
 
     logger.info(

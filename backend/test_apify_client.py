@@ -18,6 +18,34 @@ from workers.pipeline import _process_apify_keywords
 
 
 class ApifyClientTests(TestCase):
+    def test_keyword_quota_stops_remaining_seeds_and_keeps_partial_results(self):
+        client = MagicMock()
+        client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}
+        client.dataset.return_value.iterate_items.return_value = iter([
+            {'keyword': 'lunar age leap month', 'volume': 70},
+            {'error': 'Free tier limit reached (100 searches). An Apify paid plan is required to continue.'},
+        ])
+        notes = []
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            rows = research_keywords_via_apify(['lunar age calculator', 'chinese lunar age'], diagnostics=notes)
+        client.actor.return_value.call.assert_called_once()
+        self.assertEqual([item['phrase'] for item in rows], ['lunar age leap month'])
+        self.assertIn('Free tier limit', notes[0])
+
+    def test_quota_exception_does_not_repeat_serp_pages(self):
+        client = MagicMock()
+        client.actor.return_value.call.side_effect = RuntimeError('Free tier limit reached (100 searches).')
+        notes = []
+        with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+            'scraping.apify_client_module._get_client', return_value=client,
+        ):
+            rows = search_google_via_apify('lunar age calculator', max_results=30, diagnostics=notes)
+        client.actor.return_value.call.assert_called_once()
+        self.assertEqual(rows, [])
+        self.assertIn('Free tier limit', notes[0])
+
     def test_keyword_research_preserves_zero_metrics_and_exposes_actor_errors(self):
         client = MagicMock()
         client.actor.return_value.call.return_value = {'status': 'SUCCEEDED', 'defaultDatasetId': 'research'}
