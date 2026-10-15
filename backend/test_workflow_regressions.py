@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from app.auth.jwt import create_access_token
 from app.database import get_db
 from app.main import app, _ensure_runtime_schema
-from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, Project, ScanJob, Url, User
+from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, Project, ResearchKeyword, ScanJob, Url, User
 from workers.pipeline import _clear_previous_results, _ensure_minimum_keyword_count, _scan_is_active
 
 PACKAGE = dict(status='passed', title='Test prompt', content_markdown='# CONTENT WRITING ASSIGNMENT\nTest prompt',
@@ -253,7 +253,7 @@ class WorkflowTests(unittest.TestCase):
         with self.sessions() as db:
             keyword = Keyword(project_id=pid, phrase='circuit design')
             url = Url(project_id=pid, url='https://competitor.example/blog/circuit')
-            db.add_all([keyword, url])
+            db.add_all([keyword, url, ResearchKeyword(project_id=pid, phrase='circuit troubleshooting', payload={})])
             db.flush()
             draft = ArticleDraft(project_id=pid, keyword_id=keyword.id, status='passed')
             bank = KeywordBank(user_id=self.user_id, keyword_id=keyword.id)
@@ -264,6 +264,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertIsNotNone(db.get(KeywordBank, bank.id))
             self.assertEqual(db.execute(select(Url)).scalars().all(), [])
             self.assertEqual(db.execute(select(HubSpokeCluster)).scalars().all(), [])
+            self.assertEqual(db.execute(select(ResearchKeyword)).scalars().all(), [])
 
     def test_full_scan_keeps_evidence_without_quota_padding_and_resumes(self):
         from scraping.crawler import ScrapedPage
@@ -518,9 +519,142 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         mapping = response.json()['clusters']
         self.assertEqual(len(mapping['hubs']), 1)
-        self.assertEqual(len(architect.await_args.args[0]), 21)
+        self.assertEqual(len(architect.await_args.args[0]), 22)
+        self.assertIn('circuit diagram', {row['phrase'] for row in architect.await_args.args[0]})
         self.assertTrue(architect.await_args.kwargs['discover_topics'])
         self.assertNotIn('target_spokes', architect.await_args.kwargs)
+
+    def test_two_gaps_keep_full_research_and_build_seven_existing_pages(self):
+        from copy import deepcopy
+        from test_keyword_coverage import animal_inventory, coverage_reply
+        from test_research_quality import decision, pending_from_prompt
+        from workers.pipeline import _process_apify_keywords
+        primary, records, payload, destinations = animal_inventory()
+        pid = self.project()
+        own_urls = {page['target_keyword']: page.get('existing_url', 'https://animals.example/') for page in payload['pages']}
+        gaps = {'wolf personality weaknesses', 'owl personality weaknesses'}
+        def review(**kwargs):
+            decisions = []
+            for item in pending_from_prompt(kwargs):
+                verdict = decision(item)
+                if item['phrase'] not in gaps:
+                    target = destinations.get(item['phrase'], item['phrase'])
+                    verdict.update(decision='covered', placement='existing_page', target_url=own_urls[target],
+                                   target_topic=target, coverage_gap='', reason='Already answered by the existing profile.')
+                decisions.append(verdict)
+            return {'decisions': decisions}
+        with self.sessions() as db:
+            project = db.get(Project, uuid.UUID(pid))
+            project.domain = 'https://animals.example'
+            project.target_keywords = [primary]
+            project.audit_summary = json.dumps({'capabilities': ['Animal personality quiz with wolf, owl, bear, fox, eagle and deer profiles.']})
+            for target, url in own_urls.items():
+                db.add(Url(project_id=project.id, url=url, source_type='own', status='scraped',
+                           h1=target, scraped_text='Animal personality traits, meanings, strengths and relationships.'))
+            db.commit()
+            bridges = {f'__related__{animal}|{qualifier}' for animal in ('wolf', 'owl', 'bear', 'fox', 'eagle', 'deer')
+                       for qualifier in ('personality', 'animal', 'represent', 'quiz')}
+            raw = [{**item, 'search_volume': 0} for item in records]
+            raw.append({'phrase': 'wolf minecraft food', 'search_volume': 10000})
+            with patch('scraping.apify_client_module.is_apify_configured', return_value=True), patch(
+                'scraping.apify_client_module.research_keywords_via_apify', return_value=raw,
+            ), patch('nlp.openrouter.is_ai_configured', return_value=True), patch('nlp.openrouter._chat_json', side_effect=review):
+                count = _process_apify_keywords(db, project.id, [primary], bridges, {'minecraft'}, audit_summary=project.audit_summary)
+            self.assertEqual(count, 2)
+            self.assertEqual(len(db.execute(select(ResearchKeyword).where(ResearchKeyword.project_id == project.id)).scalars().all()), 73)
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}').json()
+        self.assertEqual(imported['research_summary']['new_gaps'], 2)
+        self.assertEqual(imported['research_summary']['planning_keywords'], 73)
+        self.assertEqual(imported['research_summary']['pending_review'], 0)
+        self.assertEqual(len(self.client.get(f'/api/projects/{pid}/keywords').json()['items']), 2)
+        async def architect(**kwargs):
+            if 'Discover missing page intents' in kwargs['user_prompt']:
+                return {'proposals': []}
+            if 'placement reviewer' in kwargs['system_prompt']:
+                return coverage_reply(kwargs['user_prompt'], destinations)
+            if 'information architect' in kwargs['system_prompt']:
+                self.assertIn('reviewed_research', kwargs['user_prompt'])
+                return deepcopy(payload)
+            return approved_review(payload)
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', side_effect=architect):
+            response = self.client.post(f'/api/projects/{pid}/keywords/hub-spoke')
+        self.assertEqual(response.status_code, 200, response.text)
+        plan = response.json()['clusters']
+        self.assertEqual(plan['keyword_coverage'], {'total': 73, 'used': 73, 'page_targets': 7, 'supporting': 66, 'excluded': 0})
+        self.assertTrue(all(page['action'] == 'update' for page in plan['spokes']))
+        self.assertEqual({page['existing_url'] for page in plan['spokes']}, set(own_urls.values()) - {'https://animals.example/'})
+
+    def test_large_planning_inventory_is_balanced_bounded_and_reports_unselected_research(self):
+        from workers.research_inventory import remember_candidates
+        pid = self.project()
+        with self.sessions() as db:
+            db.add(Keyword(project_id=uuid.UUID(pid), phrase='circuit troubleshooting'))
+            db.add(Url(project_id=uuid.UUID(pid), url='https://own.example/existing-reference',
+                       source_type='own', h1='Circuit symbol reference'))
+            db.commit()
+            remember_candidates(db, uuid.UUID(pid), [
+                {'phrase': f'circuit diagram model {index}'} for index in range(400)
+            ], 'Apify')
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}').json()
+        self.assertEqual(len(imported['keywords']), 300)
+        self.assertEqual(imported['research_summary']['available_keywords'], 403)
+        self.assertEqual(imported['research_summary']['not_included'], 103)
+        self.assertIn('circuit diagram', imported['keywords'])
+        self.assertIn('circuit troubleshooting', imported['keywords'])
+        self.assertIn('circuit symbol reference', imported['keywords'])
+        self.assertTrue(any(row['phrase'].startswith('circuit diagram model ') for row in imported['keyword_data']))
+
+    def test_no_new_gaps_still_imports_primary_and_can_start_both_planners(self):
+        pid = self.project()
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}').json()
+        self.assertEqual(imported['keywords'], ['circuit diagram'])
+        self.assertEqual(imported['research_summary']['new_gaps'], 0)
+        mapping = {'hubs': [], 'master_hub': {'target_keyword': 'circuit diagram'}, 'spokes': [], 'keyword_assignments': []}
+        with patch('nlp.hub_spoke_agent.build_site_architecture', new=AsyncMock(return_value=mapping)) as build:
+            response = self.client.post(f'/api/projects/{pid}/keywords/hub-spoke')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(build.await_args.args[0][0]['phrase'], 'circuit diagram')
+        with patch('app.hub_spoke.router.build_site_architecture', new=AsyncMock(return_value=mapping)) as build:
+            response = self.client.post('/api/hub-spoke/build', json={
+                'keywords': imported['keywords'], 'keyword_data': imported['keyword_data'],
+                'context': imported['context'], 'project_id': pid, 'primary_keyword': 'circuit diagram',
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(build.await_args.kwargs['discover_topics'])
+
+    def test_pending_research_survives_review_outage_but_is_not_a_gap_or_shared_between_users(self):
+        from workers.pipeline import _review_provider_keywords
+        from workers.research_inventory import remember_candidates, record_review
+        pid = self.project()
+        with self.sessions() as db:
+            with patch('nlp.openrouter.is_ai_configured', return_value=True), patch('nlp.openrouter.filter_keyword_gap_recommendations', return_value=None):
+                kept = _review_provider_keywords(db, uuid.UUID(pid), ['circuit diagram'],
+                    [{'phrase': 'circuit diagram grounding', 'search_volume': 0, 'difficulty': 0}], {'circuit'}, set(), '', 'Apify')
+            self.assertEqual(kept, [])
+            remember_candidates(db, uuid.UUID(pid), [{'phrase': 'circuit diagram celebrity gossip'}], 'Apify')
+            record_review(db, uuid.UUID(pid), [{'source_phrase': 'circuit diagram celebrity gossip', 'decision': 'reject', 'reason': 'Unrelated reader task'}])
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}').json()
+        self.assertEqual(imported['research_summary']['new_gaps'], 0)
+        self.assertEqual(imported['research_summary']['pending_review'], 1)
+        self.assertIn('circuit diagram grounding', imported['keywords'])
+        self.assertNotIn('circuit diagram celebrity gossip', imported['keywords'])
+        row = next(row for row in imported['keyword_data'] if row['phrase'] == 'circuit diagram grounding')
+        self.assertEqual(row['research_status'], 'pending')
+        self.assertEqual(row['search_volume'], 0)
+        with self.sessions() as db:
+            remember_candidates(db, uuid.UUID(pid), [{
+                'phrase': 'circuit diagram safety checklist',
+                'evidence': {'kind': 'editorial_inference', 'excerpt': 'circuit diagram'},
+            }], 'AI editorial research')
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}').json()
+        idea = next(row for row in imported['keyword_data'] if row['phrase'] == 'circuit diagram safety checklist')
+        self.assertEqual(idea['evidence_type'], 'editorial_proposal')
+        self.assertIn('not an observed search query', idea['seo_recommendation'])
+        self.assertIsNone(idea['search_volume'])
+        other = self.project()
+        self.assertNotIn('circuit diagram grounding', self.client.get(f'/api/hub-spoke/project-import/{other}').json()['keywords'])
+        self.client.headers['Authorization'] = f'Bearer {create_access_token(uuid.uuid4())}'
+        self.assertIn(self.client.get(f'/api/hub-spoke/project-import/{pid}').status_code, (401, 404))
 
     def test_manual_keyword_generation_reviews_owned_coverage_and_persists_findings(self):
         pid = self.project()

@@ -19,6 +19,7 @@ from sqlalchemy import case, create_engine, delete, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
+from workers.research_inventory import remember_candidates, record_review
 
 logger = logging.getLogger(__name__)
 
@@ -978,15 +979,19 @@ def _process_competitor_keyword_gaps(
         return 0
 
     review_context = _keyword_research_context(db, project_id, audit_summary)
+    remember_candidates(db, project_id, extracted, "competitor")
     db.commit()
     review_diagnostics: dict[str, Any] = {}
+    review_records: list[dict[str, Any]] = []
     filtered = filter_keyword_gap_recommendations(
         seed_keywords,
         extracted,
         audit_summary=review_context,
         max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
         diagnostics=review_diagnostics,
+        review_records=review_records,
     )
+    record_review(db, project_id, review_records, filtered)
     stats["review"] = review_diagnostics
     # A successful empty verdict is a rejection, not a provider failure.
     # Raw extraction is not a safe substitute for semantic validation.
@@ -1182,10 +1187,9 @@ def _process_dataforseo_keywords(
 def _review_provider_keywords(db, project_id, seeds, candidates, topic_terms, negative_terms,
                              audit_summary, provider, diagnostics=None):
     from nlp.openrouter import filter_keyword_gap_recommendations, is_ai_configured
-    owned = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
-    candidates = [item for item in candidates if item["phrase"] not in owned]
     if not candidates:
         return candidates
+    remember_candidates(db, project_id, candidates, provider)
     if not is_ai_configured():
         if diagnostics is not None:
             diagnostics.append(f"{provider} returned candidates, but no AI provider is configured to review relevance and existing coverage; unreviewed candidates were withheld.")
@@ -1195,18 +1199,22 @@ def _review_provider_keywords(db, project_id, seeds, candidates, topic_terms, ne
     reviewable = [{**item, "evidence": {"kind": "provider_keyword", "provider": provider,
                    "excerpt": item["phrase"], "queried_seeds": item.get("seed_keywords") or seeds}} for item in candidates]
     db.commit()
+    review_records = []
     try:
-        reviewed = filter_keyword_gap_recommendations(seeds, reviewable, audit_summary=context, max_keywords=len(reviewable))
+        reviewed = filter_keyword_gap_recommendations(seeds, reviewable, audit_summary=context,
+                                                     max_keywords=len(reviewable), review_records=review_records)
     except Exception as exc:
         logger.warning("%s keyword review unavailable (%s)", provider, type(exc).__name__)
         reviewed = None
+    record_review(db, project_id, review_records, reviewed)
     if reviewed is None:
         if diagnostics is not None:
             diagnostics.append(f"{provider} keywords could not finish quality review; unreviewed candidates were withheld.")
         return []
     # Preserve metrics and exact observed queries, even if a reviewer attempts a rewrite.
+    owned = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     return [{**supplied[item["phrase"]], "review_reason": item.get("review_reason")}
-            for item in reviewed if item.get("phrase") in supplied]
+            for item in reviewed if item.get("phrase") in supplied and item["phrase"] not in owned]
 
 
 def _process_autocomplete_keywords(db, project_id, seed_keywords, topic_terms, negative_terms,
@@ -1224,14 +1232,17 @@ def _process_autocomplete_keywords(db, project_id, seed_keywords, topic_terms, n
     )
     if not candidates:
         return 0
+    remember_candidates(db, project_id, candidates, "Google Autocomplete")
     context = _keyword_research_context(db, project_id, audit_summary)
     db.commit()
+    review_records = []
     try:
         reviewed = filter_keyword_gap_recommendations(seed_keywords, candidates, audit_summary=context,
-                                                      max_keywords=len(candidates))
+                                                      max_keywords=len(candidates), review_records=review_records)
     except Exception as exc:
         logger.warning("Autocomplete quality review failed (%s)", type(exc).__name__)
         reviewed = None
+    record_review(db, project_id, review_records, reviewed)
     if reviewed is None:
         notes.append("Autocomplete suggestions could not complete quality review; unreviewed suggestions were withheld.")
         return 0
@@ -2498,7 +2509,7 @@ def _record_pipeline_failure(project_id: uuid.UUID, job_id: uuid.UUID, error_msg
 
 
 def _clear_previous_results(db: Session, project_id: uuid.UUID) -> None:
-    from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, Url
+    from app.models import ArticleDraft, HubSpokeCluster, Keyword, KeywordBank, KeywordUrl, ResearchKeyword, Url
 
     keyword_ids = select(Keyword.id).where(Keyword.project_id == project_id)
     url_ids = select(Url.id).where(Url.project_id == project_id)
@@ -2511,6 +2522,7 @@ def _clear_previous_results(db: Session, project_id: uuid.UUID) -> None:
         ~Keyword.id.in_(select(ArticleDraft.keyword_id)),
     ))
     db.execute(delete(HubSpokeCluster).where(HubSpokeCluster.project_id == project_id))
+    db.execute(delete(ResearchKeyword).where(ResearchKeyword.project_id == project_id))
     db.execute(delete(Url).where(Url.project_id == project_id))
     db.commit()
 
@@ -3079,6 +3091,7 @@ def _ensure_minimum_keyword_count(
         if missing <= 0:
             break
         requested = min(max(5, int(settings.AI_KEYWORD_GENERATION_BATCH_SIZE)), max(missing + 10, 20))
+        research_out, review_records = [], []
         generated = generate_keywords(
             seed_keywords,
             topic_terms=topic_terms,
@@ -3089,7 +3102,13 @@ def _ensure_minimum_keyword_count(
             exclude_phrases=excluded,
             evidence_phrases=evidence_phrases,
             research_focus=research_focuses[batch_number % len(research_focuses)],
+            research_out=research_out, review_records=review_records,
         ) or []
+        remember_candidates(db, project_id, research_out or generated, "AI editorial research")
+        record_review(db, project_id, review_records, generated)
+        # Do not repeatedly rediscover the same covered/rejected suggestions.
+        accepted_phrases = {item["phrase"] for item in generated}
+        excluded.update(item["phrase"] for item in research_out if item.get("phrase") and item["phrase"] not in accepted_phrases)
 
         accumulator: dict[str, dict[str, Any]] = {}
         for item in generated:

@@ -132,8 +132,17 @@ async def generate_keywords(
     research_context = await context_with_owned_pages(db, project.id, project.audit_summary or "")
     # Release the read transaction before potentially lengthy provider requests.
     await db.commit()
-    ai_keywords = await generate_ai_keywords(
-        seed_keywords,
+    async def generate_reviewed(**kwargs):
+        from workers.research_inventory import remember_candidates, record_review
+        research_out, review_records = [], []
+        result = await generate_ai_keywords(seed_keywords, research_out=research_out, review_records=review_records, **kwargs)
+        await db.run_sync(lambda session: remember_candidates(session, project.id, research_out or result, "AI editorial research"))
+        await db.run_sync(lambda session: record_review(session, project.id, review_records, result))
+        accepted_phrases = {item["phrase"] for item in result}
+        all_excluded.update(item["phrase"] for item in research_out if item.get("phrase") and item["phrase"] not in accepted_phrases)
+        return result
+
+    ai_keywords = await generate_reviewed(
         topic_terms=topic_terms,
         negative_terms=negative_terms,
         audit_summary=research_context,
@@ -149,8 +158,7 @@ async def generate_keywords(
     for _ in range(max(1, settings.AI_KEYWORD_GENERATION_MAX_BATCHES - 1)):
         if len(existing_phrases) + len(collected) >= target_total:
             break
-        batch = await generate_ai_keywords(
-            seed_keywords,
+        batch = await generate_reviewed(
             topic_terms=topic_terms,
             negative_terms=negative_terms,
             audit_summary=research_context,
@@ -371,30 +379,12 @@ async def generate_hub_spoke(
     # page intent, cannibalization checks, and the final hub-spoke map.
     from app.models import HubSpokeCluster
     from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture
-    result = await db.execute(
-        select(
-            Keyword.phrase,
-            Keyword.keyword_type,
-            Keyword.search_volume,
-            Keyword.difficulty,
-            Keyword.frequency,
-            Keyword.seo_recommendation,
-        )
-        .where(Keyword.project_id == project.id)
-        .order_by(Keyword.frequency.desc(), Keyword.created_at.asc())
-        .limit(5000)
-    )
-    records = [{
-        "phrase": phrase,
-        "type": keyword_type,
-        "search_volume": search_volume,
-        "difficulty": difficulty,
-        "frequency": frequency,
-        "seo_recommendation": recommendation,
-    } for phrase, keyword_type, search_volume, difficulty, frequency, recommendation in result.all()]
+    from app.hub_spoke.inventory import project_planning_inventory
+    main_kw = (project.target_keywords or [""])[0]
+    records, research_summary = await project_planning_inventory(db, project, main_kw)
     if not records:
-        raise HTTPException(status_code=400, detail="This project has no keywords to architect.")
-    main_kw = (project.target_keywords or [project.name])[0]
+        raise HTTPException(status_code=400, detail="Add a main topic or import research to start your architecture.")
+    main_kw = main_kw or records[0]["phrase"]
     from app.hub_spoke.context import context_with_owned_pages
     architecture_context = await context_with_owned_pages(db, project.id, project.audit_summary or "")
     try:
@@ -415,7 +405,7 @@ async def generate_hub_spoke(
     else:
         db.add(HubSpokeCluster(project_id=project.id, mapping_data=clusters))
     await db.commit()
-    return {"message": "SEO architecture created", "clusters": clusters}
+    return {"message": "SEO architecture created", "clusters": clusters, "research_summary": research_summary}
 @router.get("/{project_id}/keywords/hub-spoke")
 async def get_hub_spoke(
     project_id: uuid.UUID,

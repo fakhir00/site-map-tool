@@ -43,6 +43,7 @@ export function HubSpokeWorkspace() {
     queryFn: () => api.get<ProjectImport>(`/hub-spoke/project-import/${importProjectId}?primary_keyword=${encodeURIComponent(importKeyword)}`),
     enabled: Boolean(importProjectId), retry: false,
   })
+  const researchSummary = sourceProjectId === projectImport.data?.project_id ? projectImport.data?.research_summary : undefined
   const totalInputKeywords = new Set([...keywords, primaryKeyword.trim().toLowerCase()].filter(Boolean)).size
   const locked = busy !== null || projectImport.isFetching
   const visibleError = error || (projectImport.error instanceof Error ? projectImport.error.message : '')
@@ -103,7 +104,7 @@ export function HubSpokeWorkspace() {
     setBusy('build'); setError(''); setElapsed(0)
     try {
       const result = await api.postAI<{ keywords: string[]; clusters: Mapping; history_id: string }>('/hub-spoke/build', {
-        keywords, keyword_data: keywordData, primary_keyword: primaryKeyword.trim(), existing_urls: urls, context, project_id: sourceProjectId,
+        keywords: keywords.length ? keywords : [primaryKeyword.trim()], keyword_data: keywordData, primary_keyword: primaryKeyword.trim(), existing_urls: urls, context, project_id: sourceProjectId,
       })
       setCleaned(result.keywords); setMapping(normalizeSavedMapping(result.clusters)); setActiveHistoryId(result.history_id)
       setMapContext(context); setMapProjectId(sourceProjectId); setDirty(false)
@@ -164,8 +165,14 @@ export function HubSpokeWorkspace() {
           </div>
         </div>
       </fieldset>
+      {researchSummary && <div role="status" className="mt-4 rounded-lg bg-cyan-50 p-3 text-sm text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200">
+        <p>{researchSummary.new_gaps} new gaps · {researchSummary.planning_keywords} keywords imported for planning</p>
+        <p className="mt-1 text-xs">The planning list includes useful research and existing topics. A low gap count does not prevent building your map.</p>
+        {researchSummary.pending_review > 0 && <p className="mt-1 text-xs">{researchSummary.pending_review} research {researchSummary.pending_review === 1 ? 'candidate still needs' : 'candidates still need'} review. The planner checks them before assigning them to pages.</p>}
+        {researchSummary.not_included > 0 && <p className="mt-1 text-xs">This map uses a balanced selection of 300 keywords. {researchSummary.not_included} additional keywords remain in your scan research.</p>}
+      </div>}
       {projectImport.isFetching && <p role="status" className="mt-4 text-sm text-slate-500">Loading keywords and site context…</p>}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5 dark:border-slate-800"><p className="max-w-lg text-xs leading-relaxed text-slate-500">The planner groups intents, checks overlap and proposes missing topics. Research ideas are labeled separately from supplied keywords.</p><Button disabled={locked || !keywords.length || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button></div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5 dark:border-slate-800"><p className="max-w-lg text-xs leading-relaxed text-slate-500">Start with your main topic, even if your scan found no new gaps. The planner uses existing pages and research, checks overlap, and explores missing topics.</p><Button disabled={locked || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button></div>
       {totalInputKeywords > 300 && <p role="alert" className="mt-3 text-sm text-rose-700">Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.</p>}
       {busy === 'build' && <div role="status" className="mt-4 rounded-lg bg-cyan-50 p-4 text-sm text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200"><p className="font-semibold">Planning your topic coverage · {elapsed}s</p><p className="mt-1 text-xs">Discovery, page planning and intent review can take a few minutes. Keep this tab open; successful maps are saved automatically.</p></div>}
       {visibleError && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{visibleError}</p>}

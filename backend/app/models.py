@@ -55,6 +55,7 @@ class Project(Base):
     scan_jobs: Mapped[List["ScanJob"]] = relationship("ScanJob", back_populates="project", cascade="all, delete-orphan")
     urls: Mapped[List["Url"]] = relationship("Url", back_populates="project", cascade="all, delete-orphan")
     keywords: Mapped[List["Keyword"]] = relationship("Keyword", back_populates="project", cascade="all, delete-orphan")
+    research_keywords: Mapped[List["ResearchKeyword"]] = relationship("ResearchKeyword", back_populates="project", cascade="all, delete-orphan")
     article_drafts: Mapped[List["ArticleDraft"]] = relationship("ArticleDraft", back_populates="project", cascade="all, delete-orphan")
 
 
@@ -126,6 +127,20 @@ class Keyword(Base):
     article_drafts: Mapped[List["ArticleDraft"]] = relationship("ArticleDraft", back_populates="keyword", cascade="all, delete-orphan")
 
     __table_args__ = (UniqueConstraint("project_id", "phrase", name="uq_project_phrase"),)
+
+
+class ResearchKeyword(Base):
+    """Research candidates retained for planning independently of confirmed gaps."""
+    __tablename__ = "research_keywords"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    phrase: Mapped[str] = mapped_column(Text, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    project: Mapped["Project"] = relationship("Project", back_populates="research_keywords")
+
+    __table_args__ = (UniqueConstraint("project_id", "phrase", name="uq_project_research_phrase"),)
 
 
 class KeywordResearchCache(Base):

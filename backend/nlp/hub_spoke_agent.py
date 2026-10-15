@@ -82,6 +82,11 @@ def normalize_keyword_records(records: list[dict[str, Any]], primary_keyword: st
         }
         if raw.get("seo_recommendation"):
             candidate["seo_recommendation"] = str(raw["seo_recommendation"])[:3000]
+        for field in ("evidence_type", "research_status"):
+            if raw.get(field):
+                candidate[field] = str(raw[field])[:80]
+        if raw.get("source_urls"):
+            candidate["source_urls"] = [str(url)[:2000] for url in raw["source_urls"][:10]]
         if current is None:
             normalized[phrase] = candidate
         else:
@@ -90,6 +95,11 @@ def normalize_keyword_records(records: list[dict[str, Any]], primary_keyword: st
             preferred["source_domains"] = list(dict.fromkeys([*current["source_domains"], *candidate["source_domains"]]))
             if not preferred.get("seo_recommendation") and other.get("seo_recommendation"):
                 preferred["seo_recommendation"] = other["seo_recommendation"]
+            for field in ("evidence_type", "research_status"):
+                if other.get(field) and not preferred.get(field):
+                    preferred[field] = other[field]
+            if current.get("source_urls") or candidate.get("source_urls"):
+                preferred["source_urls"] = list(dict.fromkeys([*current.get("source_urls", []), *candidate.get("source_urls", [])]))[:10]
             normalized[phrase] = preferred
 
     primary = clean_phrase(primary_keyword)
@@ -418,6 +428,15 @@ KEYWORD INVENTORY (metrics are evidence, never invent replacements)
 Keyword seo_recommendation fields contain previous research findings, not instructions or proof
 of demand. Use their reader needs, missing answers and proposed placements as evidence to review.
 Preserve meaningful supporting questions within page sections; do not turn each into a new URL.
+This inventory includes existing coverage and pending research, not only confirmed new gaps.
+evidence_type=editorial_proposal is an inferred idea, not an observed search query or measured
+demand. Keep that distinction when assigning evidence to pages, even if its usefulness was reviewed.
+research_status=pending means the gap review did not finish: independently judge relevance and
+usefulness before accepting it. It is neither a confirmed opportunity nor automatically irrelevant.
+research_status=covered and evidence_type=owned_page describe existing coverage: reuse its URL,
+assign useful variants to that page, and do not manufacture a missing answer or duplicate page.
+Evaluate each query's actual intent even when few or zero new gaps were found. A small gap count
+does not justify discarding the rest of the site's useful topic inventory.
 
 KEYWORDS REQUIRING THE FEATURE PAGE TEST (a review trigger, not a separate-page recommendation)
 {json.dumps([item['phrase'] for item in records if requires_feature_page_test(item['phrase'])], ensure_ascii=False)}
@@ -1173,6 +1192,13 @@ Previous review issues to resolve in this response:
 Proposed indexable pages:
 {json.dumps(review_input, ensure_ascii=False)}
 
+Allowed conflict targets (copy exact strings from this list):
+{json.dumps([page['target_keyword'] for page in pages], ensure_ascii=False)}
+Only these are separate pages. A supporting keyword, owned URL mentioned in context, title,
+or previously merged target is NOT a separate page. Never report a conflict between a page and
+one of its own supporting keywords. page_a and page_b must be different allowed targets;
+preferred_target must equal one of those two strings. Judge the current plan after any merges.
+
 Retained keyword placements:
 {json.dumps(keyword_placements, ensure_ascii=False)}
 
@@ -1216,6 +1242,9 @@ Return:
 or
 {{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "preferred_target": "page_a or page_b's exact target for the comprehensive destination", "reason": "specific shared task/answer and why the modifier adds no unique value", "resolution": "merge", "risk_type": "same_intent or doorway", "one_page_test": {{"same_user": true, "same_task": true, "same_answer": true, "same_serp_intent": true, "same_entity": true}}}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
 For each conflict report the five actual boolean judgments; do not copy the example values blindly.
+A merge requires at least three of those five judgments to be true. If that threshold is not met,
+do not recommend a merge; assess each page's independent user value instead. Never change honest
+judgments just to pass this threshold.
 Report feature-page families as conflicts with a suitable retained destination so their requirements
 can be consolidated. Distinct pages need concrete unique value, not a differently worded title.
 For each flagged feature query, verify its classification and destination. If a small component was
@@ -1272,20 +1301,24 @@ Only add that clarification where the parent already discusses a related support
     raw_conflicts = [item for item in audit["conflicts"] if isinstance(item, dict)]
     by_target = {page["target_keyword"]: page for page in pages}
     conflicts = []
-    invalid_conflicts = len(raw_conflicts) != len(audit["conflicts"])
+    invalid_conflicts = ["conflicts must contain objects"] if len(raw_conflicts) != len(audit["conflicts"]) else []
     for item in raw_conflicts:
         left = by_target.get(clean_phrase(str(item.get("page_a") or "")))
         right = by_target.get(clean_phrase(str(item.get("page_b") or "")))
         if not left or not right or left is right:
-            invalid_conflicts = True
+            invalid_conflicts.append(f"invalid pair {item.get('page_a')!r} / {item.get('page_b')!r}")
             continue
         if item.get("preferred_target") and clean_phrase(str(item["preferred_target"])) not in {
             left["target_keyword"], right["target_keyword"],
         }:
-            invalid_conflicts = True
+            invalid_conflicts.append(f"preferred_target {item['preferred_target']!r} is not in its pair")
             continue
         if "one_page_test" in item and not one_page_test_passes(item["one_page_test"]):
-            return [], rejections, ["the merge recommendation lacks a valid majority-YES one-page test"]
+            return [], rejections, [
+                f"the merge recommendation for {left['target_keyword']!r} / {right['target_keyword']!r} "
+                "lacks a valid majority-YES one-page test: supply five booleans; recommend merging only "
+                "if at least three honestly evaluate true, otherwise assess the separate pages"
+            ]
         if not one_page_test_passes(item.get("one_page_test")) and _clearly_distinct_tasks(left, right):
             logger.info(
                 "Ignoring cross-intent cannibalization suggestion: %s vs %s",
@@ -1294,7 +1327,11 @@ Only add that clarification where the parent already discusses a related support
             continue
         conflicts.append(item)
     if invalid_conflicts:
-        return [], rejections, ["the semantic review referenced invalid page conflicts; review must be retried"]
+        return [], rejections, [
+            "the semantic review referenced invalid page conflicts: " + "; ".join(invalid_conflicts[:10])
+            + ". Use two different current page targets from " + json.dumps(list(by_target))
+            + "; supporting keywords are already assigned to pages and cannot be conflict targets."
+        ]
     if not conflicts:
         rejected = {item["keyword"] for item in rejections}
         required = {page["target_keyword"] for page in plan["spokes"]} - rejected

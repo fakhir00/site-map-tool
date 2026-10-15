@@ -102,6 +102,46 @@ test('builds a map with an explicit main topic and exports actual URL links', as
   await expect(page.getByRole('tab', { name: /^map$/i })).toHaveAttribute('aria-selected', 'true')
 })
 
+test('starts topic discovery from the main topic when no gap keywords exist', async ({ page }) => {
+  await setup(page)
+  let submitted: Record<string, unknown> | undefined
+  await page.route('**/api/hub-spoke/build', route => {
+    submitted = route.request().postDataJSON()
+    return route.fulfill({ json: { keywords: [primary], history_id: id, clusters: mapping } })
+  })
+  await page.goto('/hub-spoke')
+  await page.getByLabel('Main topic', { exact: true }).fill(primary)
+  await expect(page.getByLabel('Keyword research')).toHaveValue('')
+  await page.getByRole('button', { name: 'Build topical map' }).click()
+  await expect(page.getByRole('heading', { name: 'Your topical authority map', exact: true })).toBeVisible()
+  expect(submitted?.keywords).toEqual([primary])
+  expect(submitted?.primary_keyword).toBe(primary)
+})
+
+test('imports useful research with zero gaps and preserves its review status and source', async ({ page }) => {
+  await setup(page)
+  const candidate = { phrase: 'lunar age formula', evidence_type: 'research_candidate', research_status: 'pending', source_urls: ['https://example.com/manual-method/'], search_volume: 0 }
+  await page.route(`**/api/hub-spoke/project-import/${id}*`, route => route.fulfill({ json: {
+    project_id: id, keywords: [primary, candidate.phrase], keyword_data: [candidate],
+    context: JSON.stringify({ primary_keyword: primary }),
+    research_summary: { new_gaps: 0, planning_keywords: 2, pending_review: 1, not_included: 0 },
+  } }))
+  let submitted: Record<string, unknown> | undefined
+  await page.route('**/api/hub-spoke/build', route => {
+    submitted = route.request().postDataJSON()
+    return route.fulfill({ json: { keywords: [primary, candidate.phrase], history_id: id, clusters: mapping } })
+  })
+  const imported = page.waitForResponse(response => response.url().includes(`/hub-spoke/project-import/${id}`))
+  await page.goto(`/hub-spoke?project_id=${id}`)
+  await imported
+  await expect(page.getByRole('status')).toContainText('0 new gaps · 2 keywords imported for planning')
+  await expect(page.getByRole('status')).toContainText('1 research candidate still needs review')
+  await page.getByRole('button', { name: 'Build topical map' }).click()
+  await expect(page.getByRole('heading', { name: 'Your topical authority map', exact: true })).toBeVisible()
+  expect(submitted?.keyword_data).toEqual([candidate])
+  expect(submitted?.project_id).toBe(id)
+})
+
 test('saved map sends its page brief and project to the article writer', async ({ page }) => {
   await setup(page, true)
   await loadSaved(page)

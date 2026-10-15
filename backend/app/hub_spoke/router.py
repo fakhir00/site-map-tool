@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user
 from app.database import get_db
-from app.models import HubSpokeHistory, Keyword, KeywordUrl, Project, Url, User
+from app.models import HubSpokeHistory, Project, User
 from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture, normalize_keyword_records, usable_keywords
 from nlp.keywords import clean_phrase, is_publishable_keyword, normalize_seed_keywords
 
@@ -26,6 +26,9 @@ class KeywordMetricInput(BaseModel):
     frequency: int = 1
     source_domains: list[str] = Field(default_factory=list)
     seo_recommendation: str | None = Field(default=None, max_length=3000)
+    evidence_type: str | None = Field(default=None, max_length=80)
+    research_status: str | None = Field(default=None, max_length=80)
+    source_urls: list[str] = Field(default_factory=list, max_length=10)
 
 
 class KeywordWorkspaceRequest(BaseModel):
@@ -122,6 +125,9 @@ def _keyword_records(body: KeywordWorkspaceRequest) -> list[dict[str, Any]]:
         "frequency": metrics[phrase].frequency if phrase in metrics else 1,
         "source_domains": metrics[phrase].source_domains if phrase in metrics else [],
         "seo_recommendation": metrics[phrase].seo_recommendation if phrase in metrics else None,
+        "evidence_type": metrics[phrase].evidence_type if phrase in metrics else None,
+        "research_status": metrics[phrase].research_status if phrase in metrics else None,
+        "source_urls": metrics[phrase].source_urls if phrase in metrics else [],
     } for phrase in _basic_clean(body.keywords)]
     return normalize_keyword_records(records, body.primary_keyword or _primary_keyword_from_context(body.context))
 
@@ -193,37 +199,8 @@ async def import_project_keywords(
         project.audit_summary or "", project.target_keywords or [], project.own_domain or project.domain,
     )
     canonical_primary = _primary_keyword_from_context(context)
-    rows = await db.execute(
-        select(Keyword.id, Keyword.phrase, Keyword.keyword_type, Keyword.search_volume, Keyword.difficulty, Keyword.frequency, Keyword.seo_recommendation)
-        .where(Keyword.project_id == project.id)
-        .order_by(Keyword.frequency.desc(), Keyword.created_at.asc()).limit(5000)
-    )
-    keyword_rows = rows.all()
-    source_domains: dict[uuid.UUID, set[str]] = {}
-    if keyword_rows:
-        sources = await db.execute(select(KeywordUrl.keyword_id, Url.url).join(Url, Url.id == KeywordUrl.url_id).where(
-            KeywordUrl.keyword_id.in_([row[0] for row in keyword_rows]),
-            Url.project_id == project.id, Url.source_type == "competitor",
-        ))
-        from urllib.parse import urlparse
-        for keyword_id, url in sources.all():
-            host = urlparse(url).hostname
-            if host:
-                source_domains.setdefault(keyword_id, set()).add(host)
-    records = [{
-        "phrase": phrase, "type": keyword_type, "search_volume": search_volume,
-        "difficulty": difficulty, "frequency": frequency, "source_domains": sorted(source_domains.get(keyword_id, set())),
-        "seo_recommendation": recommendation,
-    } for keyword_id, phrase, keyword_type, search_volume, difficulty, frequency, recommendation in keyword_rows]
-    # Architecture needs the existing site as well as missing topics. Import
-    # owned titles as planning inventory, never persist them as new keyword gaps.
-    own_titles = await db.execute(select(Url.h1).where(
-        Url.project_id == project.id, Url.source_type == "own", Url.status == "scraped",
-        Url.h1.is_not(None),
-    ).order_by(Url.url).limit(200))
-    records.extend({"phrase": title, "type": "heading", "search_volume": None, "difficulty": None}
-                   for title in own_titles.scalars().all() if is_publishable_keyword(title, min_words=2))
-    keyword_data = normalize_keyword_records(records, canonical_primary)
+    from app.hub_spoke.inventory import project_planning_inventory
+    keyword_data, research_summary = await project_planning_inventory(db, project, canonical_primary)
     selected = clean_phrase(primary_keyword) or canonical_primary
     keyword_data.sort(key=lambda item: item["phrase"] != selected)
     if not keyword_data:
@@ -231,7 +208,7 @@ async def import_project_keywords(
     return {
         "project_id": project.id, "project_name": project.name,
         "keywords": [item["phrase"] for item in keyword_data], "keyword_data": keyword_data,
-        "context": context,
+        "context": context, "research_summary": research_summary,
     }
 
 

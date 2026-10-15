@@ -29,6 +29,42 @@ def pending_from_prompt(kwargs):
 
 
 class ResearchQualityTests(unittest.TestCase):
+    def test_covered_queries_are_planning_research_without_becoming_new_gaps(self):
+        item = {"phrase": "wolf personality traits", "search_volume": 0}
+        verdict = {**decision(item), "decision": "covered", "placement": "existing_page",
+                   "target_url": "https://own.example/wolf", "coverage_gap": ""}
+        stats, decisions = {}, []
+        result = review_candidates(["animal quiz"], [item], json.dumps({"OWN PAGE INVENTORY": ["https://own.example/wolf"]}),
+            10, MagicMock(return_value={"decisions": [verdict]}), stats, decisions)
+        self.assertEqual(result, [])
+        self.assertEqual(stats["covered"], 1)
+        self.assertEqual(stats["rejected"], 0)
+        self.assertEqual(stats["unreviewed"], 0)
+        self.assertEqual(decisions[0]["decision"], "covered")
+        self.assertEqual(decisions[0]["search_volume"], 0)
+
+    def test_seed_word_variants_cannot_crowd_out_related_topic_review(self):
+        from nlp.openrouter import _balanced_keyword_candidates
+        rows = [{"phrase": f"spirit animal quiz variation {i}"} for i in range(20)]
+        rows += [{"phrase": "wolf personality strengths"}, {"phrase": "owl symbolism meanings"}]
+        result = _balanced_keyword_candidates(["spirit animal quiz"], rows, 4)
+        self.assertIn("wolf personality strengths", [row["phrase"] for row in result])
+        self.assertIn("owl symbolism meanings", [row["phrase"] for row in result])
+
+    def test_ai_research_is_retained_when_gap_review_cannot_finish(self):
+        item = {"phrase": "wolf personality traits", "type": "long-tail", "support_source": "audit", "support_phrase": "wolf personality profiles"}
+        for asynchronous in (False, True):
+            research = []
+            with patch("nlp.openrouter.is_ai_configured", return_value=True), patch(
+                "nlp.openrouter._achat_json" if asynchronous else "nlp.openrouter._chat_json", return_value=[item],
+            ), patch("nlp.openrouter.filter_keyword_gap_recommendations", return_value=None):
+                kwargs = {"audit_summary": json.dumps({"capabilities": ["wolf personality profiles"]}),
+                          "topic_terms": {"__related__wolf|personality"}, "research_out": research}
+                result = asyncio.run(generate_ai_keywords(["spirit animal quiz"], **kwargs)) if asynchronous else generate_ai_keywords_sync(["spirit animal quiz"], **kwargs)
+            self.assertEqual(result, [])
+            self.assertEqual(research[0]["phrase"], item["phrase"])
+            self.assertEqual(research[0]["evidence"]["kind"], "editorial_inference")
+
     def test_duplicate_import_merges_provenance_without_losing_measured_metrics(self):
         from nlp.hub_spoke_agent import normalize_keyword_records
         rows = [

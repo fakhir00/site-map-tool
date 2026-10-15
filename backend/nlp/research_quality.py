@@ -27,11 +27,12 @@ def _owned_urls(context):
 
 def _review_opportunity(row, candidate, context):
     """A positive verdict needs an actionable gap and a literal evidence citation."""
-    fields = ("reader_need", "coverage_gap", "evidence_quote", "target_topic")
+    covered = row.get("decision") == "covered"
+    fields = ("reader_need", "evidence_quote", "target_topic") if covered else ("reader_need", "coverage_gap", "evidence_quote", "target_topic")
     if any(not isinstance(row.get(field), str) or not row[field].strip() for field in fields):
         return None
     placement = row.get("placement")
-    if placement not in {"new_topic", "improve_existing", "supporting"}:
+    if placement not in ({"existing_page"} if covered else {"new_topic", "improve_existing", "supporting"}):
         return None
     # Check the citation against inputs, not the model's own rationale. Provider
     # queries prove observation only; the reviewer must separately explain value.
@@ -59,7 +60,7 @@ def _review_opportunity(row, candidate, context):
     target_url = target_url.strip()
     if target_url and target_url not in _owned_urls(context):
         return None
-    if placement == "improve_existing" and not target_url:
+    if placement in {"improve_existing", "existing_page"} and not target_url:
         return None
     if placement == "new_topic" and target_url:
         return None
@@ -122,14 +123,14 @@ def focused_review_context(context, candidates):
     return json.dumps(focused, ensure_ascii=False)
 
 
-def review_candidates(seeds, candidates, context, max_keywords, chat, diagnostics=None):
+def review_candidates(seeds, candidates, context, max_keywords, chat, diagnostics=None, review_records=None):
     """Review small batches; omitted decisions get one targeted repair, never implicit rejection.
 
     Legacy empty arrays are explicit rejections. Positive keep-only arrays need
     repair: they cannot bypass the evidence and usefulness review.
     """
     stats = diagnostics if diagnostics is not None else {}
-    stats.update(candidates=len(candidates), reviewed=0, kept=0, rejected=0, unreviewed=0, batches=0)
+    stats.update(candidates=len(candidates), reviewed=0, kept=0, covered=0, rejected=0, unreviewed=0, batches=0)
     accepted = {}
     for start in range(0, len(candidates), 25):
         batch = candidates[start:start + 25]
@@ -152,9 +153,10 @@ Rules:
 - Keep natural primary queries, entities and useful supporting questions. Multiple keywords may
   belong on ONE page. Do not reduce a family to one keyword or require a new URL per phrase.
 - A keep decision needs a concrete reader need and an unanswered question/task (coverage_gap).
-  Topic relevance alone is insufficient. Reject cosmetic word-order/plural variants and generic
-  free/online/best modifiers when they add no distinct reader need beyond an already served task.
-  Retain meaningful subquestions as supporting terms, with the page topic they belong to.
+  Topic relevance alone is insufficient to call something a gap. Use covered for useful natural
+  queries whose task is already answered, including relevant same-intent variants. They remain
+  planning inventory for the existing page, not new gaps. Reject meaningless variants and filler.
+  Retain meaningful unanswered subquestions as supporting terms on the appropriate page.
 - Reject broken fragments, unrelated tasks, invented capabilities, brand navigation and filler.
   A shared generic word is not enough. An exact source quote proves observation, not relevance.
 - Existing coverage means an owned page actually answers this specific question. A navigation link,
@@ -164,8 +166,8 @@ Rules:
   capability. These have different strengths; never pretend they prove measured demand.
 - Quote an exact, contiguous phrase from the supplied evidence or context in evidence_quote.
   A provider query itself is valid evidence of observation, but does not prove a content gap.
-  Explain what useful answer is missing separately in coverage_gap. Reject already answered
-  questions. Do not assume every autocomplete suggestion deserves a page.
+  Explain what useful answer is missing separately in coverage_gap. Classify already answered
+  useful questions as covered. Do not assume every autocomplete suggestion deserves a page.
 - Set placement to new_topic, improve_existing, or supporting. Use improve_existing when a known
   page should answer the missing subquestion. Copy target_url exactly from the owned inventory;
   never invent an existing URL. For supporting terms specify target_topic, and target_url when
@@ -173,19 +175,21 @@ Rules:
   The existing URL must actually serve target_topic; never use the homepage as a placeholder for
   a profile/guide whose URL is missing. In that case use supporting with the appropriate topic and
   an empty target_url so architecture can resolve ownership using the full site inventory.
+- For covered, use placement existing_page and cite its exact owned target_url. Supply reader_need,
+  target_topic and evidence_quote; coverage_gap is not required because no missing answer is claimed.
 - Do not invent volume, difficulty or claim a keyword is easy to rank without ranking evidence.
 - Preserve natural supplied queries. Only repair genuinely awkward extraction wording, never
   change its topic or add unsupported entities. Measured provider queries must stay unchanged.
 - Review the entire batch. Every input source_phrase must occur exactly once, including rejections.
   Use a short specific reason; missing decisions are not rejections.
 
-Return {{"decisions": [{{"source_phrase": "exact candidate phrase", "decision": "keep or reject",
+Return {{"decisions": [{{"source_phrase": "exact candidate phrase", "decision": "keep or covered or reject",
 "phrase": "natural query if kept", "type": "primary or lsi or long-tail or entity or heading",
 "reason": "specific evidence and relevance or rejection reason",
 "reader_need": "specific task the reader wants to complete (required for keep)",
 "coverage_gap": "useful missing answer, beyond existing coverage (required for keep)",
 "evidence_quote": "exact supplied evidence quotation (required for keep)",
-"placement": "new_topic or improve_existing or supporting (required for keep)",
+"placement": "new_topic or improve_existing or supporting for keep; existing_page for covered",
 "target_topic": "page topic that should answer this question (required for keep)",
 "target_url": "exact existing owned URL when applicable, otherwise empty"}}]}}.
 {('The previous response omitted or malformed decisions. Decide only these remaining candidates.' if attempt else '')}
@@ -197,6 +201,8 @@ Return {{"decisions": [{{"source_phrase": "exact candidate phrase", "decision": 
             if not isinstance(rows, list):
                 continue
             if legacy and not rows:
+                if review_records is not None:
+                    review_records.extend({"source_phrase": key, "decision": "reject", "reason": "Reviewer rejected this candidate."} for key in pending)
                 stats["rejected"] += len(pending)
                 stats["reviewed"] += len(pending)
                 pending.clear()
@@ -212,10 +218,10 @@ Return {{"decisions": [{{"source_phrase": "exact candidate phrase", "decision": 
                 if source not in pending or source_counts[source] != 1:
                     continue
                 decision = row.get("decision")
-                if decision not in {"keep", "reject"} or not str(row.get("reason") or "").strip():
+                if decision not in {"keep", "covered", "reject"} or not str(row.get("reason") or "").strip():
                     continue
                 candidate = pending[source]
-                if decision == "keep":
+                if decision in {"keep", "covered"}:
                     opportunity = _review_opportunity(row, candidate, batch_context)
                     if opportunity is None:
                         continue
@@ -229,14 +235,21 @@ Return {{"decisions": [{{"source_phrase": "exact candidate phrase", "decision": 
                     item = {**candidate, "source_phrase": source, "phrase": phrase,
                             "type": row.get("type") or candidate.get("type") or "long-tail",
                             "opportunity": opportunity,
-                            "review_reason": f"{row['reader_need'].strip()} — {row['coverage_gap'].strip()} "
+                            "review_reason": f"{row['reader_need'].strip()} — {row.get('coverage_gap') or row['reason']} "
                                              f"Placement: {opportunity['placement'].replace('_', ' ')}; "
                                              f"{opportunity['target_url'] or opportunity['target_topic']}."}
-                    if phrase in accepted:
-                        item["url_ids"] = list(dict.fromkeys([*accepted[phrase].get("url_ids", []), *item.get("url_ids", [])]))
-                    accepted[phrase] = item
+                    if decision == "keep":
+                        if phrase in accepted:
+                            item["url_ids"] = list(dict.fromkeys([*accepted[phrase].get("url_ids", []), *item.get("url_ids", [])]))
+                        accepted[phrase] = item
+                    else:
+                        stats["covered"] += 1
+                    if review_records is not None:
+                        review_records.append({**item, "decision": decision})
                 else:
                     stats["rejected"] += 1
+                    if review_records is not None:
+                        review_records.append({"source_phrase": source, "decision": "reject", "reason": row["reason"]})
                 stats["reviewed"] += 1
                 pending.pop(source)
         stats["unreviewed"] += len(pending)

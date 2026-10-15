@@ -297,6 +297,18 @@ class IntentConsolidationTests(unittest.TestCase):
         self.assertEqual(chat.await_count, 3)
         self.assertEqual(plan['_semantic_audit_status'], 'passed')
 
+    def test_invalid_conflict_retry_identifies_bad_reference_and_current_targets(self):
+        targets = ['lunar age calculator', 'lunar age meaning']
+        invalid = {'passed': False, 'conflicts': [{
+            'page_a': targets[0], 'page_b': 'lunar age formula', 'reason': 'Duplicate',
+        }]}
+        plan, chat = self.build(targets, payload_for(targets), [invalid, APPROVED])
+        retry = chat.await_args_list[-1].kwargs['user_prompt']
+        self.assertIn("invalid pair 'lunar age calculator' / 'lunar age formula'", retry)
+        self.assertIn('supporting keywords are already assigned to pages', retry)
+        self.assertIn('Allowed conflict targets', retry)
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+
     def test_specific_duplicate_intent_is_not_hidden_by_relabeling(self):
         from nlp.hub_spoke_agent import _normalize_plan, _repair_plan_consistency, validate_architecture
         targets = ['lunar age calculator', 'find your chinese age']

@@ -465,6 +465,8 @@ async def generate_ai_keywords(
     exclude_phrases: set[str] | None = None,
     evidence_phrases: list[str] | None = None,
     research_focus: str | None = None,
+    research_out: list[dict[str, Any]] | None = None,
+    review_records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate SEO keyword recommendations using the configured AI provider."""
     if not is_ai_configured():
@@ -615,6 +617,8 @@ ideas. Each object must include `phrase`, `type` (`primary` or `long-tail`),
                     break
         
         if valid_keywords:
+            if research_out is not None:
+                research_out.extend(valid_keywords)
             if not apply_gap_filter:
                 return valid_keywords
 
@@ -625,6 +629,7 @@ ideas. Each object must include `phrase`, `type` (`primary` or `long-tail`),
                 valid_keywords,
                 audit_summary=audit_summary,
                 max_keywords=target_count,
+                review_records=review_records,
             )
             if filtered is None:
                 logger.warning(
@@ -660,6 +665,8 @@ def generate_ai_keywords_sync(
     exclude_phrases: set[str] | None = None,
     evidence_phrases: list[str] | None = None,
     research_focus: str | None = None,
+    research_out: list[dict[str, Any]] | None = None,
+    review_records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Synchronous version of generate_ai_keywords for background worker pipelines."""
     if not is_ai_configured():
@@ -810,6 +817,8 @@ ideas. Each object must include `phrase`, `type` (`primary` or `long-tail`),
                     break
 
         if valid_keywords:
+            if research_out is not None:
+                research_out.extend(valid_keywords)
             if not apply_gap_filter:
                 return valid_keywords
 
@@ -818,6 +827,7 @@ ideas. Each object must include `phrase`, `type` (`primary` or `long-tail`),
                 valid_keywords,
                 audit_summary=audit_summary,
                 max_keywords=target_count,
+                review_records=review_records,
             )
             if filtered is None:
                 logger.warning(
@@ -1113,6 +1123,7 @@ def filter_keyword_gap_recommendations(
     audit_summary: str | None = None,
     max_keywords: int = 60,
     diagnostics: dict[str, Any] | None = None,
+    review_records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]] | None:
     """Review evidence-backed keyword opportunities without requiring a new page per query."""
     if not is_ai_configured() or not candidates:
@@ -1127,7 +1138,7 @@ def filter_keyword_gap_recommendations(
     from nlp.research_quality import review_candidates
     try:
         result = review_candidates(
-            seed_keywords, trimmed_candidates, audit_summary, max_keywords, _chat_json, diagnostics,
+            seed_keywords, trimmed_candidates, audit_summary, max_keywords, _chat_json, diagnostics, review_records,
         )
         if result is not None:
             for item in result:
@@ -1155,6 +1166,10 @@ def _balanced_keyword_candidates(
             item for item in candidates
             if keyword_terms(str(item.get("phrase") or ""), min_len=2) & anchors
         ])
+    # Related one/two-hop topics deserve review even when seed-word variants
+    # already fill the cap. They still face the same semantic quality checks.
+    anchored = {str(item.get("phrase") or "") for bucket in buckets for item in bucket}
+    buckets.append([item for item in candidates if str(item.get("phrase") or "") not in anchored])
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
