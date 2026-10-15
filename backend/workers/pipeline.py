@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from sqlalchemy import create_engine, delete, func, select, update
+from sqlalchemy import case, create_engine, delete, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -269,18 +269,20 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                         proj = local_db.execute(select(Project).where(Project.id == project_uuid)).scalar_one_or_none()
                         patterns = proj.url_filter_patterns if proj else None
 
+                    owned_inventory: list[str] = []
                     d_urls = _discover_content_urls(
                         domain,
                         patterns,
                         extract_all_urls_from_domain,
                         filter_blog_urls,
-                        crawl_limit,
+                        _own_crawl_limit() if source_type == "own" else crawl_limit,
                         required_terms,
                         ranking_terms,
                         negative_terms,
                         include_homepage=(source_type == "own"),
                         source_type=source_type,
                         ranking_urls=competitor_ranking_urls.get(domain),
+                        inventory_out=owned_inventory if source_type == "own" else None,
                     )
 
                     saved_urls = []
@@ -295,6 +297,9 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                             job_uuid,
                             [(url, source_type, domain) for url in d_urls],
                         )
+                        if owned_inventory:
+                            _store_owned_inventory(local_db, project_uuid, job_uuid, domain, owned_inventory)
+                            _sync_project_counts(local_db, proj)
 
                         saved_urls = local_db.execute(
                             select(Url.id, Url.status).where(Url.project_id == project_uuid, Url.source_domain == domain)
@@ -419,6 +424,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             negative_terms,
             search_locale=project.search_locale,
             diagnostics=provider_diagnostics,
+            audit_summary=audit_summary,
         )
         logger.info("[%s] Apify keyword pass stored %s keywords", project_id, apify_keyword_count)
         dataforseo_count = _process_dataforseo_keywords(
@@ -432,6 +438,12 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             diagnostics=provider_diagnostics,
         )
         logger.info("[%s] DataForSEO pass stored %s keywords", project_id, dataforseo_count)
+        if apify_keyword_count + dataforseo_count < 20:
+            autocomplete_count = _process_autocomplete_keywords(
+                db, project_uuid, seed_keywords, topic_terms, negative_terms,
+                audit_summary, search_locale=project.search_locale, diagnostics=provider_diagnostics,
+            )
+            logger.info("[%s] Autocomplete recovery stored %s reviewed keywords", project_id, autocomplete_count)
         competitor_gap_count = _process_competitor_keyword_gaps(
             db,
             project_uuid,
@@ -446,7 +458,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             evidence_out=competitor_evidence,
             diagnostics=gap_diagnostics,
         )
-        if not competitor_gap_count:
+        if competitor_gap_count < 20:
             # Search beyond the initial SERP pages once, then review the enlarged
             # corpus. Release the DB connection during this network work.
             recovery_locale = project.search_locale
@@ -470,6 +482,12 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
                     verify_cluster_intent, evidence_out=competitor_evidence,
                     diagnostics=gap_diagnostics,
                 )
+                # Recovery can overlap the first pass. Count the persisted
+                # union, not the sum of repeated review batches.
+                competitor_gap_count = db.execute(select(func.count(func.distinct(Keyword.id)))
+                    .join(KeywordUrl, KeywordUrl.keyword_id == Keyword.id)
+                    .join(Url, Url.id == KeywordUrl.url_id)
+                    .where(Keyword.project_id == project_uuid, Url.source_type == "competitor")).scalar_one()
         logger.info("[%s] Competitor gap diagnostics: %s", project_id, gap_diagnostics)
         logger.info(
             "[%s] Competitor keyword gap pass stored %s keywords in %.1fs",
@@ -592,8 +610,9 @@ def _discover_content_urls(
     include_homepage: bool = False,
     source_type: str = "competitor",
     ranking_urls: list[str] | None = None,
+    inventory_out: list[str] | None = None,
 ) -> list[str]:
-    max_raw_urls = min(1000, max(limit * 10, limit + 25))
+    max_raw_urls = 1000 if source_type == "own" else min(1000, max(limit * 10, limit + 25))
     
     all_urls = extract_all_urls_from_domain(
         domain,
@@ -614,9 +633,12 @@ def _discover_content_urls(
         
     logger.info("Found %s sitemap URLs for %s", len(all_urls), domain)
     if source_type == "own":
-        # For the user's own domain, we want to analyze ALL content to find gaps, 
-        # not just blogs. Our negative_terms filter will still remove junk.
-        content_urls = list(all_urls)
+        # Retain owned page identities even when their paths do not spell the
+        # main seed; existing pages must not be proposed as missing URLs.
+        content_urls = [url for url in all_urls if _registered_domain(url) == _registered_domain(domain)
+                        and _is_relevant_content_url(url, set(), None)]
+        if inventory_out is not None:
+            inventory_out.extend(_dedupe_localized_urls(list(dict.fromkeys(url for url in [_origin(domain), *content_urls] if url))))
     else:
         content_urls = filter_blog_urls(
             all_urls,
@@ -626,8 +648,9 @@ def _discover_content_urls(
         # These exact pages ranked in Google for a supplied seed. Keep them even
         # when a site's URL structure does not resemble /blog/ or /article/.
         content_urls = list(dict.fromkeys([*verified_ranking_urls, *content_urls]))
-    content_urls = [url for url in content_urls if _is_relevant_content_url(url, required_terms or set(), negative_terms)]
-    if required_terms:
+    content_urls = [url for url in content_urls if _is_relevant_content_url(
+        url, set() if source_type == "own" else required_terms or set(), None if source_type == "own" else negative_terms)]
+    if required_terms and source_type != "own":
         topical_urls = [url for url in content_urls if _url_has_any_terms(url, required_terms)]
         if len(topical_urls) >= limit:
             content_urls = list(dict.fromkeys([*verified_ranking_urls, *topical_urls]))
@@ -697,10 +720,24 @@ def _queue_discovered_urls(
         _sync_project_counts(db, project)
 
 
+def _own_crawl_limit() -> int:
+    return max(1, min(settings.MAX_OWN_SITE_PAGES, settings.MAX_URLS_PER_SCAN // 2))
+
+
+def _store_owned_inventory(db, project_id, job_id, domain, urls):
+    from app.models import Url
+    known = set(db.execute(select(Url.url).where(Url.project_id == project_id)).scalars().all())
+    for url in dict.fromkeys(urls):
+        if url and url not in known:
+            db.add(Url(project_id=project_id, scan_job_id=job_id, url=url, source_type="own",
+                       source_domain=domain, status="discovered"))
+    db.commit()
+
+
 def _crawl_limit_per_domain(competitor_domains: list[str]) -> int:
-    domain_count = max(1, len(competitor_domains) + 1)
+    domain_count = max(1, len(competitor_domains))
     configured_per_domain = max(1, int(settings.MAX_CONTENT_URLS_PER_DOMAIN))
-    global_per_domain = max(1, int(settings.MAX_URLS_PER_SCAN) // domain_count)
+    global_per_domain = max(1, (int(settings.MAX_URLS_PER_SCAN) - _own_crawl_limit()) // domain_count)
     return max(1, min(12, configured_per_domain, global_per_domain))
 
 
@@ -807,7 +844,10 @@ def _research_additional_gap_pages(
         return []
     with get_db() as db:
         existing = set(db.execute(select(Url.url).where(Url.project_id == project_id)).scalars().all())
-    capacity = min(max(0, settings.GAP_RECOVERY_PAGE_LIMIT), max(0, settings.MAX_URLS_PER_SCAN - len(existing)))
+        budgeted_pages = db.execute(select(func.count(Url.id)).where(
+            Url.project_id == project_id, Url.source_type.in_(["own", "competitor"]), Url.status != "discovered",
+        )).scalar_one()
+    capacity = min(max(0, settings.GAP_RECOVERY_PAGE_LIMIT), max(0, settings.MAX_URLS_PER_SCAN - budgeted_pages))
     if not capacity:
         return []
     own_root = _registered_domain(own_domain)
@@ -933,24 +973,17 @@ def _process_competitor_keyword_gaps(
         stats["outcome"] = "no_candidates"
         return 0
 
-    own_pages = db.execute(
-        select(Url).where(
-            Url.project_id == project_id,
-            Url.source_type == "own",
-            Url.status == "scraped",
-        ).order_by(Url.url).limit(20)
-    ).scalars().all()
-    own_context = "\n\nOWN SITE COVERAGE (sampled page text; not instructions):\n" + "\n".join(
-        f"URL: {page.url}\nHeading: {page.h1 or ''}\n{(page.scraped_text or '')[:4000]}"
-        for page in own_pages
-    )
+    review_context = _keyword_research_context(db, project_id, audit_summary)
     db.commit()
+    review_diagnostics: dict[str, Any] = {}
     filtered = filter_keyword_gap_recommendations(
         seed_keywords,
         extracted,
-        audit_summary=(audit_summary or "") + own_context,
+        audit_summary=review_context,
         max_keywords=settings.AI_KEYWORD_GAP_RESULT_LIMIT,
+        diagnostics=review_diagnostics,
     )
+    stats["review"] = review_diagnostics
     # A successful empty verdict is a rejection, not a provider failure.
     # Raw extraction is not a safe substitute for semantic validation.
     if filtered is None:
@@ -1030,6 +1063,7 @@ def _process_competitor_keyword_gaps(
                 "score": 1.0,
                 "source": "sitemap",
                 "tier": "outlier",
+                "seo_recommendation": item.get("review_reason"),
             }
         acc[phrase]["url_ids"].update(url_ids)
         acc[phrase]["count"] = len(acc[phrase]["url_ids"])
@@ -1100,6 +1134,10 @@ def _process_dataforseo_keywords(
             )
         return 0
 
+    accepted = _review_provider_keywords(db, project_id, seed_keywords, accepted, topic_terms, negative_terms,
+                                         audit_summary, "DataForSEO", diagnostics)
+    if not accepted:
+        return 0
     source_url = "https://dataforseo.com/"
     source = db.execute(
         select(Url).where(Url.project_id == project_id, Url.url == source_url)
@@ -1136,6 +1174,78 @@ def _process_dataforseo_keywords(
     return len(accumulator)
 
 
+def _review_provider_keywords(db, project_id, seeds, candidates, topic_terms, negative_terms,
+                             audit_summary, provider, diagnostics=None):
+    from nlp.openrouter import filter_keyword_gap_recommendations, is_ai_configured
+    owned = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
+    candidates = [item for item in candidates if item["phrase"] not in owned]
+    if not candidates or not is_ai_configured():
+        return candidates
+    context = _keyword_research_context(db, project_id, audit_summary)
+    supplied = {item["phrase"]: item for item in candidates}
+    reviewable = [{**item, "evidence": {"kind": "provider_keyword", "provider": provider,
+                   "excerpt": item["phrase"], "queried_seeds": item.get("seed_keywords") or seeds}} for item in candidates]
+    db.commit()
+    try:
+        reviewed = filter_keyword_gap_recommendations(seeds, reviewable, audit_summary=context, max_keywords=len(reviewable))
+    except Exception as exc:
+        logger.warning("%s keyword review unavailable (%s)", provider, type(exc).__name__)
+        reviewed = None
+    if reviewed is None:
+        if diagnostics is not None:
+            diagnostics.append(f"{provider} keywords could not finish quality review; unreviewed candidates were withheld.")
+        return []
+    # Preserve metrics and exact observed queries, even if a reviewer attempts a rewrite.
+    return [{**supplied[item["phrase"]], "review_reason": item.get("review_reason")}
+            for item in reviewed if item.get("phrase") in supplied]
+
+
+def _process_autocomplete_keywords(db, project_id, seed_keywords, topic_terms, negative_terms,
+                                   audit_summary, *, search_locale="us", diagnostics=None):
+    from app.models import Url
+    from nlp.openrouter import filter_keyword_gap_recommendations, is_ai_configured
+    from scraping.autocomplete import ENDPOINT, research_autocomplete
+    if not settings.ENABLE_AUTOCOMPLETE_RESEARCH or not is_ai_configured():
+        return 0
+    notes = diagnostics if diagnostics is not None else []
+    db.commit()
+    candidates = research_autocomplete(
+        seed_keywords, topic_terms, negative_terms, locale=search_locale,
+        limit=settings.AUTOCOMPLETE_QUERY_LIMIT, diagnostics=notes,
+    )
+    if not candidates:
+        return 0
+    context = _keyword_research_context(db, project_id, audit_summary)
+    db.commit()
+    try:
+        reviewed = filter_keyword_gap_recommendations(seed_keywords, candidates, audit_summary=context,
+                                                      max_keywords=len(candidates))
+    except Exception as exc:
+        logger.warning("Autocomplete quality review failed (%s)", type(exc).__name__)
+        reviewed = None
+    if reviewed is None:
+        notes.append("Autocomplete suggestions could not complete quality review; unreviewed suggestions were withheld.")
+        return 0
+    observed = {item["phrase"] for item in candidates}
+    owned = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
+    accepted = {item["phrase"]: item for item in reviewed if item.get("phrase") in observed and item["phrase"] not in owned}
+    if not accepted:
+        return 0
+    source = db.execute(select(Url).where(Url.project_id == project_id, Url.url == ENDPOINT)).scalar_one_or_none()
+    if not source:
+        source = Url(project_id=project_id, url=ENDPOINT, source_type="provider",
+                     source_domain="Google Autocomplete", status="scraped")
+        db.add(source)
+        db.flush()
+    accumulator = {phrase: {
+        "type": item.get("type", "long-tail"), "count": 1, "url_ids": {source.id},
+        "score": 1.0, "source": "sitemap_ai", "tier": "outlier",
+        "seo_recommendation": "Observed autocomplete suggestion; search volume is not measured. " + item.get("review_reason", ""),
+    } for phrase, item in accepted.items()}
+    _store_keywords(db, project_id, accumulator)
+    return len(accumulator)
+
+
 def _process_apify_keywords(
     db: Session,
     project_id: uuid.UUID,
@@ -1144,6 +1254,7 @@ def _process_apify_keywords(
     negative_terms: set[str] | None,
     search_locale: str = "us",
     diagnostics: list[str] | None = None,
+    audit_summary: str | None = None,
 ) -> int:
     """Store relevant keyword metrics returned for every exact scan seed."""
     from app.models import Url
@@ -1160,6 +1271,7 @@ def _process_apify_keywords(
         term.removeprefix("__research_seed__") for term in topic_terms or set()
         if term.startswith("__research_seed__")
     )
+    db.commit()
     researched = research_keywords_via_apify(
         seed_keywords, country_code=search_locale, diagnostics=research_notes, expansion_seeds=expansion_seeds,
     )
@@ -1181,6 +1293,10 @@ def _process_apify_keywords(
             )
         return 0
 
+    accepted = _review_provider_keywords(db, project_id, seed_keywords, accepted, topic_terms, negative_terms,
+                                         audit_summary, "Apify", diagnostics)
+    if not accepted:
+        return 0
     source_url = f"https://apify.com/actors/{settings.APIFY_KEYWORD_ACTOR_ID}"
     source = db.execute(
         select(Url).where(Url.project_id == project_id, Url.url == source_url)
@@ -2402,7 +2518,9 @@ def _queue_url(
         select(Url.id).where(Url.project_id == project_id, Url.url == url)
     ).scalar_one_or_none()
     if existing:
-        db.execute(update(Url).where(Url.id == existing).values(scan_job_id=job_id))
+        db.execute(update(Url).where(Url.id == existing).values(
+            scan_job_id=job_id, status=case((Url.status == "discovered", "pending"), else_=Url.status),
+        ))
         return
 
     db.add(
@@ -2618,22 +2736,19 @@ def _own_content_keyword_phrases(
     negative_terms: set[str] | None,
 ) -> set[str]:
     from app.models import Url
-    from nlp.keywords import extract_keywords_from_page
+    from nlp.keywords import clean_phrase, is_publishable_keyword
 
     query = select(Url.url, Url.scraped_text, Url.h1).where(Url.project_id == project_id, Url.source_type == "own")
     
     phrases: set[str] = set()
     for url, scraped_text, h1 in db.execute(query).yield_per(100):
         phrases.update(_url_keyword_candidates(url, topic_terms, negative_terms, include_single_terms=True))
-        if not scraped_text:
-            continue
-        keyword_result = extract_keywords_from_page(
-            scraped_text,
-            h1=h1,
-            use_keybert=settings.ENABLE_KEYBERT,
-            use_spacy=settings.ENABLE_SPACY,
-        )
-        phrases.update(_keyword_phrases(keyword_result, min_words=1))
+        # Body n-grams include navigation, examples and passing mentions. They
+        # do not prove a query is answered. Only exact page identities are safe
+        # mechanical exclusions; deeper coverage is judged from page evidence.
+        title = clean_phrase(h1 or "")
+        if is_publishable_keyword(title, min_words=2):
+            phrases.add(title)
 
     return phrases
 
@@ -2857,17 +2972,10 @@ def _remove_covered_keywords(accumulator: dict[str, dict[str, Any]], own_keyword
     if not own_keyword_phrases:
         return
 
-    own_term_sets = [_phrase_terms(phrase) for phrase in own_keyword_phrases]
-    own_term_sets = [terms for terms in own_term_sets if terms]
-    own_term_frozensets = {frozenset(terms) for terms in own_term_sets}
-
+    from nlp.keywords import clean_phrase
+    exact_owned = {clean_phrase(phrase) for phrase in own_keyword_phrases}
     for phrase in list(accumulator.keys()):
-        if phrase in own_keyword_phrases:
-            del accumulator[phrase]
-            continue
-
-        phrase_terms = frozenset(_phrase_terms(phrase))
-        if phrase_terms and phrase_terms in own_term_frozensets:
+        if clean_phrase(phrase) in exact_owned:
             del accumulator[phrase]
 
 
@@ -2898,12 +3006,16 @@ def _keyword_research_context(db: Session, project_id: uuid.UUID, audit_summary:
         context = {"audit_summary": audit_summary or ""}
     if not isinstance(context, dict):
         context = {"audit_summary": audit_summary or ""}
-    for source, key, limit in (("own", "OWN SITE COVERAGE", 24), ("competitor", "competitor_page_evidence", 18)):
+    from nlp.research_quality import balanced_pages, research_excerpt
+    context["OWN PAGE INVENTORY"] = [url for url in db.execute(select(Url.url).where(
+        Url.project_id == project_id, Url.source_type == "own",
+    ).order_by(Url.url).limit(1000)).scalars().all() if isinstance(url, str)]
+    for source, key, limit in (("own", "OWN SITE COVERAGE", 40), ("competitor", "competitor_page_evidence", 24)):
         pages = db.execute(select(Url).where(
             Url.project_id == project_id, Url.source_type == source, Url.status == "scraped",
-        ).order_by(func.length(Url.url), Url.url).limit(limit)).scalars().all()
-        context[key] = [{"url": page.url, "heading": page.h1 or "", "text": (page.scraped_text or "")[:1800]}
-                        for page in pages]
+        ).order_by(func.length(Url.url), Url.url).limit(200)).scalars().all()
+        entries = [{"url": page.url, "heading": page.h1 or "", "text": research_excerpt(page.scraped_text, 2400)} for page in pages]
+        context[key] = balanced_pages(entries, limit=limit, per_domain=limit if source == "own" else 6)
     return json.dumps(context, ensure_ascii=True)
 
 
@@ -3330,7 +3442,10 @@ def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, d
                 db.add(keyword)
                 db.flush()
             else:
-                keyword.frequency += data["count"]
+                if data.get("source") == "sitemap":
+                    keyword.frequency = max(keyword.frequency, data["count"])
+                else:
+                    keyword.frequency += data["count"]
                 keyword.updated_at = datetime.utcnow()
                 if data.get("search_volume") is not None:
                     keyword.search_volume = data["search_volume"]

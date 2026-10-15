@@ -238,6 +238,7 @@ test('authority planner uses intent validation without sending a spoke target', 
   await page.getByRole('button', { name: 'Build topical map' }).click()
   await expect(page.getByText('0 spokes', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Target spokes', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('Topic discovery was unavailable; this map uses the supplied inventory.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Topic research incomplete', { exact: false })).toBeVisible()
+  await expect(page.getByRole('status')).toContainText('Topic research did not finish.')
   expect(submitted).not.toHaveProperty('target_spokes')
 })

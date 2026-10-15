@@ -349,7 +349,7 @@ def is_publishable_keyword(
         repeat_ratio = 1 - len(unique_meaningful) / len(meaningful_words)
         if repeat_ratio >= 1 / 3:
             return False
-    if len(words) > 8:
+    if len(words) > 12:
         return False
         
     terms = keyword_terms(cleaned, min_len=2)
@@ -684,23 +684,26 @@ def extract_heading_keywords(h1: str, h2s: List[str], h3s: List[str]) -> List[st
     for heading in all_headings:
         # Clean and extract n-grams from heading
         cleaned = clean_phrase(heading)
-        words = [w for w in cleaned.split() if w not in STOPWORDS and len(w) > 2]
+        words = cleaned.split()
+        if cleaned not in seen and is_publishable_keyword(cleaned, min_words=2):
+            seen.add(cleaned)
+            keywords.append(cleaned)
 
         # Add individual meaningful words
         for word in words:
-            if word not in seen and is_valid_keyword(word, min_words=1):
+            if word not in STOPWORDS and word not in seen and is_valid_keyword(word, min_words=1):
                 seen.add(word)
                 keywords.append(word)
 
         # Add bigrams and trigrams
         for i in range(len(words) - 1):
             bigram = f"{words[i]} {words[i+1]}"
-            if bigram not in seen and is_valid_keyword(bigram, min_words=2):
+            if bigram not in seen and is_publishable_keyword(bigram, min_words=2):
                 seen.add(bigram)
                 keywords.append(bigram)
         for i in range(len(words) - 2):
             trigram = f"{words[i]} {words[i+1]} {words[i+2]}"
-            if trigram not in seen and is_valid_keyword(trigram, min_words=2):
+            if trigram not in seen and is_publishable_keyword(trigram, min_words=2):
                 seen.add(trigram)
                 keywords.append(trigram)
 

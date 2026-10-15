@@ -19,6 +19,7 @@ function statusBadge(status: Project['status'] | string) {
   if (status === 'paused') return <Badge variant="amber">Paused</Badge>
   if (status === 'error') return <Badge variant="red">Error</Badge>
   if (status === 'scraped') return <Badge variant="teal">Analyzed</Badge>
+  if (status === 'discovered') return <Badge variant="slate">URL found</Badge>
   if (status === 'failed') return <Badge variant="red">Failed</Badge>
   return <Badge variant="slate">Pending</Badge>
 }

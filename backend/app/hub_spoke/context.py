@@ -21,7 +21,7 @@ async def context_with_owned_pages(db, project_id, context):
     # beyond the first 30 (or awaiting scraping) still exist on the user's site.
     pages.update({url: {'url': url, 'title': h1 or '',
                        'text_excerpt': (text or '')[:3000] if index < 30 else '',
-                       'evidence': 'owned_crawl'}
+                       'evidence': 'owned_crawl' if text else 'owned_sitemap'}
                   for index, (url, h1, text) in enumerate(rows.all())})
     payload['owned_pages'] = list(pages.values())
     payload['owned_coverage_note'] = 'All known owned URLs and titles; bounded text excerpts. An absent topic is not proof of absence from the whole site.'

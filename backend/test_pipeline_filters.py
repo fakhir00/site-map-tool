@@ -425,7 +425,7 @@ class PipelineFilterTests(TestCase):
         self.assertEqual(result[0]["phrase"], "lunar age leap month guide")
         prompt = chat.call_args.kwargs["user_prompt"]
         self.assertIn("impact of leap months on lunar age", prompt)
-        self.assertIn("Prioritize easy-to-rank opportunities", prompt)
+        self.assertIn("Ranking difficulty is unknown without SERP evidence", prompt)
         self.assertIn("no seed may be ignored", prompt)
 
     def test_competitor_discovery_runs_every_seed_and_balances_results(self):

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user
 from app.database import get_db
-from app.models import HubSpokeHistory, Keyword, Project, Url, User
+from app.models import HubSpokeHistory, Keyword, KeywordUrl, Project, Url, User
 from nlp.hub_spoke_agent import ArchitectureAgentError, build_site_architecture, normalize_keyword_records, usable_keywords
 from nlp.keywords import clean_phrase, is_publishable_keyword, normalize_seed_keywords
 
@@ -192,14 +192,26 @@ async def import_project_keywords(
     )
     canonical_primary = _primary_keyword_from_context(context)
     rows = await db.execute(
-        select(Keyword.phrase, Keyword.keyword_type, Keyword.search_volume, Keyword.difficulty, Keyword.frequency)
+        select(Keyword.id, Keyword.phrase, Keyword.keyword_type, Keyword.search_volume, Keyword.difficulty, Keyword.frequency)
         .where(Keyword.project_id == project.id)
         .order_by(Keyword.frequency.desc(), Keyword.created_at.asc()).limit(5000)
     )
+    keyword_rows = rows.all()
+    source_domains: dict[uuid.UUID, set[str]] = {}
+    if keyword_rows:
+        sources = await db.execute(select(KeywordUrl.keyword_id, Url.url).join(Url, Url.id == KeywordUrl.url_id).where(
+            KeywordUrl.keyword_id.in_([row[0] for row in keyword_rows]),
+            Url.project_id == project.id, Url.source_type == "competitor",
+        ))
+        from urllib.parse import urlparse
+        for keyword_id, url in sources.all():
+            host = urlparse(url).hostname
+            if host:
+                source_domains.setdefault(keyword_id, set()).add(host)
     records = [{
         "phrase": phrase, "type": keyword_type, "search_volume": search_volume,
-        "difficulty": difficulty, "frequency": frequency,
-    } for phrase, keyword_type, search_volume, difficulty, frequency in rows.all()]
+        "difficulty": difficulty, "frequency": frequency, "source_domains": sorted(source_domains.get(keyword_id, set())),
+    } for keyword_id, phrase, keyword_type, search_volume, difficulty, frequency in keyword_rows]
     # Architecture needs the existing site as well as missing topics. Import
     # owned titles as planning inventory, never persist them as new keyword gaps.
     own_titles = await db.execute(select(Url.h1).where(

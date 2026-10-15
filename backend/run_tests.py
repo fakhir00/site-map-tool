@@ -9,6 +9,7 @@ import unittest
 
 def main():
     from app.config import settings
+    settings.ENABLE_AUTOCOMPLETE_RESEARCH = False
 
     # Prevent tests from spending real provider credits through an unmocked path.
     for field in type(settings).model_fields:

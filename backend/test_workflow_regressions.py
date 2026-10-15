@@ -55,6 +55,7 @@ class WorkflowTests(unittest.TestCase):
         self.stack.enter_context(patch('scraping.apify_client_module.search_google_via_apify', return_value=[]))
         self.stack.enter_context(patch('nlp.deepseek_seo.enrich_keywords_with_seo_data', return_value={}))
         self.stack.enter_context(patch('nlp.dataforseo.is_dataforseo_configured', return_value=False))
+        self.stack.enter_context(patch('scraping.autocomplete.research_autocomplete', return_value=[]))
         self.stack.enter_context(patch('app.scan.router.settings.DATABASE_URL', f'sqlite+aiosqlite:///{path}'))
         self.client = self.stack.enter_context(TestClient(app))
         with self.sessions() as db:
@@ -90,6 +91,30 @@ class WorkflowTests(unittest.TestCase):
             self.client.headers.pop('Authorization')
             self.assertEqual(self.client.get('/api/providers/ai/status').status_code, 401)
             self.assertEqual(self.client.post('/api/providers/ai/check').status_code, 401)
+
+    def test_hub_import_keeps_competitor_provenance_and_known_unscraped_pages(self):
+        from app.hub_spoke.context import context_with_owned_pages
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+        pid = self.project()
+        with self.sessions() as db:
+            keyword = Keyword(project_id=uuid.UUID(pid), phrase='circuit diagram symbols', search_volume=0)
+            competitor = Url(project_id=uuid.UUID(pid), url='https://competitor.example/symbols', source_type='competitor', status='scraped')
+            own = Url(project_id=uuid.UUID(pid), url='https://own.example/symbol-reference', source_type='own', status='discovered')
+            db.add_all([keyword, competitor, own])
+            db.flush()
+            db.add(KeywordUrl(keyword_id=keyword.id, url_id=competitor.id))
+            db.commit()
+        imported = self.client.get(f'/api/hub-spoke/project-import/{pid}')
+        self.assertEqual(imported.status_code, 200, imported.text)
+        row = next(row for row in imported.json()['keyword_data'] if row['phrase'] == 'circuit diagram symbols')
+        self.assertEqual(row['source_domains'], ['competitor.example'])
+        self.assertEqual(row['search_volume'], 0)
+        async def load_context():
+            async with async_sessionmaker(self.async_engine)() as db:
+                return json.loads(await context_with_owned_pages(db, uuid.UUID(pid), '{}'))
+        context = asyncio.run(load_context())
+        self.assertEqual(context['owned_pages'][0]['url'], 'https://own.example/symbol-reference')
+        self.assertEqual(context['owned_pages'][0]['evidence'], 'owned_sitemap')
 
     def test_real_page_stats_and_invalid_pagination(self):
         pid = self.project()
@@ -366,6 +391,12 @@ class WorkflowTests(unittest.TestCase):
             self.assertTrue(all(page.status == 'scraped' for page in pages))
 
     def test_full_scan_recovers_after_the_first_review_rejects_every_candidate(self):
+        self._check_sparse_scan_recovery(empty_first=True)
+
+    def test_full_scan_researches_more_pages_when_only_one_keyword_passes(self):
+        self._check_sparse_scan_recovery(empty_first=False)
+
+    def _check_sparse_scan_recovery(self, empty_first):
         from scraping.crawler import ScrapedPage
         pid = self.project()
         def extract(seeds, urls, **kwargs):
@@ -374,7 +405,7 @@ class WorkflowTests(unittest.TestCase):
         verdicts = []
         def review(seeds, candidates, **kwargs):
             verdicts.append(candidates)
-            return [] if len(verdicts) == 1 else candidates
+            return [] if empty_first and len(verdicts) == 1 else candidates
         with ExitStack() as mocks:
             mocks.enter_context(patch('workers.pipeline._semantic_terms', return_value=({'circuit'}, set())))
             mocks.enter_context(patch('workers.pipeline._discover_competitor_domains', return_value=['https://competitor.example']))
