@@ -50,7 +50,10 @@ class ProviderReliabilityTests(TestCase):
         second.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value='recovered')))))
         first.__aexit__ = AsyncMock(return_value=False)
         second.__aexit__ = AsyncMock(return_value=False)
-        with patch('nlp.providers.AsyncOpenAI', side_effect=[first, second]) as client:
+        # Control the stage clock so host scheduling delays do not consume the
+        # fallback budget. asyncio still cancels the genuinely stalled request.
+        clock = SimpleNamespace(time=providers.time.time, monotonic=MagicMock(side_effect=[10.0, 10.0, 10.05]))
+        with patch('nlp.providers.AsyncOpenAI', side_effect=[first, second]) as client, patch('nlp.providers.time', clock):
             result = asyncio.run(providers.acomplete({'messages': []}, request_timeout=0.1))
         self.assertEqual(result, 'recovered')
         self.assertEqual(client.call_count, 2)

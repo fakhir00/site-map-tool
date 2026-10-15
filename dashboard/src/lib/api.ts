@@ -100,6 +100,7 @@ export type ScanJob = {
 }
 
 export type Keyword = {
+  seo_recommendation?: string | null
   id: string
   competitor_pages?: number
   phrase: string

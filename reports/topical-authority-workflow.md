@@ -1,5 +1,10 @@
 # Topical-authority workflow repair
 
+> Historical implementation note. The fixed 25-spoke target described below has
+> been removed. Current planning has no minimum or target URL count and preserves
+> useful supporting keywords within pages. See
+> [the current keyword-quality follow-up](keyword-research-quality-2026-10-15.md).
+
 The intended output is one homepage plus roughly 20–30 distinct supporting blogs, reference pages and tools. Existing pages belong in the map as pages to improve. A related keyword is not automatically a new URL; a brief mention on an existing page does not automatically exhaust a deeper instructional intent.
 
 ## Failures found

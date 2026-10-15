@@ -62,7 +62,7 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
   }
 
   return (
-    <Button 
+    <div><Button
       variant="secondary" 
       size="sm" 
       className="h-6 text-[10px] px-2 py-0"
@@ -70,7 +70,7 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
       onClick={() => mutation.mutate()}
     >
       {mutation.isPending ? '...' : 'Intent'}
-    </Button>
+    </Button>{mutation.isError && <p role="alert" className="mt-1 max-w-48 text-xs text-rose-600 dark:text-rose-300">{mutation.error.message}</p>}</div>
   )
 }
 
@@ -84,13 +84,15 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   const [exportError, setExportError] = useState('')
   const [articleError, setArticleError] = useState('')
   const [writingKeywordId, setWritingKeywordId] = useState<string | null>(null)
+  const [copyMessage, setCopyMessage] = useState('')
+  const [copyError, setCopyError] = useState('')
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setSearchQuery(search.trim()), 300)
     return () => window.clearTimeout(timeout)
   }, [search])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error: loadError, refetch } = useQuery({
     queryKey: ['keywords', projectId, page, searchQuery, type],
     queryFn: () => {
       const params = new URLSearchParams({
@@ -104,6 +106,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
       return api.get<KeywordListResponse>(`/projects/${projectId}/keywords?${params}`)
     },
     enabled: Boolean(projectId),
+    retry: false,
     placeholderData: keepPreviousData,
     refetchInterval: isActive ? 7000 : false,
   })
@@ -273,10 +276,16 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                 variant="secondary"
                 size="sm"
                 disabled={selectedPageIds.length === 0}
-                onClick={() => {
+                onClick={async () => {
                   const selectedKeywords = keywords.filter(k => selectedIds.has(k.id)).map(k => k.phrase).join('\n')
-                  navigator.clipboard.writeText(selectedKeywords)
-                  alert('Copied to clipboard!')
+                  setCopyError('')
+                  setCopyMessage('')
+                  try {
+                    await navigator.clipboard.writeText(selectedKeywords)
+                    setCopyMessage('Selected keywords copied.')
+                  } catch {
+                    setCopyError('Could not copy keywords. Allow clipboard access or use Export CSV.')
+                  }
                 }}
               >
                 Copy
@@ -333,6 +342,11 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
 
       {exportError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{exportError}</div>}
       {articleError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{articleError}</div>}
+      {(loadError || saveMutation.error || topPicksMutation.error || bulkSaveMutation.error || bulkDeleteMutation.error || copyError) && <div role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
+        {loadError ? `Could not load keywords: ${loadError.message}` : saveMutation.error?.message || topPicksMutation.error?.message || bulkSaveMutation.error?.message || bulkDeleteMutation.error?.message || copyError}
+        {loadError && <Button size="sm" variant="secondary" className="ml-3" onClick={() => void refetch()}>Retry keywords</Button>}
+      </div>}
+      {copyMessage && <p role="status" className="px-4 py-2 text-sm text-teal-700 dark:text-teal-300">{copyMessage}</p>}
 
       <>
           <div className="overflow-x-auto">
@@ -353,7 +367,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                 {keywords.length === 0 ? (
                   <tr>
                     <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={8}>
-                      No keyword gaps found yet.
+                      {loadError ? 'Keyword results are temporarily unavailable.' : 'No keyword gaps found yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -378,6 +392,10 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                             {keyword.phrase}
                           </a>
                         </div>
+                        {keyword.seo_recommendation && <details className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                          <summary className="cursor-pointer text-cyan-700 dark:text-cyan-300">Why this keyword?</summary>
+                          <p className="mt-1 whitespace-pre-wrap">{keyword.seo_recommendation}</p>
+                        </details>}
                       </td>
                       <td className="px-5 py-4">
                         <KeywordIntentBadge keywordPhrase={keyword.phrase} />

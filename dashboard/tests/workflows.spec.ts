@@ -225,6 +225,51 @@ test('saved keyword actions report API and clipboard failures', async ({ page })
   await expect(page.getByRole('status')).toContainText('Could not copy')
 })
 
+test('keyword gaps explain their value and report failed actions', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'test-token')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('Denied')) } })
+  })
+  await mockAPI(page)
+  await page.route(`**/api/projects/${id}/keywords?*`, route => route.fulfill({ json: {
+    items: [{ id, phrase: 'lunar age calculation examples', keyword_type: 'long-tail', frequency: 1,
+      search_volume: null, difficulty: null, source_urls: [], sources: [],
+      seo_recommendation: 'Explain leap-month examples in the existing calculation guide.', created_at: project.created_at }],
+    total: 1, page: 1, page_size: 50, pages: 1,
+  } }))
+  await page.route('**/api/website-prompts/analyze-intent', route => route.fulfill({ status: 503, json: { detail: 'Intent service unavailable' } }))
+  await page.route('**/keywords/bulk-save', route => route.fulfill({ status: 503, json: { detail: 'Keyword save unavailable' } }))
+  await page.goto(`/projects/${id}`)
+  await page.getByText('Why this keyword?', { exact: true }).click()
+  await expect(page.getByText('Explain leap-month examples in the existing calculation guide.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Intent', exact: true }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Intent service unavailable' })).toBeVisible()
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await page.locator('tbody input[type=checkbox]').check()
+  await page.getByRole('button', { name: 'Copy', exact: true }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not copy keywords' })).toBeVisible()
+  await expect(page.getByText('Selected keywords copied.', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Blog', exact: true }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Keyword save unavailable' })).toBeVisible()
+})
+
+test('failed keyword loading is not presented as zero gaps and can be retried', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'test-token'))
+  await mockAPI(page)
+  let failed = true
+  await page.route(`**/api/projects/${id}/keywords?*`, route => failed
+    ? route.fulfill({ status: 503, json: { detail: 'Research database unavailable' } })
+    : route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 50, pages: 1 } }))
+  const failedResponse = page.waitForResponse(response => response.url().includes(`/projects/${id}/keywords?`) && response.status() === 503)
+  await page.goto(`/projects/${id}`)
+  await failedResponse
+  await expect(page.getByRole('alert')).toContainText('Could not load keywords')
+  await expect(page.getByText('No keyword gaps found yet.', { exact: true })).toHaveCount(0)
+  failed = false
+  await page.getByRole('button', { name: 'Retry keywords', exact: true }).click()
+  await expect(page.getByText('No keyword gaps found yet.', { exact: true })).toBeVisible()
+})
+
 test('authority planner uses intent validation without sending a spoke target', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('token', 'test-token'))
   await mockAPI(page)

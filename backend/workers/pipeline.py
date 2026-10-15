@@ -522,14 +522,14 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             return
         _sync_project_counts(db, project)
 
-        # ── DeepSeek SEO Enrichment ──────────────────────────────────
+        # Fill missing editorial notes without replacing the evidence-backed review.
         try:
             from nlp.deepseek_seo import enrich_keywords_with_seo_data, is_deepseek_configured
             if is_deepseek_configured():
                 unenriched = db.execute(
                     select(Keyword.id, Keyword.phrase).where(
                         Keyword.project_id == project_uuid,
-                        Keyword.search_volume.is_(None),
+                        Keyword.seo_recommendation.is_(None),
                     )
                 ).all()
                 if unenriched:
@@ -793,6 +793,10 @@ def _mark_chunk_failed(
 def _competitor_gap_completion_message(
     gap_count: int, domains: list[str], diagnostics: dict[str, Any], discovery_notes: list[str],
 ) -> str | None:
+    unreviewed = diagnostics.get("review", {}).get("unreviewed", 0)
+    if unreviewed:
+        return (f"Scan completed with partial keyword review: {unreviewed} candidates could not be evaluated. "
+                "Reviewed opportunities were kept; retry research to finish the remaining candidates.")
     if gap_count:
         return None
     stage = diagnostics.get("outcome")
@@ -1164,6 +1168,7 @@ def _process_dataforseo_keywords(
             "tier": "outlier",
             "search_volume": item.get("search_volume"),
             "difficulty": item.get("difficulty"),
+            "seo_recommendation": item.get("review_reason"),
         }
     _store_keywords(db, project_id, accumulator)
     logger.info(
@@ -1179,8 +1184,12 @@ def _review_provider_keywords(db, project_id, seeds, candidates, topic_terms, ne
     from nlp.openrouter import filter_keyword_gap_recommendations, is_ai_configured
     owned = _own_content_keyword_phrases(db, project_id, topic_terms, negative_terms)
     candidates = [item for item in candidates if item["phrase"] not in owned]
-    if not candidates or not is_ai_configured():
+    if not candidates:
         return candidates
+    if not is_ai_configured():
+        if diagnostics is not None:
+            diagnostics.append(f"{provider} returned candidates, but no AI provider is configured to review relevance and existing coverage; unreviewed candidates were withheld.")
+        return []
     context = _keyword_research_context(db, project_id, audit_summary)
     supplied = {item["phrase"]: item for item in candidates}
     reviewable = [{**item, "evidence": {"kind": "provider_keyword", "provider": provider,
@@ -1317,6 +1326,8 @@ def _process_apify_keywords(
         intent = item.get("intent")
         cpc = item.get("cpc")
         recommendation_parts = []
+        if item.get("review_reason"):
+            recommendation_parts.append(item["review_reason"])
         if intent:
             recommendation_parts.append(f"Search intent: {intent}")
         if cpc is not None:
@@ -3094,6 +3105,7 @@ def _ensure_minimum_keyword_count(
                 "score": 1.0,
                 "source": "sitemap_ai",
                 "tier": "outlier",
+                "seo_recommendation": item.get("review_reason"),
             }
 
         if accumulator:

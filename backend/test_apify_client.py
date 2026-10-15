@@ -360,6 +360,8 @@ class ApifyClientTests(TestCase):
             with (
                 patch("scraping.apify_client_module.is_apify_configured", return_value=True),
                 patch("scraping.apify_client_module.research_keywords_via_apify", return_value=researched),
+                patch("nlp.openrouter.is_ai_configured", return_value=True),
+                patch("nlp.openrouter.filter_keyword_gap_recommendations", side_effect=lambda seeds, rows, **kw: rows),
             ):
                 count = _process_apify_keywords(
                     db,

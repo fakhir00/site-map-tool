@@ -25,6 +25,7 @@ class KeywordMetricInput(BaseModel):
     difficulty: float | None = None
     frequency: int = 1
     source_domains: list[str] = Field(default_factory=list)
+    seo_recommendation: str | None = Field(default=None, max_length=3000)
 
 
 class KeywordWorkspaceRequest(BaseModel):
@@ -120,6 +121,7 @@ def _keyword_records(body: KeywordWorkspaceRequest) -> list[dict[str, Any]]:
         "difficulty": metrics[phrase].difficulty if phrase in metrics else None,
         "frequency": metrics[phrase].frequency if phrase in metrics else 1,
         "source_domains": metrics[phrase].source_domains if phrase in metrics else [],
+        "seo_recommendation": metrics[phrase].seo_recommendation if phrase in metrics else None,
     } for phrase in _basic_clean(body.keywords)]
     return normalize_keyword_records(records, body.primary_keyword or _primary_keyword_from_context(body.context))
 
@@ -192,7 +194,7 @@ async def import_project_keywords(
     )
     canonical_primary = _primary_keyword_from_context(context)
     rows = await db.execute(
-        select(Keyword.id, Keyword.phrase, Keyword.keyword_type, Keyword.search_volume, Keyword.difficulty, Keyword.frequency)
+        select(Keyword.id, Keyword.phrase, Keyword.keyword_type, Keyword.search_volume, Keyword.difficulty, Keyword.frequency, Keyword.seo_recommendation)
         .where(Keyword.project_id == project.id)
         .order_by(Keyword.frequency.desc(), Keyword.created_at.asc()).limit(5000)
     )
@@ -211,7 +213,8 @@ async def import_project_keywords(
     records = [{
         "phrase": phrase, "type": keyword_type, "search_volume": search_volume,
         "difficulty": difficulty, "frequency": frequency, "source_domains": sorted(source_domains.get(keyword_id, set())),
-    } for keyword_id, phrase, keyword_type, search_volume, difficulty, frequency in keyword_rows]
+        "seo_recommendation": recommendation,
+    } for keyword_id, phrase, keyword_type, search_volume, difficulty, frequency, recommendation in keyword_rows]
     # Architecture needs the existing site as well as missing topics. Import
     # owned titles as planning inventory, never persist them as new keyword gaps.
     own_titles = await db.execute(select(Url.h1).where(

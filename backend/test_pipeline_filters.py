@@ -1145,6 +1145,13 @@ class PipelineFilterTests(TestCase):
                         "phrase": "circuit diagram tool",
                         "type": "primary",
                         "volume": "High",
+                        "decision": "keep",
+                        "reason": "A supported diagram task",
+                        "reader_need": "Draw a circuit diagram",
+                        "coverage_gap": "Explain how to choose a diagram tool",
+                        "evidence_quote": "circuit diagram tool",
+                        "placement": "new_topic",
+                        "target_topic": "Choosing a circuit diagram tool",
                     }
                 ],
             ),

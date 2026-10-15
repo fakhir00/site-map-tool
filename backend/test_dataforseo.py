@@ -212,6 +212,8 @@ class DataForSeoTests(TestCase):
             with (
                 patch("nlp.dataforseo.is_dataforseo_configured", return_value=True),
                 patch("nlp.dataforseo.collect_keyword_research", return_value=research),
+                patch("nlp.openrouter.is_ai_configured", return_value=True),
+                patch("nlp.openrouter.filter_keyword_gap_recommendations", side_effect=lambda seeds, rows, **kw: rows),
             ):
                 count = _process_dataforseo_keywords(
                     db,

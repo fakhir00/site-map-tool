@@ -111,6 +111,11 @@ that evidence. It is not a guarantee that every function is defect-free.
 
 ## Local architecture follow-up — 4 October 2026
 
+For the subsequent keyword-quality and workflow fixes, see the
+[15 October follow-up](keyword-research-quality-2026-10-15.md). It records the
+current review requirements, preserved research findings, verification and
+remaining hosted-release acceptance work.
+
 Page approval now requires an independent task, unique user value and a capability
 justification for every surviving spoke. Minor features must be consolidated into
 relevant resources; unsupported-capability proposals can be rejected even when

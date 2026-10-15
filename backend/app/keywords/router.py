@@ -110,14 +110,6 @@ async def generate_keywords(
     if not topic_terms:
         topic_terms = seed_keyword_terms(seed_keywords)
         
-    ai_keywords = await generate_ai_keywords(
-        seed_keywords,
-        topic_terms=topic_terms,
-        negative_terms=negative_terms,
-        audit_summary=project.audit_summary,
-        apply_gap_filter=False,
-        target_count=min(60, settings.AI_KEYWORD_GENERATION_BATCH_SIZE),
-    )
     # Get existing keyword phrases in this project to avoid duplicates
     q_existing = select(Keyword.phrase).where(Keyword.project_id == project.id)
     result = await db.execute(q_existing)
@@ -136,6 +128,20 @@ async def generate_keywords(
     
     # Combine both sets for filtering
     all_excluded = existing_phrases | own_phrases
+    from app.hub_spoke.context import context_with_owned_pages
+    research_context = await context_with_owned_pages(db, project.id, project.audit_summary or "")
+    # Release the read transaction before potentially lengthy provider requests.
+    await db.commit()
+    ai_keywords = await generate_ai_keywords(
+        seed_keywords,
+        topic_terms=topic_terms,
+        negative_terms=negative_terms,
+        audit_summary=research_context,
+        apply_gap_filter=True,
+        target_count=min(60, settings.AI_KEYWORD_GENERATION_BATCH_SIZE),
+        exclude_phrases=all_excluded,
+        evidence_phrases=sorted(existing_phrases),
+    )
     ai_keywords = [kw for kw in ai_keywords if kw["phrase"] not in all_excluded]
 
     collected = {kw["phrase"]: kw for kw in ai_keywords}
@@ -147,8 +153,8 @@ async def generate_keywords(
             seed_keywords,
             topic_terms=topic_terms,
             negative_terms=negative_terms,
-            audit_summary=project.audit_summary,
-            apply_gap_filter=False,
+            audit_summary=research_context,
+            apply_gap_filter=True,
             target_count=settings.AI_KEYWORD_GENERATION_BATCH_SIZE,
             exclude_phrases=all_excluded | set(collected),
             evidence_phrases=sorted(existing_phrases),
@@ -191,6 +197,7 @@ async def generate_keywords(
                 phrase=phrase,
                 keyword_type=kw_data["type"],
                 frequency=1,
+                seo_recommendation=kw_data.get("review_reason"),
             )
             db.add(keyword)
             keywords_by_phrase[phrase] = keyword
@@ -223,7 +230,7 @@ async def enrich_keywords_seo(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Enrich keywords with SEO data (search volume, difficulty, AI recommendation) via DeepSeek."""
+    """Fill missing editorial guidance; AI never supplies measured keyword metrics."""
     project = await _assert_owns_project(project_id, current_user.id, db)
 
     from nlp.deepseek_seo import enrich_keywords_with_seo_data, is_deepseek_configured
@@ -233,17 +240,18 @@ async def enrich_keywords_seo(
     from nlp.keywords import normalize_seed_keywords
     seed_keywords = normalize_seed_keywords(project.target_keywords) if project.target_keywords else []
 
-    # Fetch keywords that don't have search_volume yet
+    # Preserve reviewed reader needs and placements. Editorial enrichment is not
+    # a replacement for research-provider metrics or the quality review.
     result = await db.execute(
         select(Keyword.id, Keyword.phrase).where(
             Keyword.project_id == project.id,
-            Keyword.search_volume.is_(None),
+            Keyword.seo_recommendation.is_(None),
         )
     )
     unenriched = result.all()
 
     if not unenriched:
-        return {"message": "All keywords already have SEO data", "enriched": 0}
+        return {"message": "All keywords already have editorial guidance", "enriched": 0}
 
     phrases = [row[1] for row in unenriched]
     phrase_to_id = {row[1].strip().lower(): row[0] for row in unenriched}
@@ -261,15 +269,13 @@ async def enrich_keywords_seo(
         if kw_id:
             await db.execute(
                 sa_update(Keyword).where(Keyword.id == kw_id).values(
-                    search_volume=data.get("search_volume"),
-                    difficulty=data.get("difficulty"),
                     seo_recommendation=data.get("recommendation"),
                 )
             )
             enriched_count += 1
 
     await db.commit()
-    return {"message": f"Enriched {enriched_count} keywords with SEO data", "enriched": enriched_count}
+    return {"message": f"Added editorial guidance to {enriched_count} keywords", "enriched": enriched_count}
 
 
 @router.post("/{project_id}/keywords/top-picks")
@@ -372,6 +378,7 @@ async def generate_hub_spoke(
             Keyword.search_volume,
             Keyword.difficulty,
             Keyword.frequency,
+            Keyword.seo_recommendation,
         )
         .where(Keyword.project_id == project.id)
         .order_by(Keyword.frequency.desc(), Keyword.created_at.asc())
@@ -383,7 +390,8 @@ async def generate_hub_spoke(
         "search_volume": search_volume,
         "difficulty": difficulty,
         "frequency": frequency,
-    } for phrase, keyword_type, search_volume, difficulty, frequency in result.all()]
+        "seo_recommendation": recommendation,
+    } for phrase, keyword_type, search_volume, difficulty, frequency, recommendation in result.all()]
     if not records:
         raise HTTPException(status_code=400, detail="This project has no keywords to architect.")
     main_kw = (project.target_keywords or [project.name])[0]

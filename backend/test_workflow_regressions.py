@@ -97,7 +97,8 @@ class WorkflowTests(unittest.TestCase):
         from sqlalchemy.ext.asyncio import async_sessionmaker
         pid = self.project()
         with self.sessions() as db:
-            keyword = Keyword(project_id=uuid.UUID(pid), phrase='circuit diagram symbols', search_volume=0)
+            keyword = Keyword(project_id=uuid.UUID(pid), phrase='circuit diagram symbols', search_volume=0,
+                              seo_recommendation='Explain unfamiliar symbols in the existing symbol reference.')
             competitor = Url(project_id=uuid.UUID(pid), url='https://competitor.example/symbols', source_type='competitor', status='scraped')
             own = Url(project_id=uuid.UUID(pid), url='https://own.example/symbol-reference', source_type='own', status='discovered')
             db.add_all([keyword, competitor, own])
@@ -109,6 +110,7 @@ class WorkflowTests(unittest.TestCase):
         row = next(row for row in imported.json()['keyword_data'] if row['phrase'] == 'circuit diagram symbols')
         self.assertEqual(row['source_domains'], ['competitor.example'])
         self.assertEqual(row['search_volume'], 0)
+        self.assertEqual(row['seo_recommendation'], 'Explain unfamiliar symbols in the existing symbol reference.')
         async def load_context():
             async with async_sessionmaker(self.async_engine)() as db:
                 return json.loads(await context_with_owned_pages(db, uuid.UUID(pid), '{}'))
@@ -519,6 +521,51 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(architect.await_args.args[0]), 21)
         self.assertTrue(architect.await_args.kwargs['discover_topics'])
         self.assertNotIn('target_spokes', architect.await_args.kwargs)
+
+    def test_manual_keyword_generation_reviews_owned_coverage_and_persists_findings(self):
+        pid = self.project()
+        owned_url = 'https://own.example/circuit-guide'
+        note = 'Explain troubleshooting as a section in the existing circuit guide.'
+        with self.sessions() as db:
+            db.add(Url(project_id=uuid.UUID(pid), url=owned_url, source_type='own', status='scraped',
+                       h1='Circuit Guide', scraped_text='How to draw a circuit diagram.'))
+            db.commit()
+        with (
+            patch('app.keywords.router.generate_ai_keywords', new=AsyncMock(side_effect=[
+                [{'phrase': 'circuit diagram troubleshooting', 'type': 'long-tail', 'review_reason': note}], [], [], [], [],
+            ])) as generate,
+            patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value={
+                'core_terms': ['circuit'], 'negative_terms': [],
+            })),
+        ):
+            response = self.client.post(f'/api/projects/{pid}/keywords/generate')
+        self.assertEqual(response.status_code, 200, response.text)
+        for call in generate.await_args_list:
+            self.assertTrue(call.kwargs['apply_gap_filter'])
+            self.assertIn(owned_url, call.kwargs['audit_summary'])
+        rows = self.client.get(f'/api/projects/{pid}/keywords').json()['items']
+        self.assertEqual(rows[0]['seo_recommendation'], note)
+
+    def test_editorial_enrichment_preserves_measured_metrics_and_reviewed_guidance(self):
+        pid = self.project()
+        with self.sessions() as db:
+            db.add_all([
+                Keyword(project_id=uuid.UUID(pid), phrase='circuit diagram examples', search_volume=100, difficulty=0),
+                Keyword(project_id=uuid.UUID(pid), phrase='circuit diagram mistakes', seo_recommendation='Reviewed missing examples.'),
+            ])
+            db.commit()
+        with patch('nlp.deepseek_seo.is_deepseek_configured', return_value=True), patch(
+            'nlp.deepseek_seo.enrich_keywords_with_seo_data', return_value={
+                'circuit diagram examples': {'search_volume': None, 'difficulty': None, 'recommendation': 'Show a worked example.'},
+            },
+        ) as enrich:
+            response = self.client.post(f'/api/projects/{pid}/keywords/seo-enrich')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(enrich.call_args.args[0], ['circuit diagram examples'])
+        rows = {row['phrase']: row for row in self.client.get(f'/api/projects/{pid}/keywords').json()['items']}
+        self.assertEqual(rows['circuit diagram examples']['search_volume'], 100)
+        self.assertEqual(rows['circuit diagram examples']['difficulty'], 0)
+        self.assertEqual(rows['circuit diagram mistakes']['seo_recommendation'], 'Reviewed missing examples.')
 
     def test_topical_map_api_preserves_explicit_main_topic_and_declared_owned_urls(self):
         from test_authority_planning import PRIMARY, TOPICS, fixture_payload

@@ -19,7 +19,9 @@ from workers.pipeline import (_discover_content_urls, _own_content_keyword_phras
 
 def decision(item, keep=True):
     return {"source_phrase": item["phrase"], "phrase": item["phrase"], "decision": "keep" if keep else "reject",
-            "reason": "Supported reader question" if keep else "Unrelated intent", "type": "long-tail"}
+            "reason": "Supported reader question" if keep else "Unrelated intent", "type": "long-tail",
+            "reader_need": "Understand " + item["phrase"], "coverage_gap": "Explain the specific traits beyond the quiz result",
+            "evidence_quote": item["phrase"], "placement": "supporting", "target_topic": "Animal personality profiles", "target_url": ""}
 
 
 def pending_from_prompt(kwargs):
@@ -27,6 +29,52 @@ def pending_from_prompt(kwargs):
 
 
 class ResearchQualityTests(unittest.TestCase):
+    def test_duplicate_import_merges_provenance_without_losing_measured_metrics(self):
+        from nlp.hub_spoke_agent import normalize_keyword_records
+        rows = [
+            {"phrase": "wolf personality traits", "search_volume": 50, "difficulty": 0},
+            {"phrase": "wolf personality traits", "source_domains": ["competitor.example"],
+             "seo_recommendation": "Explain traits in the existing wolf profile."},
+        ]
+        for order in (rows, list(reversed(rows))):
+            merged = normalize_keyword_records(order)[0]
+            self.assertEqual(merged["search_volume"], 50)
+            self.assertEqual(merged["difficulty"], 0)
+            self.assertEqual(merged["source_domains"], ["competitor.example"])
+            self.assertIn("existing wolf profile", merged["seo_recommendation"])
+
+    def test_partial_review_is_not_reported_as_complete_even_with_accepted_gaps(self):
+        from workers.pipeline import _competitor_gap_completion_message
+        message = _competitor_gap_completion_message(7, ["https://competitor.example"], {"review": {"unreviewed": 3}}, [])
+        self.assertIn("3 candidates could not be evaluated", message)
+        self.assertIn("Reviewed opportunities were kept", message)
+
+    def test_generic_positive_review_is_repaired_not_accepted_as_quality(self):
+        item = {"phrase": "wolf personality traits"}
+        weak = {"source_phrase": item["phrase"], "phrase": item["phrase"], "decision": "keep", "reason": "Relevant query"}
+        for payload in ({"decisions": [weak]}, [weak], {"keywords": [weak]}):
+            chat = MagicMock(side_effect=[payload, {"decisions": [decision(item)]}])
+            result = review_candidates(["animal quiz"], [item], "", 10, chat)
+            self.assertEqual(chat.call_count, 2)
+            self.assertEqual(result[0]["opportunity"]["placement"], "supporting")
+            self.assertIn("specific traits", result[0]["review_reason"])
+
+    def test_invented_evidence_or_existing_page_cannot_approve_a_gap(self):
+        item = {"phrase": "wolf personality traits"}
+        context = json.dumps({"OWN PAGE INVENTORY": ["https://own.example/wolf"]})
+        for invalid in (
+            {"evidence_quote": "unsupported commercial wolf product"},
+            {"placement": "improve_existing", "target_url": "https://invented.example/wolf"},
+            {"placement": "improve_existing", "target_url": ""},
+            {"placement": "new_topic", "target_url": "https://own.example/wolf"},
+            {"coverage_gap": ""},
+        ):
+            chat = MagicMock(return_value={"decisions": [{**decision(item), **invalid}]})
+            self.assertIsNone(review_candidates(["animal quiz"], [item], context, 10, chat))
+        reviewed = {**decision(item), "placement": "improve_existing", "target_url": "https://own.example/wolf"}
+        result = review_candidates(["animal quiz"], [item], context, 10, MagicMock(return_value={"decisions": [reviewed]}))
+        self.assertEqual(result[0]["opportunity"]["target_url"], "https://own.example/wolf")
+
     def test_large_inventory_reviews_every_keyword_in_bounded_batches(self):
         rows = [{"phrase": f"{animal} personality {aspect}", "evidence": {"excerpt": f"{animal} traits"}}
                 for animal in ("wolf", "owl", "bear", "fox", "eagle", "deer", "lion")
@@ -219,3 +267,11 @@ class ResearchPersistenceTests(unittest.TestCase):
         ):
             rows = _review_provider_keywords(self.db, self.project.id, ["spirit animal quiz"], raw, set(), set(), "", "Apify")
         self.assertEqual(rows, [])
+
+    def test_missing_review_provider_does_not_publish_unchecked_keywords(self):
+        notes = []
+        with patch("nlp.openrouter.is_ai_configured", return_value=False):
+            rows = _review_provider_keywords(self.db, self.project.id, ["animal quiz"],
+                [{"phrase": "wolf personality traits", "search_volume": 50}], set(), set(), "", "Apify", notes)
+        self.assertEqual(rows, [])
+        self.assertIn("unreviewed candidates were withheld", notes[0])
