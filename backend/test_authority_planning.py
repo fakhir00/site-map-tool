@@ -108,6 +108,26 @@ class AuthorityPlanningTests(unittest.TestCase):
         self.assertEqual(plan['authority_coverage']['status'], 'partial')
         self.assertIn('timed out', plan['authority_coverage']['discovery_message'])
 
+    def test_existing_main_topic_url_is_reused_without_replanning_or_relocation(self):
+        payload = fixture_payload(TOPICS[:1])
+        existing_url = 'https://example.com/calculator/'
+        payload['pages'][0]['existing_url'] = existing_url
+        chat = AsyncMock(side_effect=[{'proposals': []}, payload, approved_review(payload)])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', chat,
+        ):
+            plan = asyncio.run(build_site_architecture(
+                [{'phrase': PRIMARY}, {'phrase': TOPICS[0][0]}], primary_keyword=PRIMARY,
+                discover_topics=True, context=json.dumps({'owned_pages': [{'url': existing_url, 'title': PRIMARY}]}),
+            ))
+        self.assertEqual(chat.await_count, 3)
+        self.assertEqual(plan['master_hub']['existing_url'], existing_url)
+        self.assertEqual(plan['master_hub']['slug'], '/calculator/')
+        self.assertEqual(plan['master_hub']['action'], 'update')
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+        self.assertTrue(any(link['source_url'] == existing_url or link['target_url'] == existing_url
+                            for link in plan['link_plan']))
+
     def test_homepage_only_is_validated_without_any_count_shortfall(self):
         chat = AsyncMock(side_effect=[{'proposals': []}, fixture_payload([]),
                                      approved_review(fixture_payload([]))])

@@ -1,4 +1,4 @@
-# Planning inventory follow-up — 15 October 2026
+# Planning inventory follow-up — 15–16 October 2026
 
 Stricter gap review could starve Hub Spoke because planning previously depended
 primarily on the accepted new-gap table. Useful queries already answered by the
@@ -27,6 +27,10 @@ useful supporting keywords and prevent a scan with no gaps from starting a map.
   incorrectly treated already-assigned supporting keywords as separate URLs.
   Invalid-reference retries now name the offending pair and valid targets;
   explicit merge judgments still need the existing majority-YES evidence test.
+- Permit the main topic hub to reuse a verified existing non-homepage URL, such
+  as `/quiz/`. Ownership reconciliation previously selected that URL correctly
+  and final validation then rejected it for not being `/`, wasting a full
+  planning retry. The default for a new main hub remains `/`.
 
 The new `research_keywords` table is created through the existing startup schema
 initialization. It is project scoped, cleared on a fresh scan and removed with
@@ -49,7 +53,7 @@ zero preservation, editorial labels, a 403-keyword inventory capped at 300 and
 fresh-scan cleanup. Browser tests exercise main-topic-only generation and a
 zero-gap import retaining research provenance in the build request.
 
-Validation: **292 backend tests passed** through the offline runner. All **49
+Validation: **293 backend tests passed** through the offline runner. All **49
 browser cases passed** across a full run and three targeted reruns. The initial
 browser run hit three five-second render deadlines under host load; the new
 import test now waits for its import response before inspecting the result.
@@ -67,6 +71,17 @@ and four public page summaries: the [homepage](https://www.animalsoulquiz.com/),
 accounted for all 27: 18 potential gaps, six covered, three rejected and zero
 unreviewed. The six covered queries now remain planning inputs. Partial owned
 coverage cannot establish 18 confirmed gaps across the complete site.
+
+The initial live architecture attempts failed because semantic review confused
+supporting keywords with separate pages. After the conflict-target prompt and
+feedback fix, the live discovery/planning/placement/review run completed with
+**37 of 37 planning keywords used across 11 page targets, including 26 supporting
+keywords**, and a passed semantic audit. This inventory includes editorial
+discovery, so those counts are not 37 measured keywords or 11 confirmed gaps.
+The run also exposed the non-homepage ownership validation conflict, fixed in
+the final code and covered by a full architecture-orchestration regression.
+The partial public inventory does not establish complete-site duplicate safety;
+the hosted scan must supply all known owned URLs before release acceptance.
 
 This is a local code change, not a deployment. Provider availability and quotas
 remain external constraints. No measured search-volume increase or ranking

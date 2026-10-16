@@ -491,6 +491,9 @@ Rules:
   overlapping outlines; retain all useful supporting keywords on the surviving page.
 - The requested PRIMARY TOPIC is the exact-match-domain homepage. It is non-negotiable: master_target
   must equal "{primary_keyword}" exactly, it is the only homepage, and it represents the site's core product.
+  If an existing owned URL already serves this primary task (for example /quiz/), keep that exact
+  existing_url as the main topic hub. URL ownership takes precedence over the default homepage
+  location; do not duplicate the task at / or silently relocate the existing page.
 - Build topical authority around that homepage. Create distinct spokes for meaningful subtopics, entities,
   methods, interpretations, use cases, comparisons, accuracy questions, and advanced concepts supported
   by this inventory. A tool page, a manual how-to guide, and an explanatory article have different intent.
@@ -1095,8 +1098,13 @@ def validate_architecture(
     required_master = clean_phrase(required_master_target)
     if required_master and targets and targets[0] != required_master:
         errors.append(f'the EMD homepage must target the primary keyword "{required_master}"')
-    if master.get("slug") != "/":
-        errors.append("the master hub must be the homepage at /")
+    existing_master = urlparse(str(master.get("existing_url") or ""))
+    reuses_master = (
+        master.get("action") == "update" and existing_master.scheme in {"http", "https"}
+        and bool(existing_master.netloc) and master.get("slug") == (existing_master.path or "/")
+    )
+    if master.get("slug") != "/" and not reuses_master:
+        errors.append("the master hub must be at / or reuse its verified existing URL")
     if any(target not in inventory for target in targets):
         errors.append("every page target must be an exact supplied keyword")
     if len(targets) != len(set(targets)):
