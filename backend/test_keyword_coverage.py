@@ -54,6 +54,31 @@ def coverage_reply(prompt, destinations):
 
 
 class KeywordCoverageTests(unittest.TestCase):
+    def test_compact_large_plan_preserves_all_keywords_owned_urls_and_page_briefs(self):
+        primary, records, payload, destinations = animal_inventory()
+        refs = {item['phrase']: f'k{index}' for index, item in enumerate(records)}
+        targets = {page['target_keyword'] for page in payload['pages']}
+        compact = {'master_target': refs[primary], 'pages': [[
+            refs[page['target_keyword']], page['article_title'], page['search_intent'], 'Animal profiles',
+            page['page_type'], page.get('existing_url'), None if page['target_keyword'] == primary else refs[primary],
+            page['content_brief'], ['Explain the personality traits and strengths.'], ['Personality traits'], [],
+        ] for page in payload['pages']], 'keyword_decisions': [[
+            refs[item['phrase']], 'page_target' if item['phrase'] in targets else 'supporting',
+            refs[item['phrase'] if item['phrase'] in targets else destinations[item['phrase']]],
+            'title' if item['phrase'] in targets else 'h2:Personality traits', 'Supported animal interpretation',
+        ] for item in records]}
+        chat = AsyncMock(side_effect=[compact, approved_review(payload)])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', chat):
+            plan = asyncio.run(build_site_architecture(records, primary_keyword=primary, context=json.dumps({
+                'owned_pages': [{'url': page['existing_url']} for page in payload['pages'][1:]],
+            })))
+        self.assertIn('COMPACT OUTPUT CONTRACT', chat.await_args_list[0].kwargs['user_prompt'])
+        self.assertEqual(plan['keyword_coverage']['used'], 73)
+        self.assertEqual(plan['keyword_coverage']['supporting'], 66)
+        self.assertTrue(all(page['action'] == 'update' for page in plan['spokes']))
+        self.assertTrue(all(page['content_requirements'] for page in plan['spokes']))
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+
     def test_full_build_uses_73_keywords_across_seven_pages_without_duplicate_urls(self):
         primary, records, payload, destinations = animal_inventory()
         coverage_batches = []

@@ -1,5 +1,6 @@
 """Attach server-owned crawl evidence to a topical architecture request."""
 import json
+from urllib.parse import urlparse
 from sqlalchemy import select
 from app.models import Url
 
@@ -24,5 +25,9 @@ async def context_with_owned_pages(db, project_id, context):
                        'evidence': 'owned_crawl' if text else 'owned_sitemap'}
                   for index, (url, h1, text) in enumerate(rows.all())})
     payload['owned_pages'] = list(pages.values())
+    competitor_urls = (await db.execute(select(Url.url).where(
+        Url.project_id == project_id, Url.source_type == 'competitor',
+    ))).scalars()
+    payload['competitor_exclusions'] = sorted({urlparse(url).hostname for url in competitor_urls if urlparse(url).hostname})
     payload['owned_coverage_note'] = 'All known owned URLs and titles; bounded text excerpts. An absent topic is not proof of absence from the whole site.'
     return json.dumps(payload)

@@ -439,7 +439,7 @@ def _run_full_pipeline(project_id: str, scan_job_id: str, resume_existing: bool 
             diagnostics=provider_diagnostics,
         )
         logger.info("[%s] DataForSEO pass stored %s keywords", project_id, dataforseo_count)
-        if apify_keyword_count + dataforseo_count < 20:
+        if apify_keyword_count + dataforseo_count < 60:
             autocomplete_count = _process_autocomplete_keywords(
                 db, project_uuid, seed_keywords, topic_terms, negative_terms,
                 audit_summary, search_locale=project.search_locale, diagnostics=provider_diagnostics,
@@ -1217,6 +1217,25 @@ def _review_provider_keywords(db, project_id, seeds, candidates, topic_terms, ne
             for item in reviewed if item.get("phrase") in supplied and item["phrase"] not in owned]
 
 
+def _site_research_seeds(db, project_id):
+    """Use observed short titles/slugs as research seeds, never as measured queries."""
+    from app.models import Url
+    from nlp.keywords import clean_phrase
+    pages = db.execute(select(Url.h1, Url.url).where(
+        Url.project_id == project_id, Url.source_type == "own",
+    ).order_by(Url.url)).all()
+    seeds = []
+    for heading, url in pages:
+        labels = [heading or "", unquote(urlparse(url).path.rstrip('/').rsplit('/', 1)[-1]).replace('-', ' ')]
+        for label in labels:
+            phrase = clean_phrase(label)
+            if 2 <= len(phrase.split()) <= 6:
+                if phrase not in seeds:
+                    seeds.append(phrase)
+                break
+    return seeds
+
+
 def _process_autocomplete_keywords(db, project_id, seed_keywords, topic_terms, negative_terms,
                                    audit_summary, *, search_locale="us", diagnostics=None):
     from app.models import Url
@@ -1225,10 +1244,14 @@ def _process_autocomplete_keywords(db, project_id, seed_keywords, topic_terms, n
     if not settings.ENABLE_AUTOCOMPLETE_RESEARCH or not is_ai_configured():
         return 0
     notes = diagnostics if diagnostics is not None else []
+    # Research the site's demonstrated entities/tasks, not just variations of
+    # the same seed. These titles are query seeds, never accepted keywords.
+    expansion_seeds = _site_research_seeds(db, project_id)
     db.commit()
     candidates = research_autocomplete(
         seed_keywords, topic_terms, negative_terms, locale=search_locale,
         limit=settings.AUTOCOMPLETE_QUERY_LIMIT, diagnostics=notes,
+        expansion_seeds=expansion_seeds, target_count=120,
     )
     if not candidates:
         return 0
@@ -1287,10 +1310,12 @@ def _process_apify_keywords(
         return 0
 
     research_notes: list[str] = []
-    expansion_seeds = sorted(
+    expansion_seeds = _site_research_seeds(db, project_id) + sorted(
         term.removeprefix("__research_seed__") for term in topic_terms or set()
-        if term.startswith("__research_seed__")
+        if term.startswith("__research_seed__") and len(term.split()) <= 6
     )
+    expansion_seeds = [query for query in expansion_seeds
+                       if _keyword_matches_topic(query, seed_keywords, topic_terms, negative_terms)]
     db.commit()
     researched = research_keywords_via_apify(
         seed_keywords, country_code=search_locale, diagnostics=research_notes, expansion_seeds=expansion_seeds,
@@ -3454,7 +3479,24 @@ def _build_heuristic_gap_accumulator(
 
 
 def _store_keywords(db: Session, project_id: uuid.UUID, accumulator: dict[str, dict[str, Any]]) -> None:
-    from app.models import Keyword, KeywordUrl
+    from app.models import Keyword, KeywordUrl, Project, Url
+
+    project = db.get(Project, project_id)
+    primary = (project.target_keywords or [""])[0] if project else ""
+    competitor_domains = list(db.execute(select(Url.source_domain).where(
+        Url.project_id == project_id, Url.source_type == "competitor", Url.source_domain.is_not(None),
+    ).distinct()).scalars())
+    competitor_domains += list(db.execute(select(Url.url).where(
+        Url.project_id == project_id, Url.source_type == "competitor",
+    )).scalars())
+    rejected = [phrase for phrase in accumulator
+                if _phrase_mentions_unrelated_source_brand(phrase, competitor_domains, primary)]
+    if rejected:
+        record_review(db, project_id, [{"source_phrase": phrase, "decision": "reject",
+                      "reason": "Navigational query for a discovered competitor; no explicit comparison intent."}
+                     for phrase in rejected])
+        for phrase in rejected:
+            accumulator.pop(phrase)
 
     for phrase, data in accumulator.items():
         try:

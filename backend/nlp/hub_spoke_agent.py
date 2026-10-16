@@ -408,7 +408,7 @@ def _prompt(records: list[dict[str, Any]], context: str, primary_keyword: str) -
         "A brief mention does not exhaust a deeper instructional intent, but do not duplicate a fully served task. "
         "State an exclusive scope, concrete reader outcome and useful internal links for each page."
     )
-    return f"""
+    prompt = f"""
 Act as a senior technical SEO architect whose specialty is hub-and-spoke information architecture.
 You own the complete decision. Study the website context and every supplied keyword, then create a
 topical-authority architecture that covers the subject deeply without search-intent cannibalization.
@@ -556,6 +556,78 @@ Keep the response compact. Do not write article body copy. Return only one JSON 
 pages must contain the master and every spoke, once each. keyword_decisions must contain every inventory
 keyword once. Use the compact five-value arrays exactly as shown.
 """
+    if len(records) > 60:
+        refs = {f"k{index}": item['phrase'] for index, item in enumerate(records)}
+        prompt = prompt.split("Keep the response compact.", 1)[0] + f"""
+COMPACT OUTPUT CONTRACT FOR THIS LARGE INVENTORY
+Keyword references: {json.dumps(refs, ensure_ascii=False)}
+Use these k-number references instead of repeating keyword strings. Preserve every input decision.
+Return one COMPLETE JSON object. Use concise phrases (about 12 words per descriptive field), not
+article prose. Do not reduce useful keyword coverage or invent pages to fit an arbitrary page count.
+Each page is an array in this exact order:
+[target_ref, article_title, search_intent, topic_group, page_type, existing_url_or_null,
+ parent_ref_or_null, unique_page_value, content_requirements_array, h2_heading_strings, scope_out_array,
+ supporting_groups]
+The requirements and headings must be specific enough to explain the task, ownership and scope.
+supporting_groups is a list of [placement, keyword_refs_array, short_reason] groups assigned to
+THIS page. Group same-purpose keywords together instead of repeating the destination and rationale
+for each synonym. Use h2:heading, faq:question, entity, variation or feature for placement.
+The target_ref automatically receives a page_target decision. Do not repeat it in supporting groups.
+All other usable keywords must occur in exactly one supporting group. Discard only with a concrete
+reason, in the root discarded array: [[keyword_ref, reason], ...]. Do NOT output keyword_decisions.
+Schema: {{"site_strategy":"short rationale", "master_target":"reference for the primary topic",
+"pages":[["k0","Title","Distinct task","Group","article",null,null,"Independent answer",
+["Concrete requirement"],["Specific heading"],["Neighboring task owned elsewhere"],
+[["h2:Specific heading",["k1","k2"],"Questions answered by this section"]]]], "discarded":[]}}
+Account for EVERY keyword reference exactly once. Reuse existing URLs, retain supporting questions,
+and return the closing brackets of the whole object. Do not add fields outside this compact contract.
+"""
+    return prompt
+
+
+def _expand_compact_plan(payload, records):
+    """Expand lossless transport references into the existing public plan schema."""
+    refs = {f"k{index}": item['phrase'] for index, item in enumerate(records)}
+    def keyword(value):
+        return refs.get(value, value) if isinstance(value, str) else value
+    pages = []
+    grouped_decisions = []
+    for raw in payload.get('pages') or []:
+        if isinstance(raw, list) and len(raw) == 12:
+            groups = raw[-1]
+            grouped_decisions.append([keyword(raw[0]), 'page_target', keyword(raw[0]), 'title', str(raw[7])])
+            for placement, members, reason in groups:
+                grouped_decisions.extend([keyword(member), 'supporting', keyword(raw[0]), placement, reason] for member in members)
+            raw = raw[:11]
+        if isinstance(raw, list) and len(raw) == 11:
+            target, title, intent, group, kind, url, parent, value, requirements, headings, scope = raw
+            raw = {'target_keyword': keyword(target), 'article_title': title, 'search_intent': intent,
+                   'spoke_category': group, 'page_type': kind, 'existing_url': url, 'parent_target': keyword(parent),
+                   'unique_page_value': value, 'content_brief': value, 'user_problem': intent,
+                   'url_decision_reason': value, 'content_requirements': requirements, 'scope_out': scope,
+                   'h2_sections': [{'h2_heading': heading, 'section_definition': ''} for heading in headings]}
+        elif isinstance(raw, dict):
+            raw = {**raw, 'target_keyword': keyword(raw.get('target_keyword')),
+                   'parent_target': keyword(raw.get('parent_target'))}
+        pages.append(raw)
+    expanded = {**payload}
+    if grouped_decisions:
+        grouped_decisions.extend([keyword(ref), 'discard', None, None, reason] for ref, reason in payload.get('discarded', []))
+        expanded['keyword_decisions'] = grouped_decisions
+    if 'pages' in payload:
+        expanded['pages'] = pages
+    for field in ('keyword_decisions', 'keyword_assignments'):
+        if field not in payload:
+            continue
+        expanded[field] = []
+        for row in payload[field] or []:
+            if isinstance(row, list) and len(row) >= 5:
+                row = [keyword(row[0]), row[1], keyword(row[2]), *row[3:]]
+            elif isinstance(row, dict):
+                row = {**row, 'keyword': keyword(row.get('keyword')), 'assigned_to': keyword(row.get('assigned_to'))}
+            expanded[field].append(row)
+    expanded['master_target'] = keyword(payload.get('master_target'))
+    return expanded
 
 
 def _coerce_object(payload: Any) -> dict[str, Any] | None:
@@ -653,6 +725,7 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
 def _normalize_plan(
     payload: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str = "",
 ) -> dict[str, Any]:
+    payload = _expand_compact_plan(payload, records)
     metrics = {item["phrase"]: item for item in records}
     if isinstance(payload.get("pages"), list):
         raw_pages = [item for item in payload["pages"] if isinstance(item, dict)]
@@ -1159,7 +1232,9 @@ async def _audit_intent_cannibalization(
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]]:
     """Use a separate review pass to catch semantic overlap hidden by different wording."""
     pages = [plan["master_hub"], *plan["spokes"]]
+    page_refs = {f"p{index}": page["target_keyword"] for index, page in enumerate(pages)}
     review_input = [{
+        "page_id": f"p{index}",
         "target_keyword": page["target_keyword"],
         "search_intent": page["search_intent"],
         "intent_class": page["intent_class"],
@@ -1179,7 +1254,7 @@ async def _audit_intent_cannibalization(
         "existing_url": page.get("existing_url"),
         "parent_target": page.get("parent_target"),
         "internal_links": page.get("internal_links", []),
-    } for page in pages]
+    } for index, page in enumerate(pages)]
     keyword_placements = [{
         "keyword": item["keyword"],
         "assigned_to": item.get("assigned_to"),
@@ -1202,6 +1277,8 @@ Proposed indexable pages:
 
 Allowed conflict targets (copy exact strings from this list):
 {json.dumps([page['target_keyword'] for page in pages], ensure_ascii=False)}
+Stable page references for this review: {json.dumps(page_refs, ensure_ascii=False)}
+Prefer page IDs (p0, p1, ...) in page_a, page_b, preferred_target and assessment target_keyword.
 Only these are separate pages. A supporting keyword, owned URL mentioned in context, title,
 or previously merged target is NOT a separate page. Never report a conflict between a page and
 one of its own supporting keywords. page_a and page_b must be different allowed targets;
@@ -1248,7 +1325,7 @@ remain relevant when they genuinely concern the protected EMD subject.
 Return:
 {{"passed": true, "conflicts": [], "rejections": [], "url_assessments": [{{"target_keyword": "exact surviving spoke target", "classification": "distinct_task", "independent_task": "concrete user problem", "unique_value": "useful answer or workflow absent from other pages", "capability_basis": "specific supplied capability or relevant editorial scope"}}]}}
 or
-{{"passed": false, "conflicts": [{{"page_a": "exact target", "page_b": "exact target", "preferred_target": "page_a or page_b's exact target for the comprehensive destination", "reason": "specific shared task/answer and why the modifier adds no unique value", "resolution": "merge", "risk_type": "same_intent or doorway", "one_page_test": {{"same_user": true, "same_task": true, "same_answer": true, "same_serp_intent": true, "same_entity": true}}}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
+{{"passed": false, "conflicts": [{{"page_a": "p0", "page_b": "p1", "preferred_target": "p0", "reason": "specific shared task/answer and why the modifier adds no unique value", "resolution": "merge", "risk_type": "same_intent or doorway", "one_page_test": {{"same_user": true, "same_task": true, "same_answer": true, "same_serp_intent": true, "same_entity": true}}}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
 For each conflict report the five actual boolean judgments; do not copy the example values blindly.
 A merge requires at least three of those five judgments to be true. If that threshold is not met,
 do not recommend a merge; assess each page's independent user value instead. Never change honest
@@ -1278,6 +1355,14 @@ Only add that clarification where the parent already discusses a related support
     if audit is None or not isinstance(audit.get("conflicts"), list):
         return [], [], ["the semantic cannibalization review returned an invalid result"]
     retained = {item["keyword"] for item in keyword_placements}
+    def resolve_page(value):
+        value = clean_phrase(str(value or ""))
+        return page_refs.get(value, value)
+
+    # Some providers return a supporting phrase even when IDs were requested.
+    # A page and its own supporting query already share a URL: that is not an
+    # unresolved conflict. Approval still requires every surviving page's review.
+    placement_owner = {item['keyword']: item.get('assigned_to') for item in keyword_placements}
     primary_target = plan["master_hub"]["target_keyword"]
     def should_honor_rejection(item: dict[str, Any]) -> bool:
         keyword = clean_phrase(str(item.get("keyword") or ""))
@@ -1310,9 +1395,18 @@ Only add that clarification where the parent already discusses a related support
     by_target = {page["target_keyword"]: page for page in pages}
     conflicts = []
     invalid_conflicts = ["conflicts must contain objects"] if len(raw_conflicts) != len(audit["conflicts"]) else []
-    for item in raw_conflicts:
+    for raw_item in raw_conflicts:
+        item = {**raw_item, "page_a": resolve_page(raw_item.get("page_a")),
+                "page_b": resolve_page(raw_item.get("page_b"))}
+        if raw_item.get("preferred_target"):
+            item["preferred_target"] = resolve_page(raw_item["preferred_target"])
         left = by_target.get(clean_phrase(str(item.get("page_a") or "")))
         right = by_target.get(clean_phrase(str(item.get("page_b") or "")))
+        if item['page_a'] != item['page_b'] and (not left or not right):
+            left_owner = placement_owner.get(item['page_a'])
+            right_owner = placement_owner.get(item['page_b'])
+            if left_owner and left_owner == right_owner and left_owner in by_target:
+                continue
         if not left or not right or left is right:
             invalid_conflicts.append(f"invalid pair {item.get('page_a')!r} / {item.get('page_b')!r}")
             continue
@@ -1322,11 +1416,12 @@ Only add that clarification where the parent already discusses a related support
             invalid_conflicts.append(f"preferred_target {item['preferred_target']!r} is not in its pair")
             continue
         if "one_page_test" in item and not one_page_test_passes(item["one_page_test"]):
-            return [], rejections, [
+            invalid_conflicts.append(
                 f"the merge recommendation for {left['target_keyword']!r} / {right['target_keyword']!r} "
                 "lacks a valid majority-YES one-page test: supply five booleans; recommend merging only "
                 "if at least three honestly evaluate true, otherwise assess the separate pages"
-            ]
+            )
+            continue
         if not one_page_test_passes(item.get("one_page_test")) and _clearly_distinct_tasks(left, right):
             logger.info(
                 "Ignoring cross-intent cannibalization suggestion: %s vs %s",
@@ -1335,7 +1430,7 @@ Only add that clarification where the parent already discusses a related support
             continue
         conflicts.append(item)
     if invalid_conflicts:
-        return [], rejections, [
+        return conflicts, rejections, [
             "the semantic review referenced invalid page conflicts: " + "; ".join(invalid_conflicts[:10])
             + ". Use two different current page targets from " + json.dumps(list(by_target))
             + "; supporting keywords are already assigned to pages and cannot be conflict targets."
@@ -1350,7 +1445,7 @@ Only add that clarification where the parent already discusses a related support
         for item in assessments:
             if not isinstance(item, dict):
                 continue
-            target = clean_phrase(str(item.get("target_keyword") or ""))
+            target = resolve_page(item.get("target_keyword") or item.get("page_id"))
             if target not in required:
                 continue
             if target in approved or item.get("classification") not in {
@@ -1358,10 +1453,13 @@ Only add that clarification where the parent already discusses a related support
             } or not all(isinstance(item.get(key), str) and item[key].strip() for key in (
                 "independent_task", "unique_value", "capability_basis",
             )):
-                return [], [], ["a spoke lacks independent user value or supported capability evidence"]
+                return [], [], [f"spoke {target!r} lacks independent user value or supported capability evidence; "
+                                "supply classification, independent_task, unique_value and capability_basis, "
+                                "or propose a valid merge/rejection for this page"]
             approved[target] = item
         if required != set(approved):
-            return [], [], ["the URL eligibility review must justify every surviving spoke"]
+            return [], [], ["the URL eligibility review must justify every surviving spoke; missing: "
+                            + json.dumps(sorted(required - set(approved)))]
         for page in plan["spokes"]:
             if page["target_keyword"] in approved:
                 page["url_assessment"] = approved[page["target_keyword"]]
@@ -1719,7 +1817,7 @@ async def _build_site_architecture(
                 request_timeout=min(120, remaining - max(45, min(90, remaining / 2))),
             )
             payload = _coerce_object(payload)
-            if payload is None:
+            if payload is None or not (isinstance(payload.get('pages'), list) or isinstance(payload.get('master_hub'), dict)):
                 raise ValueError(
                     "the provider response was incomplete or malformed JSON; retrying with the compact schema"
                 )
@@ -1749,11 +1847,15 @@ async def _build_site_architecture(
                 plan, _ = _merge_intent_conflicts(plan, mechanical_conflicts)
             last_errors = validate_architecture(plan, normalized, main)
             if not last_errors:
-                review_limit = min(5, max(2, len(plan["spokes"]) + 1))
+                review_limit = min(12, max(3, len(plan["spokes"]) + 3))
                 plan["_semantic_audit_status"] = "pending"
+                stalled_reviews = 0
                 for _review in range(review_limit):
                     try:
-                        remaining = max(0.01, review_deadline - asyncio.get_running_loop().time())
+                        remaining = review_deadline - asyncio.get_running_loop().time()
+                        if remaining <= 5:
+                            last_errors = ["The review time budget was exhausted."]
+                            break
                         review_timeout = min(45, remaining)
                         async with asyncio.timeout(review_timeout + 1):
                             conflicts, rejections, audit_errors = await _audit_intent_cannibalization(
@@ -1781,6 +1883,9 @@ async def _build_site_architecture(
                             "Semantic cannibalization review failed: %s", "; ".join(audit_errors),
                         )
                         last_errors = audit_errors
+                        stalled_reviews += 1
+                        if stalled_reviews >= 3:
+                            break
                         continue
                     last_errors = audit_errors
                     if not conflicts:
@@ -1789,15 +1894,19 @@ async def _build_site_architecture(
                     plan, merge_notes = _merge_intent_conflicts(plan, conflicts)
                     if not merge_notes:
                         last_errors = ["Semantic review found conflicts that could not be resolved."]
+                        stalled_reviews += 1
+                        if stalled_reviews >= 3:
+                            break
                         continue
+                    stalled_reviews = 0
                     last_errors = validate_architecture(plan, normalized, main)
                     if last_errors:
                         break
                 if plan["_semantic_audit_status"] != "passed":
-                    raise ArchitectureAgentError(
-                        "The semantic overlap review could not approve this map. "
-                        "Retry generation; your previous saved map is unchanged."
-                    )
+                    # Feed the actual review findings back into the planner.
+                    # Raising ArchitectureAgentError here used to bypass the
+                    # outer recovery loop and force the user to start over.
+                    raise ValueError("Overlap review requires architecture repair: " + "; ".join(last_errors))
             if not last_errors:
                 plan["site_domain"] = _clean_domain(site_domain) or _domain_from_context(context)
                 from nlp.authority import finish_authority_plan
@@ -1833,6 +1942,7 @@ async def _build_site_architecture(
     raise ArchitectureAgentError(
         "The SEO architecture agent could not produce a complete cannibalization-safe plan: "
         + "; ".join(last_errors[:5])
+        + ". Your previous saved map is unchanged."
     )
 
 

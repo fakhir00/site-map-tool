@@ -225,6 +225,21 @@ class ResearchQualityTests(unittest.TestCase):
 
 
 class AutocompleteResearchTests(unittest.TestCase):
+    def test_research_expands_observed_site_topics_until_enough_distinct_queries_exist(self):
+        def response(_url, params, **kwargs):
+            query = params['q']
+            result = MagicMock(status_code=200)
+            result.json.return_value = [query, [query + ' meaning', query + ' personality']]
+            return result
+        with patch('scraping.autocomplete.requests.get', side_effect=response) as request:
+            rows = research_autocomplete(['spirit animal quiz'], {'spirit', 'animal'}, set(),
+                expansion_seeds=['wolf spirit animal', 'owl spirit animal', 'bear spirit animal'],
+                target_count=6, limit=36)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(len(rows), 6)
+        self.assertIn('owl spirit animal personality', {row['phrase'] for row in rows})
+        self.assertTrue(all(row['search_volume'] is None for row in rows))
+
     def test_observed_queries_keep_unknown_metrics_and_filter_unrelated_topics(self):
         response = MagicMock(status_code=200)
         response.json.return_value = ["wolf personality traits", ["wolf personality traits in humans", "wolf personality traits minecraft", "owl food"]]
@@ -247,6 +262,38 @@ class AutocompleteResearchTests(unittest.TestCase):
 
 
 class ResearchPersistenceTests(unittest.TestCase):
+    def test_keyword_storage_blocks_competitor_navigation_even_after_ai_approval(self):
+        from app.models import ResearchKeyword
+        from workers.pipeline import _store_keywords
+        from workers.research_inventory import remember_candidates, record_review
+        self.project.target_keywords = ['spirit animal quiz']
+        self.db.add(Url(project_id=self.project.id, url='https://www.buzzfeed.com/quiz', source_type='competitor'))
+        self.db.commit()
+        raw = [{'phrase': 'spirit animal quiz buzzfeed'}, {'phrase': 'spirit animal quiz vs buzzfeed'}]
+        remember_candidates(self.db, self.project.id, raw, 'Apify')
+        record_review(self.db, self.project.id, [], raw)
+        accumulator = {item['phrase']: {'type': 'long-tail', 'count': 1, 'url_ids': set()} for item in raw}
+        _store_keywords(self.db, self.project.id, accumulator)
+        self.assertEqual(set(accumulator), {'spirit animal quiz vs buzzfeed'})
+        self.assertEqual(self.db.execute(select(Keyword.phrase)).scalars().all(), ['spirit animal quiz vs buzzfeed'])
+        rejected = self.db.execute(select(ResearchKeyword).where(ResearchKeyword.phrase == raw[0]['phrase'])).scalar_one()
+        self.assertEqual(rejected.review_status, 'rejected')
+
+    def test_research_seeds_use_focused_owned_titles_and_skip_keyword_soup(self):
+        from workers.pipeline import _site_research_seeds
+        self.db.add_all([
+            Url(project_id=self.project.id, url='https://own.example/animals/bear/', source_type='own', h1='Bear Spirit Animal'),
+            Url(project_id=self.project.id, url='https://own.example/animals/owl/', source_type='own', h1='Owl Spirit Animal'),
+            Url(project_id=self.project.id, url='https://own.example/unclear/', source_type='own', h1='Bear spirit animal strengths growth areas meaning'),
+            Url(project_id=self.project.id, url='https://competitor.example/brand/', source_type='competitor', h1='Competing Quiz Brand'),
+        ])
+        self.db.commit()
+        seeds = _site_research_seeds(self.db, self.project.id)
+        self.assertIn('bear spirit animal', seeds)
+        self.assertIn('owl spirit animal', seeds)
+        self.assertNotIn('bear spirit animal strengths growth areas meaning', seeds)
+        self.assertNotIn('competing quiz brand', seeds)
+
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)

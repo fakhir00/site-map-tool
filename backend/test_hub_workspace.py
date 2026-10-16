@@ -167,6 +167,15 @@ class HubWorkspaceTests(unittest.TestCase):
         content = "Here is the requested architecture:\n```json\n" + json.dumps(payload) + "\n```"
         self.assertEqual(_parse_json_payload(content), payload)
 
+    def test_truncated_outer_json_never_becomes_a_nested_page_or_keyword(self):
+        for content in (
+            '{"pages":[{"target_keyword":"spirit animal quiz"}], "keyword_decisions": [',
+            'Here is the plan: {"pages":[{"target_keyword":"spirit animal quiz"}',
+            '[{"phrase":"wolf spirit animal"}, {"phrase":',
+        ):
+            with self.subTest(content=content), self.assertRaises(json.JSONDecodeError):
+                _parse_json_payload(content)
+
     def test_unavailable_semantic_review_cannot_publish_a_map(self):
         records = normalize_keyword_records([
             {"phrase": "circuit diagram maker"},

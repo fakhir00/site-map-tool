@@ -14,14 +14,18 @@ from nlp.keywords import clean_phrase, is_publishable_keyword, is_topic_relevant
 ENDPOINT = "https://suggestqueries.google.com/complete/search"
 
 
-def research_autocomplete(seeds, topic_terms, negative_terms, *, locale="us", language="en", limit=12, diagnostics=None):
+def research_autocomplete(seeds, topic_terms, negative_terms, *, locale="us", language="en", limit=12,
+                          diagnostics=None, expansion_seeds=(), target_count=100):
     queries = list(dict.fromkeys([
         *(clean_phrase(seed) for seed in seeds),
+        *(clean_phrase(seed) for seed in expansion_seeds),
         *(term.removeprefix("__research_seed__") for term in sorted(topic_terms or set()) if term.startswith("__research_seed__")),
     ]))
-    queries = [query for query in queries if query and is_topic_relevant_keyword(query, seeds, topic_terms, negative_terms)][:max(0, min(12, limit))]
+    queries = [query for query in queries if query and is_topic_relevant_keyword(query, seeds, topic_terms, negative_terms)][:max(0, min(36, limit))]
     rows = {}
     for query in queries:
+        if len(rows) >= max(1, target_count):
+            break
         params = {"client": "firefox", "q": query,
                   "gl": locale if re.fullmatch(r"[a-z]{2}", locale or "") else "us",
                   "hl": language if re.fullmatch(r"[a-z]{2}", language or "") else "en"}

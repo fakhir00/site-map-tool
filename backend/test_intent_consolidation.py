@@ -30,6 +30,51 @@ def payload_for(targets):
 
 
 class IntentConsolidationTests(unittest.TestCase):
+    def test_review_uses_page_ids_and_keeps_supporting_queries_on_their_owner(self):
+        targets = ['lunar age calculator', 'lunar age meaning']
+        supporting = 'free lunar age calculator'
+        payload = payload_for(targets)
+        payload['keyword_decisions'].append([supporting, 'supporting', targets[0], 'h2:Calculator', 'Same tool task'])
+        review = approved_review(payload)
+        review['passed'] = False
+        review['conflicts'] = [{'page_a': 'p0', 'page_b': supporting, 'reason': 'Same tool task'}]
+        for index, item in enumerate(review['url_assessments']):
+            item['target_keyword'] = f'p{index}'
+        plan, chat = self.build(targets + [supporting], payload, [review])
+        self.assertEqual(chat.await_count, 2)
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+        self.assertIn(supporting, plan['master_hub']['targeted_keywords'])
+        self.assertEqual(len(plan['spokes']), 1)
+
+    def test_stalled_review_automatically_repairs_plan_in_the_same_request(self):
+        targets = ['lunar age calculator', 'lunar age meaning']
+        payload = payload_for(targets)
+        chat = AsyncMock(side_effect=[payload, payload])
+        audit = AsyncMock(side_effect=[([], [], ['Missing URL assessment'])] * 3 + [([], [], [])])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', chat,
+        ), patch('nlp.hub_spoke_agent._audit_intent_cannibalization', audit):
+            plan = asyncio.run(build_site_architecture([{'phrase': value} for value in targets], primary_keyword=targets[0]))
+        self.assertEqual(chat.await_count, 2)
+        self.assertEqual(audit.await_count, 4)
+        self.assertIn('Missing URL assessment', chat.await_args.kwargs['user_prompt'])
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+
+    def test_valid_merges_survive_an_invalid_conflict_but_still_require_followup_review(self):
+        targets = ['spirit animal quiz', 'find your spirit animal', 'wolf personality traits']
+        payload = payload_for(targets)
+        review = {'passed': False, 'conflicts': [
+            {'page_a': 'p0', 'page_b': 'p1', 'preferred_target': 'p0',
+             'reason': 'Same interactive quiz', 'one_page_test': SAME_PAGE},
+            {'page_a': 'p0', 'page_b': 'invented target', 'reason': 'Invalid'},
+        ]}
+        plan, chat = self.build(targets, payload, [review, APPROVED])
+        self.assertEqual(chat.await_count, 3)
+        self.assertEqual([page['target_keyword'] for page in plan['spokes']], [targets[2]])
+        self.assertIn(targets[1], plan['master_hub']['targeted_keywords'])
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+
+
     def build(self, targets, payload, reviews, *, authority=False, context=''):
         reviews = [approved_review(payload) if review is APPROVED else review for review in reviews]
         responses = ([{"proposals": []}] if authority else []) + [payload, *reviews]

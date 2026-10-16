@@ -164,16 +164,13 @@ def _strip_code_fences(content: str) -> str:
 
 
 def _decode_embedded_json(content: str) -> Any:
-    """Decode the first complete JSON value even when a provider adds prose around it."""
+    """Decode the outer JSON value; never mistake a truncated child's object for a response."""
     decoder = json.JSONDecoder()
     for index, character in enumerate(content):
         if character not in "[{":
             continue
-        try:
-            value, _end = decoder.raw_decode(content[index:])
-            return value
-        except json.JSONDecodeError:
-            continue
+        value, _end = decoder.raw_decode(content[index:])
+        return value
     raise json.JSONDecodeError("No complete JSON value found", content, 0)
 
 
@@ -185,32 +182,10 @@ def _parse_json_payload(content: str) -> Any:
             return payload["data"]
         return payload
     except json.JSONDecodeError:
-        try:
-            payload = _decode_embedded_json(cleaned)
-            if isinstance(payload, dict) and "data" in payload:
-                return payload["data"]
-            return payload
-        except json.JSONDecodeError:
-            pass
-        # If the JSON is truncated or malformed, try to salvage any complete {...} objects
-        import re
-        import ast
-        objects = []
-        pattern = re.compile(r'\{[^{}]*\}')
-        for match in pattern.finditer(cleaned):
-            try:
-                obj = json.loads(match.group(0))
-                objects.append(obj)
-            except json.JSONDecodeError:
-                try:
-                    obj = ast.literal_eval(match.group(0))
-                    if isinstance(obj, dict):
-                        objects.append(obj)
-                except Exception:
-                    pass
-        if objects:
-            return objects
-        raise
+        payload = _decode_embedded_json(cleaned)
+        if isinstance(payload, dict) and "data" in payload:
+            return payload["data"]
+        return payload
 
 
 async def _achat_json(
@@ -322,6 +297,9 @@ Analyze the semantic core of this website for keyword research and relevance fil
 6. "related_topics": Up to 8 useful subtopics one or two semantic hops from the site's primary topic. Each needs an entity, specific subject qualifiers, a natural research query, and an EXACT supporting excerpt from the supplied positive site context or seeds. For an animal-personality site, wolf → personality/traits/meaning can be valid. No unrelated homonyms, generic shared-word matches or unsupported capabilities. Comparison mentions alone do not support another tool (lunar age does not imply a Korean age calculator). An empty list is valid when the site evidence is insufficient.
 
 Ensure all terms are lowercase strings.
+Each research_query must be a natural, focused 2–6 word search seed about ONE task or entity.
+Never concatenate qualifiers into a query such as "bear strengths growth areas meaning";
+use a focused phrase such as "bear spirit animal" and keep qualifiers in their separate array.
 Do not output anything except valid JSON matching this schema:
 {{
   "anchor_terms": ["..."],
@@ -379,7 +357,7 @@ Do not output anything except valid JSON matching this schema:
                 related_pairs.update(f"{entity}|{qualifier}" for qualifier in qualifiers)
                 query = clean_phrase(str(topic.get("research_query") or ""))
                 query_words = set(query.split())
-                if (qualifiers & query_words and entity_words.issubset(query_words)
+                if (2 <= len(query.split()) <= 6 and qualifiers & query_words and entity_words.issubset(query_words)
                         and is_publishable_keyword(query, min_words=2, negative_terms=set(res["negative_terms"]))):
                     research_seeds.append(query)
             res["related_pairs"] = sorted(related_pairs)
