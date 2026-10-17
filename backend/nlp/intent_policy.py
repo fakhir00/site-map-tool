@@ -46,12 +46,17 @@ sharing or local storage; do not imply those features provide live multi-user ed
 
 THE ONE-PAGE TEST — before creating any URL, compare it with the hub and related proposed/owned pages:
 A same_user: Would essentially the same person search both queries?
-B same_task: Are they trying to accomplish the same thing?
-C same_answer: Would the majority of the useful content be identical?
-D same_serp_intent: Would results reasonably contain the same type of pages?
+B same_task: Are they trying to accomplish the same specific task for the same subject?
+C same_answer: Would the actual useful answers be substantially interchangeable, not just their headings?
+D same_serp_intent: Would the same specific URLs answer both queries, not merely the same format of pages?
 E same_entity: Are both fundamentally about the same entity/topic?
-If most (at least three) answers are YES, do not create another URL. Retain the keyword naturally on
-the surviving page. Judge expected SERP intent conservatively; do not claim live SERPs were checked
+Merge only when same_task AND same_answer are YES and at least three answers overall are YES.
+Similar audiences, article formats and broad topics alone are not cannibalization. A directory can
+summarize and link to detailed entity pages without replacing them. Distinct entities can share an
+outline while requiring different facts and interpretations. A tool and a substantive explanation
+or evaluation of it need not share a URL. Language-specific answers can serve different audiences;
+do not merge translations solely because their underlying topic is identical.
+Retain overlapping keywords naturally on the surviving page. Judge expected SERP intent conservatively; do not claim live SERPs were checked
 unless actual search-result evidence is supplied. Do not infer YES just from shared words.
 
 DOORWAY / NEAR-DUPLICATE RISK
@@ -78,5 +83,6 @@ def one_page_test_passes(test: object) -> bool:
     return (
         isinstance(test, dict)
         and all(type(test.get(key)) is bool for key in ONE_PAGE_TEST_KEYS)
+        and test["same_task"] and test["same_answer"]
         and sum(test[key] for key in ONE_PAGE_TEST_KEYS) >= 3
     )

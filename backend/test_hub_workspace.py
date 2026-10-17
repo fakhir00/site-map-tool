@@ -162,6 +162,24 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(_coerce_object([payload]), payload)
         self.assertIsNone(_coerce_object([{"fragment": 1}, {"fragment": 2}]))
 
+    def test_context_competitor_names_reject_navigation_even_without_row_source(self):
+        records = normalize_keyword_records([{'phrase': phrase} for phrase in (
+            'spirit animal quiz', 'spirit animal quizzes buzzfeed', 'spirit animal quiz vs buzzfeed',
+        )])
+        plan = {'keyword_assignments': [{'keyword': item['phrase'], 'disposition': 'supporting'} for item in records]}
+        context = json.dumps({'competitor_exclusions': ['www.buzzfeed.com', 'spiritanimalquiz.com']})
+        rejected = _source_domain_brand_rejections(plan, records, 'spirit animal quiz', context)
+        self.assertEqual([item['keyword'] for item in rejected], ['spirit animal quizzes buzzfeed'])
+
+    def test_topic_substring_in_competitor_domain_is_not_a_brand_query(self):
+        records = normalize_keyword_records([{'phrase': phrase} for phrase in (
+            'spirit animal', 'spirit animal atlas quiz', 'owl symbolism',
+        )])
+        plan = {'keyword_assignments': [{'keyword': item['phrase'], 'disposition': 'supporting'} for item in records]}
+        context = json.dumps({'competitor_exclusions': ['spiritanimalatlas.com', 'owlsymbolismguide.com']})
+        rejected = _source_domain_brand_rejections(plan, records, 'spirit animal quiz', context)
+        self.assertEqual([item['keyword'] for item in rejected], ['spirit animal atlas quiz'])
+
     def test_provider_prose_around_complete_json_is_parsed_as_one_object(self):
         payload = {"master_target": "circuit diagram maker", "pages": [{"target_keyword": "x"}]}
         content = "Here is the requested architecture:\n```json\n" + json.dumps(payload) + "\n```"

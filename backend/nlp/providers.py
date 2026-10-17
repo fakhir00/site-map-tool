@@ -147,8 +147,13 @@ async def acomplete(request: dict, writing=False, request_timeout: float | None 
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            # The caller's stage budget includes fallback and retry time.
-            timeout = min(attempt_timeout, remaining / (len(configs) - index))
+            # A large plan must have time to finish once. Splitting its budget
+            # equally between a working model and an untested fallback caused
+            # two truncated attempts instead of one complete response. Keep a
+            # bounded fallback reserve without extending the caller's deadline.
+            providers_left = len(configs) - index
+            share = 0.8 if request.get('max_tokens', 0) >= 8000 and providers_left > 1 else 1 / providers_left
+            timeout = min(attempt_timeout, remaining * share)
             try:
                 async with asyncio.timeout(timeout):
                     async with AsyncOpenAI(base_url=config[1], api_key=config[2], timeout=timeout, max_retries=0) as client:

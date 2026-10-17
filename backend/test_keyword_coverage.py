@@ -54,6 +54,58 @@ def coverage_reply(prompt, destinations):
 
 
 class KeywordCoverageTests(unittest.TestCase):
+    def test_grouped_transport_preserves_supporting_placements_and_exclusions(self):
+        primary, records, payload, destinations = animal_inventory()
+        records = normalize_keyword_records([*records, {"phrase": "facebook login"}])
+        refs = {item['phrase']: f'k{index}' for index, item in enumerate(records)}
+        compact = {'master_target': refs[primary], 'pages': [],
+                   'discarded': [[refs['facebook login'], 'Unrelated navigation to another service.']]}
+        for page in payload['pages']:
+            target = page['target_keyword']
+            members = [refs[phrase] for phrase, owner in destinations.items() if owner == target]
+            compact['pages'].append([
+                refs[target], page['article_title'], page['search_intent'], 'Animal profiles',
+                page['page_type'], page.get('existing_url'), None if target == primary else refs[primary],
+                page['content_brief'], ['Explain the personality traits and strengths.'], ['Personality traits'], [],
+                [['h2:Personality traits', members, 'Answers the animal result questions.']] if members else [],
+            ])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
+            'nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[compact, approved_review(payload)]),
+        ):
+            plan = asyncio.run(build_site_architecture(records, primary_keyword=primary, context=json.dumps({
+                'owned_pages': [{'url': page['existing_url']} for page in payload['pages'][1:]],
+            })))
+        self.assertEqual(plan['keyword_coverage'], {'total': 74, 'used': 73, 'page_targets': 7, 'supporting': 66, 'excluded': 1})
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+        self.assertTrue(all(page['action'] == 'update' for page in plan['spokes']))
+        self.assertTrue(all(len(page['h2_sections'][0]['targeted_keywords_placed_here']) == 11 for page in plan['spokes']))
+
+    def test_coverage_resolves_only_unambiguous_planned_urls(self):
+        for mode in ('known', 'unknown', 'ambiguous'):
+            with self.subTest(mode=mode):
+                primary, records, payload, destinations = animal_inventory()
+                if mode == 'ambiguous':
+                    payload['pages'][2]['existing_url'] = payload['pages'][1]['existing_url']
+                plan = _repair_plan_consistency(_normalize_plan(payload, records, primary), records, primary)
+                urls = {page['target_keyword']: page.get('existing_url') for page in payload['pages']}
+                async def respond(**kwargs):
+                    reply = coverage_reply(kwargs['user_prompt'], destinations)
+                    for row in reply['keyword_decisions']:
+                        row[2] = urls[row[2]] if mode != 'unknown' else 'https://other.example/unknown/'
+                    return reply
+                async def run():
+                    return await _review_keyword_coverage(plan, records, 'Animal profiles', deadline=asyncio.get_running_loop().time() + 45)
+                with patch('nlp.hub_spoke_agent._achat_json', side_effect=respond):
+                    if mode == 'known':
+                        result = _apply_assignments(asyncio.run(run()))
+                        self.assertEqual(result['keyword_coverage']['used'], 73)
+                        self.assertEqual(validate_architecture(result, records, primary), [])
+                    else:
+                        before = deepcopy(plan)
+                        with self.assertRaisesRegex(ValueError, 'valid page'):
+                            asyncio.run(run())
+                        self.assertEqual(plan, before)
+
     def test_compact_large_plan_preserves_all_keywords_owned_urls_and_page_briefs(self):
         primary, records, payload, destinations = animal_inventory()
         refs = {item['phrase']: f'k{index}' for index, item in enumerate(records)}
@@ -152,6 +204,23 @@ class KeywordCoverageTests(unittest.TestCase):
                     asyncio.run(run())
                 self.assertEqual(plan, before)
 
+    def test_malformed_placement_is_repaired_without_rebuilding_valid_pages(self):
+        primary, records, payload, destinations = animal_inventory()
+        wanted = next(iter(destinations))
+        records = normalize_keyword_records([{'phrase': primary}, {'phrase': wanted}])
+        plan = _repair_plan_consistency(_normalize_plan({'pages': payload['pages'][:1]}, records, primary), records, primary)
+        before = deepcopy(plan['master_hub'])
+        bad = {'keyword_decisions': [[wanted, 'supporting', 'https://unknown.example/', 'h2:Result', 'Explain the result']]}
+        good = {'keyword_decisions': [[wanted, 'supporting', primary, 'h2:Result', 'Explain the supported animal result']]}
+        async def run():
+            return await _review_keyword_coverage(plan, records, 'Quiz with animal results', deadline=asyncio.get_running_loop().time() + 45)
+        with patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[bad, good])) as chat:
+            result = asyncio.run(run())
+        self.assertEqual(chat.await_count, 2)
+        self.assertIn('https://unknown.example/', chat.await_args_list[1].kwargs['user_prompt'])
+        self.assertEqual(result['master_hub'], before)
+        self.assertEqual(_apply_assignments(result)['keyword_coverage']['used'], 2)
+
     def test_provider_failure_keeps_coverage_unassigned_and_is_not_hidden_by_batching(self):
         primary, records, payload, _ = animal_inventory()
         plan = _repair_plan_consistency(_normalize_plan(payload, records, primary), records, primary)
@@ -217,3 +286,24 @@ class KeywordCoverageTests(unittest.TestCase):
             terms, negatives = _semantic_terms(["spirit animal quiz"], audit)
         self.assertIn("__research_seed__wolf personality traits", terms)
         self.assertTrue(is_topic_relevant_keyword("wolf personality strengths", ["spirit animal quiz"], terms, negatives))
+
+    def test_multiword_exclusions_cannot_blacklist_the_sites_positive_subject(self):
+        audit = json.dumps({'primary_keyword': 'spirit animal quiz', 'capabilities': ['wolf spirit animal profiles']})
+        payload = {'anchor_terms': ['spirit animal'], 'scope_terms': ['meaning', 'traits'],
+                   'negative_terms': ['animal husbandry', 'pet care', 'spirit possession', 'quiz'],
+                   'related_topics': [{'entity': 'wolf', 'qualifiers': ['spirit', 'animal', 'meaning'],
+                       'research_query': 'wolf spirit animal', 'evidence': 'wolf spirit animal profiles'}]}
+        with patch('nlp.openrouter.is_ai_configured', return_value=True), patch.dict('nlp.openrouter._semantic_cache', {}, clear=True), patch(
+            'nlp.openrouter._achat_json', new=AsyncMock(return_value=payload),
+        ):
+            taxonomy = asyncio.run(generate_core_domain_terms(['spirit animal quiz'], audit))
+        self.assertTrue({'husbandry', 'pet', 'care', 'possession'} <= set(taxonomy['negative_terms']))
+        self.assertFalse({'spirit', 'animal', 'quiz'} & set(taxonomy['negative_terms']))
+        self.assertIn('wolf spirit animal', taxonomy['research_seeds'])
+        # The pipeline also protects seed/evidence words if a cached or legacy
+        # taxonomy still contains a conflicting negative token.
+        taxonomy['negative_terms'].append('animal')
+        with patch('nlp.openrouter.generate_core_domain_terms', new=AsyncMock(return_value=taxonomy)):
+            terms, negatives = _semantic_terms(['spirit animal quiz'], audit)
+        self.assertTrue(is_topic_relevant_keyword('bear spirit animal meaning', ['spirit animal quiz'], terms, negatives))
+        self.assertFalse(is_topic_relevant_keyword('animal husbandry', ['spirit animal quiz'], terms, negatives))

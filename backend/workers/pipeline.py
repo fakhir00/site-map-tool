@@ -675,15 +675,16 @@ def _discover_content_urls(
 
 
 def _dedupe_localized_urls(urls: list[str]) -> list[str]:
-    seen_keys: set[str] = set()
-    deduped: list[str] = []
+    # Sitemaps often list /ar/... before the default-language URL. Prefer the
+    # unprefixed equivalent while preserving topic order, otherwise the crawl
+    # and ownership context can silently replace English pages with Arabic.
+    by_key: dict[str, str] = {}
     for url in urls:
         key = _localized_content_key(url)
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-        deduped.append(url)
-    return deduped
+        unprefixed = (urlparse(url).path.rstrip('/') or '/') == key
+        if key not in by_key or unprefixed:
+            by_key[key] = url
+    return list(by_key.values())
 
 
 def _localized_content_key(url: str) -> str:
@@ -2693,8 +2694,10 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
     )
     fallback_topic_terms |= {f"__scope__{term}" for term in mechanical_scope}
     mechanical_negative_terms: set[str] = set()
+    positive_terms = set(fallback_topic_terms) | mechanical_scope | {
+        word for seed in seed_keywords for word in seed.lower().split()
+    }
     if isinstance(audit_data, dict):
-        positive_terms = set(fallback_topic_terms) | mechanical_scope
         for field in ("primary_keyword", "industry_niche", "core_action", "capabilities", "content_opportunities"):
             raw = audit_data.get(field)
             values = raw if isinstance(raw, list) else [raw]
@@ -2723,7 +2726,7 @@ def _semantic_terms(seed_keywords: list[str], audit_summary: str | None = None) 
         core_terms = set(result.get("core_terms", []))
         anchor_terms = set(result.get("anchor_terms", []))
         scope_terms = set(result.get("scope_terms", []))
-        negative_terms = set(result.get("negative_terms", [])) | mechanical_negative_terms
+        negative_terms = (set(result.get("negative_terms", [])) | mechanical_negative_terms) - positive_terms
         related_pairs = set(result.get("related_pairs", []))
         if core_terms or anchor_terms or scope_terms or related_pairs:
             marked = (

@@ -196,6 +196,7 @@ async def _achat_json(
     max_tokens: int | None = None,
     use_writing_model: bool = False,
     request_timeout: float | None = None,
+    json_object: bool = False,
 ) -> Any:
     _provider, _base_url, _api_key, model = _provider_config(use_writing_model)
     request: dict[str, Any] = {
@@ -208,9 +209,16 @@ async def _achat_json(
     }
     if max_tokens:
         request["max_tokens"] = max_tokens
+    if json_object:
+        request["response_format"] = {"type": "json_object"}
     from nlp.providers import acomplete
     timeout_options = {"request_timeout": request_timeout} if request_timeout is not None else {}
     response = await acomplete(request, writing=use_writing_model, **timeout_options)
+    if getattr(response.choices[0], 'finish_reason', None) == 'length':
+        raise ValueError(
+            'The JSON response reached its output limit. Return a complete object using shorter '
+            'descriptions and grouped keyword references; preserve all keyword decisions and distinct tasks.'
+        )
     return _parse_json_payload(response.choices[0].message.content or "")
 
 
@@ -339,6 +347,16 @@ Do not output anything except valid JSON matching this schema:
             }
             from nlp.keywords import clean_phrase, is_publishable_keyword, keyword_terms, GENERIC_TOOL_TERMS, STOPWORDS
             evidence_units = [clean_phrase(seed) for seed in target_keywords] + _audit_keyword_evidence(audit_summary)
+            # A negative phrase such as "animal husbandry" must not turn the
+            # site's own subject "animal" into a global exclusion when split
+            # into words. This silently removed almost every useful query,
+            # including the seed itself, before research or review could run.
+            protected = {word for unit in evidence_units for word in clean_phrase(unit).split()}
+            protected |= keyword_terms(' '.join(evidence_units), min_len=2)
+            conflicts = set(res['negative_terms']) & protected
+            if conflicts:
+                logger.warning('Ignored negative taxonomy terms present in positive site evidence: %s', ', '.join(sorted(conflicts)))
+            res['negative_terms'] = sorted(set(res['negative_terms']) - protected)
             related_pairs, research_seeds = set(), []
             related_topics = payload.get("related_topics") or []
             for topic in related_topics[:8] if isinstance(related_topics, list) else []:
@@ -365,8 +383,6 @@ Do not output anything except valid JSON matching this schema:
             _semantic_cache[cache_key] = res
             return res
     except Exception as exc:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.warning("generate_core_domain_terms failed: %s", exc)
         
     return {"anchor_terms": [], "scope_terms": [], "core_terms": [], "generic_terms": [], "negative_terms": []}

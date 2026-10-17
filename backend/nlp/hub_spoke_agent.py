@@ -12,8 +12,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from nlp.keywords import clean_phrase, is_publishable_keyword, looks_incomplete_search_query
-from nlp.intent_policy import INTENT_CLUSTERING_RULES, one_page_test_passes, requires_feature_page_test
-from nlp.openrouter import _achat_json, is_ai_configured
+from nlp.intent_policy import INTENT_CLUSTERING_RULES, ONE_PAGE_TEST_KEYS, one_page_test_passes, requires_feature_page_test
+from nlp.openrouter import _achat_json as _provider_chat_json, is_ai_configured
 from nlp.providers import ProviderUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,12 @@ WRITING_STANDARDS = [
 
 # A complete decision for every keyword must fit in one bounded planning response.
 MAX_ARCHITECTURE_KEYWORDS = 300
+
+
+async def _achat_json(**kwargs):
+    # Every architecture stage returns an object. Require provider JSON mode
+    # without changing research callers that deliberately return top-level lists.
+    return await _provider_chat_json(**kwargs, json_object=True)
 
 
 class ArchitectureAgentError(RuntimeError):
@@ -569,6 +575,7 @@ Each page is an array in this exact order:
  parent_ref_or_null, unique_page_value, content_requirements_array, h2_heading_strings, scope_out_array,
  supporting_groups]
 The requirements and headings must be specific enough to explain the task, ownership and scope.
+search_intent must describe the specific reader task, not a category such as informational or tool-use.
 supporting_groups is a list of [placement, keyword_refs_array, short_reason] groups assigned to
 THIS page. Group same-purpose keywords together instead of repeating the destination and rationale
 for each synonym. Use h2:heading, faq:question, entity, variation or feature for placement.
@@ -752,10 +759,12 @@ def _normalize_plan(
             }
         if not isinstance(raw, dict):
             continue
+        destination = str(raw.get("assigned_to") or "").strip()
         assignments.append({
             "keyword": clean_phrase(str(raw.get("keyword") or "")),
             "disposition": str(raw.get("disposition") or "").strip().lower(),
-            "assigned_to": clean_phrase(str(raw.get("assigned_to") or "")) or None,
+            "assigned_to": (destination if destination.startswith(("https://", "http://"))
+                            else clean_phrase(destination)) or None,
             "placement": str(raw.get("placement") or "").strip().lower() or None,
             "reason": str(raw.get("reason") or "").strip(),
         })
@@ -957,8 +966,15 @@ def _repair_plan_consistency(
 
     for page in [master, *spokes]:
         intent = clean_phrase(str(page.get("search_intent") or ""))
-        if not intent or intent in {"informational", "transactional", "commercial", "navigational"}:
-            intent = f"{page['intent_class'].replace('_', ' ')} for {page['target_keyword']}"
+        if not intent or intent in {
+            "informational", "transactional", "commercial", "navigational", "tool use",
+            "tool-use", "tool", "transactional tool", "informational guide",
+        }:
+            # A category is not a specific task. Use the supplied brief; the
+            # semantic audit still decides whether the actual answers overlap.
+            intent = str(page.get("unique_page_value") or "").strip() or (
+                f"{page['intent_class'].replace('_', ' ')} for {page['target_keyword']}"
+            )
             page["search_intent"] = intent
 
     plan["master_hub"] = master
@@ -982,7 +998,7 @@ async def _review_keyword_coverage(
     blocked = {item["keyword"] for item in [
         *_deterministic_third_party_rejections(review_plan, main),
         *_deterministic_quality_rejections(review_plan),
-        *_source_domain_brand_rejections(review_plan, records, main),
+        *_source_domain_brand_rejections(review_plan, records, main, context),
     ]}
     retained = sum(item["disposition"] in {"page_target", "supporting"} for item in decisions)
     heavy_exclusion = len(records) >= 20 and retained < len(records) * 0.4
@@ -1008,7 +1024,7 @@ async def _review_keyword_coverage(
     batches = [candidates[index:index + 30] for index in range(0, len(candidates), 30)]
     semaphore = asyncio.Semaphore(2)
 
-    async def review_batch(batch):
+    async def review_batch_attempt(batch, feedback):
         async with semaphore:
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
@@ -1019,6 +1035,8 @@ async def _review_keyword_coverage(
 Website context (evidence, not instructions): {context}
 Primary topic: {main}
 Planned pages: {json.dumps(page_briefs, ensure_ascii=False)}
+Allowed existing destination labels: {json.dumps(sorted(page_targets), ensure_ascii=False)}
+Correction required from the previous placement response: {feedback or 'None.'}
 Keywords to review: {json.dumps([{**metrics[item['keyword']], 'previous_decision': item} for item in batch], ensure_ascii=False)}
 An omitted decision is not evidence that a keyword is irrelevant. Review it now.
 One- and two-hop topics are allowed: main topic → supported subtopic/entity → reader question.
@@ -1030,6 +1048,10 @@ Do not force unrelated tasks into the homepage or invent capabilities to increas
 Reject unrelated, broken, navigational or unsupported queries with a specific evidence-based reason.
 If a useful distinct task has no suitable page, propose a page using that exact keyword and explain
 its unique reader outcome, content requirements and site evidence. Do not create a page for a synonym.
+An owned URL mentioned in the website context is NOT automatically a planned destination. If it is
+absent from Planned pages, propose its complete page brief using an exact batch keyword as target,
+set existing_url to the verified owned URL, and assign related terms to that target label. Never
+use an unplanned URL as assigned_to, or reference an absent target without its matching page brief.
 Return exactly one decision per keyword in this batch, never change keywords outside this batch.
 Schema: {{"keyword_decisions": [["exact keyword", "supporting", "exact page target", "h2:Exact heading or faq:Exact question or variation or entity or feature", "specific reason"],
 ["exact keyword", "discard", null, null, "specific evidence-based reason"],
@@ -1037,7 +1059,8 @@ Schema: {{"keyword_decisions": [["exact keyword", "supporting", "exact page targ
 "pages": [{{"target_keyword": "new exact batch keyword", "article_title": "natural title",
 "page_type": "article or tool", "search_intent": "distinct reader task", "content_brief": "exclusive scope",
 "user_problem": "specific question", "unique_page_value": "independent value and site evidence",
-"content_requirements": ["required answer"], "parent_target": "existing broader target"}}]}}
+"content_requirements": ["required answer"], "parent_target": "existing broader target",
+"existing_url": "verified owned URL or null"}}]}}
 Only return pages for new page_target decisions. An empty pages list is valid.
 """,
                 temperature=0.1, max_tokens=6000, request_timeout=remaining,
@@ -1058,6 +1081,18 @@ Only return pages for new page_target decisions. An empty pages list is valid.
             if len(new_targets) != len(proposed):
                 raise ValueError("Keyword coverage review duplicated a page target.")
             revised = _normalize_plan(payload, records, main)["keyword_assignments"]
+            # Providers sometimes use the verified destination URL instead of
+            # its target label. Resolve only unambiguous URLs of planned pages;
+            # an unrelated or multiply-owned URL must still fail validation.
+            url_targets = {}
+            for page in [*pages, *proposed]:
+                url = str(page.get("existing_url") or "").rstrip("/")
+                if url:
+                    url_targets.setdefault(url, set()).add(page["target_keyword"])
+            for item in revised:
+                matches = url_targets.get(str(item.get("assigned_to") or "").rstrip("/"), set())
+                if item["disposition"] == "supporting" and len(matches) == 1:
+                    item["assigned_to"] = next(iter(matches))
             if len(revised) != len(batch_keywords) or {item["keyword"] for item in revised} != batch_keywords:
                 raise ValueError("Keyword coverage review must decide every exact batch keyword once.")
             for item in revised:
@@ -1065,7 +1100,10 @@ Only return pages for new page_target decisions. An empty pages list is valid.
                 if not item["reason"] or kind not in {"supporting", "page_target", "discard"}:
                     raise ValueError("Keyword coverage review returned an incomplete decision.")
                 if kind == "supporting" and (target not in page_targets | new_targets or not item["placement"]):
-                    raise ValueError("A recovered keyword has no valid page and placement.")
+                    raise ValueError(
+                        f"A recovered keyword has no valid page and placement: {item['keyword']!r} -> {target!r}. "
+                        "Choose a listed planned target or propose its complete page brief using a batch keyword."
+                    )
                 if kind == "page_target" and (target != item["keyword"] or target not in new_targets):
                     raise ValueError("A recovered page target has no matching page brief.")
                 if kind == "discard" and (target is not None or item["placement"] is not None):
@@ -1073,6 +1111,18 @@ Only return pages for new page_target decisions. An empty pages list is valid.
             if new_targets != {item["keyword"] for item in revised if item["disposition"] == "page_target"}:
                 raise ValueError("Recovered pages and keyword decisions disagree.")
             return revised, proposed
+
+    async def review_batch(batch):
+        feedback = ""
+        for attempt in range(2):
+            try:
+                return await review_batch_attempt(batch, feedback)
+            except ValueError as exc:
+                if attempt:
+                    raise
+                # Repair only the malformed placement batch. Rebuilding every
+                # page here wastes the deadline and can lose valid decisions.
+                feedback = str(exc)
 
     # TaskGroup cancels other requests if a batch fails. Commit decisions only
     # after all batches finish; never leave partially reviewed coverage behind.
@@ -1226,11 +1276,74 @@ def validate_architecture(
     return list(dict.fromkeys(errors))
 
 
+async def _verify_intent_merges(plan, conflicts, context, *, request_timeout):
+    """Independently check destructive merges without the first review's verdicts."""
+    pages = {page['target_keyword']: page for page in [plan['master_hub'], *plan['spokes']]}
+    deadline = asyncio.get_running_loop().time() + request_timeout
+    semaphore = asyncio.Semaphore(2)
+
+    async def verify_batch(batch):
+        async with semaphore:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise ValueError('Independent merge review ran out of time before every pair was checked.')
+            targets = {item[key] for item in batch for key in ('page_a', 'page_b')}
+            briefs = {target: {key: pages[target].get(key) for key in (
+                'target_keyword', 'user_problem', 'content_brief', 'content_requirements',
+                'h2_sections', 'scope_out', 'existing_url',
+            )} for target in sorted(targets)}
+            pairs = [[index, item['page_a'], item['page_b']] for index, item in enumerate(batch)]
+            result = _coerce_object(await _achat_json(
+                system_prompt='You are an independent editorial scope reviewer. Evaluate actual answer interchangeability. Return JSON.',
+                user_prompt=f"""Compare these page pairs independently. Preserve useful topical depth.
+        Page briefs: {json.dumps(briefs, ensure_ascii=False)}
+        Pairs [id, left target, right target]: {json.dumps(pairs, ensure_ascii=False)}
+        Would a reader seeking the specific LEFT answer be fully served by the RIGHT answer, and vice versa?
+        Shared article formats, headings, audiences, broad topics or overlapping introductions are insufficient.
+        Different entities need different facts: an owl profile cannot replace a bat profile. A directory
+        summary cannot replace its detailed entries. A quiz cannot replace substantive animal profiles or
+        a critical evaluation of the quiz. Translations serve different language needs. Those are related
+        resources, not interchangeable answers. Conversely, synonyms and minor features of the SAME workflow
+        can belong on one comprehensive page. Judge the supplied requirements, not merely the titles.
+        For each pair return [id, same_specific_task_boolean, interchangeable_answer_boolean, concrete_reason].
+        Use actual JSON booleans. An answer is interchangeable only when the substantial useful information
+        or functionality is the same. Do not assume every proposed pair needs merging. Return every ID once, with reasons of at most 35 words.
+        Return an object with a comparisons array containing those four-element rows. Both booleans must reflect the actual pair.
+        """,
+                temperature=0, max_tokens=3500, request_timeout=remaining,
+            ))
+            rows = result.get('comparisons') if isinstance(result, dict) else None
+            if not isinstance(rows, list) or len(rows) != len(batch):
+                raise ValueError('Independent merge review must compare every proposed pair.')
+            accepted, seen = [], set()
+            for row in rows:
+                if (not isinstance(row, list) or len(row) != 4 or type(row[0]) is not int
+                        or row[0] not in range(len(batch)) or row[0] in seen
+                        or type(row[1]) is not bool or type(row[2]) is not bool
+                        or not isinstance(row[3], str) or not row[3].strip()):
+                    raise ValueError('Independent merge review returned an incomplete comparison.')
+                seen.add(row[0])
+                if row[1] and row[2]:
+                    accepted.append({**batch[row[0]], 'reason': row[3]})
+            return accepted
+
+    tasks = []
+    try:
+        async with asyncio.TaskGroup() as group:
+            for index in range(0, len(conflicts), 12):
+                tasks.append(group.create_task(verify_batch(conflicts[index:index + 12])))
+    except ExceptionGroup as exc:
+        raise exc.exceptions[0] from exc
+    return [item for task in tasks for item in task.result()]
+
+
+
 async def _audit_intent_cannibalization(
     plan: dict[str, Any], context: str, review_feedback: list[str] | None = None,
     *, request_timeout: float = 45,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]]:
     """Use a separate review pass to catch semantic overlap hidden by different wording."""
+    deadline = asyncio.get_running_loop().time() + request_timeout
     pages = [plan["master_hub"], *plan["spokes"]]
     page_refs = {f"p{index}": page["target_keyword"] for index, page in enumerate(pages)}
     review_input = [{
@@ -1314,6 +1427,11 @@ still irrelevant when its real intent is reaching a competitor. Do not reject us
 Allow evidence-backed topics one or two semantic hops from the main topic (topic → entity/subtopic →
 reader question). Do not require every keyword to repeat the exact primary seed. Useful overlapping
 queries stay as supporting placements on one page; overlap and missing volume are not rejection reasons.
+Rejections remove a keyword from the entire plan, not just its proposed standalone page. Never reject
+a relevant query because it duplicates an answer, is a subsection, or is already covered elsewhere.
+For those cases report a page conflict with the destination; merging preserves every supporting query.
+Do not classify ordinary editorial coverage (traits, meanings, elements, audiences) as an unsupported
+product capability. Only a query requiring an unavailable interactive feature needs that classification.
 Reject third-party company, app, platform, social-network, review-site, and marketplace modifiers such as
 Reddit, Trustpilot, Amazon, YouTube, or Facebook. A named company may remain only when the keyword expresses
 direct competitor-comparison intent with "vs", "comparison", or "alternative" wording.
@@ -1327,7 +1445,9 @@ Return:
 or
 {{"passed": false, "conflicts": [{{"page_a": "p0", "page_b": "p1", "preferred_target": "p0", "reason": "specific shared task/answer and why the modifier adds no unique value", "resolution": "merge", "risk_type": "same_intent or doorway", "one_page_test": {{"same_user": true, "same_task": true, "same_answer": true, "same_serp_intent": true, "same_entity": true}}}}], "rejections": [{{"keyword": "exact retained keyword", "reason": "specific reason"}}]}}
 For each conflict report the five actual boolean judgments; do not copy the example values blindly.
-A merge requires at least three of those five judgments to be true. If that threshold is not met,
+A merge requires same_task AND same_answer to be true, plus at least three true judgments overall.
+Shared readers, a broad topic or the same article format cannot establish interchangeable answers.
+If that threshold is not met,
 do not recommend a merge; assess each page's independent user value instead. Never change honest
 judgments just to pass this threshold.
 Report feature-page families as conflicts with a suitable retained destination so their requirements
@@ -1416,10 +1536,16 @@ Only add that clarification where the parent already discusses a related support
             invalid_conflicts.append(f"preferred_target {item['preferred_target']!r} is not in its pair")
             continue
         if "one_page_test" in item and not one_page_test_passes(item["one_page_test"]):
+            test = item['one_page_test']
+            if isinstance(test, dict) and all(type(test.get(key)) is bool for key in ONE_PAGE_TEST_KEYS):
+                # Complete judgments that deny interchangeability describe a
+                # relationship, not a merge. Every retained URL still needs a
+                # complete eligibility assessment below.
+                continue
             invalid_conflicts.append(
                 f"the merge recommendation for {left['target_keyword']!r} / {right['target_keyword']!r} "
-                "lacks a valid majority-YES one-page test: supply five booleans; recommend merging only "
-                "if at least three honestly evaluate true, otherwise assess the separate pages"
+                "lacks a valid one-page test: supply five booleans; merging requires same_task AND "
+                "same_answer plus at least three true judgments overall; otherwise assess the separate pages"
             )
             continue
         if not one_page_test_passes(item.get("one_page_test")) and _clearly_distinct_tasks(left, right):
@@ -1429,6 +1555,11 @@ Only add that clarification where the parent already discusses a related support
             )
             continue
         conflicts.append(item)
+    if conflicts:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 1:
+            return [], rejections, ['Independent merge verification needs more review time.']
+        conflicts = await _verify_intent_merges(plan, conflicts, context, request_timeout=remaining)
     if invalid_conflicts:
         return conflicts, rejections, [
             "the semantic review referenced invalid page conflicts: " + "; ".join(invalid_conflicts[:10])
@@ -1553,9 +1684,14 @@ def _deterministic_quality_rejections(plan: dict[str, Any]) -> list[dict[str, st
 
 
 def _source_domain_brand_rejections(
-    plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str,
+    plan: dict[str, Any], records: list[dict[str, Any]], primary_keyword: str, context: str = "",
 ) -> list[dict[str, str]]:
     record_by_keyword = {item["phrase"]: item for item in records}
+    site_context = _coerce_object(context) or {}
+    excluded_domains = site_context.get("competitor_exclusions", [])
+    if not isinstance(excluded_domains, list):
+        excluded_domains = []
+    excluded_domains = [domain for domain in excluded_domains if isinstance(domain, str)]
     core_compact = "".join(_primary_core_terms(primary_keyword))
     hosted_suffixes = {"framer.ai", "webflow.io", "wordpress.com", "godaddysites.com"}
     rejections: list[dict[str, str]] = []
@@ -1564,7 +1700,7 @@ def _source_domain_brand_rejections(
         if decision.get("disposition") == "discard" or _is_direct_comparison(keyword):
             continue
         phrase_compact = re.sub(r"[^a-z0-9]+", "", keyword.lower())
-        for raw_domain in record_by_keyword.get(keyword, {}).get("source_domains") or []:
+        for raw_domain in [*(record_by_keyword.get(keyword, {}).get("source_domains") or []), *excluded_domains]:
             domain = _clean_domain(raw_domain)
             if not domain:
                 continue
@@ -1580,9 +1716,9 @@ def _source_domain_brand_rejections(
             brand_compact = re.sub(r"[^a-z0-9]+", "", brand_label)
             if len(brand_compact) < 4:
                 continue
-            mentions_source_brand = brand_compact in phrase_compact or (
-                len(phrase_compact) >= 5 and phrase_compact in brand_compact
-            )
+            # A source domain containing a topic does not make that topic a
+            # brand query: "spirit animal" is not navigation to SpiritAnimalAtlas.
+            mentions_source_brand = brand_compact in phrase_compact
             source_is_core_entity = bool(core_compact) and core_compact in brand_compact
             if mentions_source_brand and not source_is_core_entity:
                 rejections.append({
@@ -1826,7 +1962,7 @@ async def _build_site_architecture(
             deterministic_rejections = [
                 *_deterministic_third_party_rejections(plan, main),
                 *_deterministic_quality_rejections(plan),
-                *_source_domain_brand_rejections(plan, normalized, main),
+                *_source_domain_brand_rejections(plan, normalized, main, context),
             ]
             _apply_relevance_rejections(plan, deterministic_rejections)
             coverage_deadline = min(
@@ -1838,7 +1974,7 @@ async def _build_site_architecture(
             _apply_relevance_rejections(plan, [
                 *_deterministic_third_party_rejections(plan, main),
                 *_deterministic_quality_rejections(plan),
-                *_source_domain_brand_rejections(plan, normalized, main),
+                *_source_domain_brand_rejections(plan, normalized, main, context),
             ])
             if not discover_topics:
                 plan = _apply_tool_roi_rules(plan, normalized)
@@ -1856,7 +1992,7 @@ async def _build_site_architecture(
                         if remaining <= 5:
                             last_errors = ["The review time budget was exhausted."]
                             break
-                        review_timeout = min(45, remaining)
+                        review_timeout = min(65 if len(plan["spokes"]) > 12 else 45, remaining)
                         async with asyncio.timeout(review_timeout + 1):
                             conflicts, rejections, audit_errors = await _audit_intent_cannibalization(
                                 plan, context, last_errors, request_timeout=review_timeout,

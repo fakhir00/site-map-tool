@@ -30,6 +30,63 @@ def payload_for(targets):
 
 
 class IntentConsolidationTests(unittest.TestCase):
+    def test_independent_review_prevents_related_entity_collapse(self):
+        targets = ['spirit animal quiz', 'owl spirit animal meaning', 'bat spirit animal meaning']
+        payload = payload_for(targets)
+        review = approved_review(payload)
+        review.update(passed=False, conflicts=[{
+            'page_a': targets[1], 'page_b': targets[2], 'reason': 'Both use symbolism headings.',
+            'one_page_test': SAME_PAGE,
+        }])
+        chat = AsyncMock(side_effect=[payload, review, {'comparisons': [[
+            0, False, False, 'Different animals require different symbolism and interpretation; the outlines are not interchangeable answers.',
+        ]]}])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', chat):
+            plan = asyncio.run(build_site_architecture([{'phrase': target} for target in targets], primary_keyword=targets[0]))
+        self.assertEqual(len(plan['spokes']), 2)
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+        self.assertEqual(chat.await_count, 3)
+
+    def test_independent_review_requires_complete_boolean_verdicts(self):
+        from nlp.hub_spoke_agent import _normalize_plan, _verify_intent_merges, normalize_keyword_records
+        targets = ['spirit animal quiz', 'find your spirit animal']
+        plan = _normalize_plan(payload_for(targets), normalize_keyword_records([{'phrase': target} for target in targets]), targets[0])
+        conflicts = [{'page_a': targets[0], 'page_b': targets[1]}]
+        for response in ({'comparisons': []}, {'comparisons': [[0, 'yes', True, 'Same quiz']]},
+                         {'comparisons': [[3, True, True, 'Unknown pair']]},
+                         {'comparisons': [[0, True, True, '']]}):
+            with self.subTest(response=response), patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(return_value=response)):
+                with self.assertRaises(ValueError):
+                    asyncio.run(_verify_intent_merges(plan, conflicts, '', request_timeout=30))
+        with patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(return_value={'comparisons': [[0, True, True, 'The same quiz supplies the same result.']]})):
+            accepted = asyncio.run(_verify_intent_merges(plan, conflicts, '', request_timeout=30))
+        self.assertEqual(len(accepted), 1)
+
+    def test_independent_merge_review_batches_every_pair_and_fails_atomically(self):
+        from copy import deepcopy
+        from nlp.hub_spoke_agent import _normalize_plan, _verify_intent_merges, normalize_keyword_records
+        targets = ['subject hub', *[f'subject {index} guide' for index in range(25)]]
+        plan = _normalize_plan(payload_for(targets), normalize_keyword_records([{'phrase': target} for target in targets]), targets[0])
+        conflicts = [{'page_a': targets[0], 'page_b': target} for target in targets[1:]]
+        for incomplete in (False, True):
+            batch_sizes = []
+            async def respond(**kwargs):
+                pairs = json.loads(kwargs['user_prompt'].split('Pairs [id, left target, right target]: ', 1)[1].splitlines()[0])
+                batch_sizes.append(len(pairs))
+                return {'comparisons': [] if incomplete and len(pairs) == 1 else [
+                    [pair[0], True, True, 'Fixture: the same task and answer.'] for pair in pairs
+                ]}
+            before = deepcopy(plan)
+            with self.subTest(incomplete=incomplete), patch('nlp.hub_spoke_agent._achat_json', side_effect=respond):
+                if incomplete:
+                    with self.assertRaises(ValueError):
+                        asyncio.run(_verify_intent_merges(plan, conflicts, '', request_timeout=30))
+                else:
+                    accepted = asyncio.run(_verify_intent_merges(plan, conflicts, '', request_timeout=30))
+                    self.assertEqual(len(accepted), 25)
+            self.assertEqual(sorted(batch_sizes), [1, 12, 12])
+            self.assertEqual(plan, before)
+
     def test_review_uses_page_ids_and_keeps_supporting_queries_on_their_owner(self):
         targets = ['lunar age calculator', 'lunar age meaning']
         supporting = 'free lunar age calculator'
@@ -81,6 +138,9 @@ class IntentConsolidationTests(unittest.TestCase):
         chat = AsyncMock(side_effect=responses)
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch(
             'nlp.hub_spoke_agent._achat_json', chat,
+        ), patch(
+            'nlp.hub_spoke_agent._verify_intent_merges',
+            new=AsyncMock(side_effect=lambda plan, conflicts, context, **kwargs: conflicts),
         ):
             result = asyncio.run(build_site_architecture(
                 [{"phrase": target} for target in targets], primary_keyword=targets[0],
@@ -242,6 +302,8 @@ class IntentConsolidationTests(unittest.TestCase):
     def test_invalid_or_minority_one_page_test_cannot_authorize_a_merge(self):
         targets = ['diagram maker', 'best diagram software comparison']
         for test in ({**SAME_PAGE, 'same_user': 'yes'}, {'same_task': True},
+                     {**SAME_PAGE, 'same_answer': False},
+                     {**SAME_PAGE, 'same_task': False},
                      {**SAME_PAGE, 'same_task': False, 'same_answer': False, 'same_serp_intent': False}):
             with self.subTest(test=test):
                 conflict = {'passed': False, 'conflicts': [{
@@ -363,3 +425,16 @@ class IntentConsolidationTests(unittest.TestCase):
         records = [{'phrase': target} for target in targets]
         plan = _repair_plan_consistency(_normalize_plan(payload, records, targets[0]), records, targets[0])
         self.assertIn('two pages have the same declared search intent', validate_architecture(plan, records))
+
+    def test_generic_tool_category_uses_actual_page_brief_before_overlap_review(self):
+        from nlp.hub_spoke_agent import _normalize_plan, _repair_plan_consistency, validate_architecture
+        targets = ['lunar age calculator', 'chinese zodiac calculator']
+        payload = payload_for(targets)
+        tasks = ['Calculate traditional age from birth date', 'Find zodiac animal from birth year']
+        for page, task in zip(payload['pages'], tasks):
+            page['search_intent'] = 'tool-use'
+            page['unique_page_value'] = task
+        records = [{'phrase': target} for target in targets]
+        plan = _repair_plan_consistency(_normalize_plan(payload, records, targets[0]), records, targets[0])
+        self.assertNotIn('two pages have the same declared search intent', validate_architecture(plan, records))
+        self.assertEqual([p['search_intent'] for p in [plan['master_hub'], *plan['spokes']]], tasks)

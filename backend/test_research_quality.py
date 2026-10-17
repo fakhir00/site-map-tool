@@ -223,6 +223,18 @@ class ResearchQualityTests(unittest.TestCase):
         self.assertEqual(len(found), 2)
         self.assertEqual(set(inventory), {"https://own.example", *urls})
 
+    def test_default_language_ownership_wins_even_when_translation_is_listed_first(self):
+        translated = 'https://own.example/ar/blog/how-to-find-your-animal/'
+        original = 'https://own.example/blog/how-to-find-your-animal/'
+        inventory = []
+        found = _discover_content_urls('https://own.example', None,
+            MagicMock(return_value=[translated, original, 'https://own.example/ar/unique-topic/']),
+            MagicMock(), 3, source_type='own', inventory_out=inventory)
+        self.assertIn(original, found)
+        self.assertIn(original, inventory)
+        self.assertNotIn(translated, inventory)
+        self.assertIn('https://own.example/ar/unique-topic/', inventory)
+
 
 class AutocompleteResearchTests(unittest.TestCase):
     def test_research_expands_observed_site_topics_until_enough_distinct_queries_exist(self):

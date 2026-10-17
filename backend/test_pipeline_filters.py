@@ -208,6 +208,8 @@ class PipelineFilterTests(TestCase):
         self.assertTrue(is_publishable_keyword("lunar age in korea", min_words=2))
         self.assertTrue(is_publishable_keyword("what causes gum recession", min_words=2))
         self.assertTrue(looks_incomplete_search_query("what dental"))
+        self.assertTrue(looks_incomplete_search_query("how to find"))
+        self.assertFalse(looks_incomplete_search_query("how to find your spirit animal"))
 
     def test_past_year_keywords_are_not_publishable(self):
         self.assertTrue(has_past_year("best circuit software 1974", current_year=2026))

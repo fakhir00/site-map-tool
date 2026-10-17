@@ -164,6 +164,18 @@ class AuthorityPlanningTests(unittest.TestCase):
         self.assertEqual(status, 'inventory_limit')
         chat.assert_not_awaited()
 
+    def test_discovery_of_already_known_topics_is_complete_not_provider_unavailability(self):
+        records = [{'phrase': PRIMARY}]
+        chat = AsyncMock(return_value={'proposals': [
+            {'phrase': PRIMARY, 'support_phrase': PRIMARY, 'rationale': 'Existing topic revisited'},
+        ]})
+        diagnostics = []
+        expanded, status = asyncio.run(expand_inventory(records, '', PRIMARY, chat, diagnostics=diagnostics))
+        self.assertEqual(expanded, records)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(diagnostics, [])
+        chat.assert_awaited_once()
+
     def test_expansion_requires_exact_evidence_and_never_inherits_fake_metrics(self):
         records = [{'phrase': PRIMARY}]
         chat = AsyncMock(return_value={'proposals': [

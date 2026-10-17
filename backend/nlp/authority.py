@@ -97,7 +97,11 @@ Return only {{"proposals": [{{"phrase": "...", "support_phrase": "exact inventor
                                  'evidence_type': 'editorial_proposal', 'support_phrase': support,
                                  'rationale': rationale})
                 seen.add(phrase)
-            if proposals and len(expanded) == len(records):
+            only_existing = bool(proposals) and all(
+                isinstance(item, dict) and clean_phrase(str(item.get('phrase') or '')) in evidence
+                for item in proposals[:proposal_limit]
+            )
+            if proposals and len(expanded) == len(records) and not only_existing:
                 raise ValueError('Topic research returned proposals without usable, new keyword evidence.')
             return expanded, 'completed'
         except Exception as exc:

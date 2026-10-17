@@ -132,6 +132,8 @@ def looks_incomplete_search_query(phrase: str) -> bool:
         return True
     if len(words) <= 2 and words[0] in {"how", "what", "when", "where", "which", "why"}:
         return True
+    if re.fullmatch(r"(?:how|where) to (?:find|use|choose|compare|install)", cleaned):
+        return True
     if words[-1] in INCOMPLETE_QUERY_ENDINGS:
         return True
     # Sentence fragments often start with verbs or function words

@@ -6,6 +6,18 @@ from nlp import providers
 
 
 class ProviderReliabilityTests(TestCase):
+    def test_architecture_requests_json_mode_without_changing_list_research(self):
+        from nlp.hub_spoke_agent import _achat_json as architecture_chat
+        from nlp.openrouter import _achat_json as research_chat
+        responses = [SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=body))])
+                     for body in ['{"pages": []}', '[{"phrase": "owl symbolism"}]']]
+        with patch('nlp.providers.acomplete', new=AsyncMock(side_effect=responses)) as complete:
+            kwargs = {'system_prompt': 'Return JSON.', 'user_prompt': 'Review the supplied evidence.'}
+            self.assertEqual(asyncio.run(architecture_chat(**kwargs)), {'pages': []})
+            self.assertEqual(asyncio.run(research_chat(**kwargs)), [{'phrase': 'owl symbolism'}])
+        self.assertEqual(complete.await_args_list[0].args[0]['response_format'], {'type': 'json_object'})
+        self.assertNotIn('response_format', complete.await_args_list[1].args[0])
+
     def setUp(self):
         providers._status.clear()
         self.addCleanup(providers._status.clear)
@@ -14,6 +26,15 @@ class ProviderReliabilityTests(TestCase):
         self.config_patch = patch('nlp.providers.configured_providers', return_value=self.configs)
         self.config_patch.start()
         self.addCleanup(self.config_patch.stop)
+
+    def test_output_limit_cannot_be_mistaken_for_a_complete_architecture(self):
+        from nlp.hub_spoke_agent import _achat_json
+        response = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='length', message=SimpleNamespace(content='{"pages": []}'),
+        )])
+        with patch('nlp.providers.acomplete', new=AsyncMock(return_value=response)):
+            with self.assertRaisesRegex(ValueError, 'output limit.*preserve all keyword decisions'):
+                asyncio.run(_achat_json(system_prompt='Return JSON.', user_prompt='Build the plan.'))
 
     def test_sync_falls_back_on_balance_failure_and_does_not_expose_keys(self):
         error = RuntimeError('secret-one raw provider error')
@@ -67,6 +88,20 @@ class ProviderReliabilityTests(TestCase):
             with self.assertRaisesRegex(providers.ProviderUnavailableError, 'Insufficient balance'):
                 providers.complete({'messages': []})
         client.assert_not_called()
+
+    def test_large_plan_gets_completion_time_and_preserves_fallback_reserve(self):
+        first, second = MagicMock(), MagicMock()
+        first.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=TimeoutError())))))
+        second.__aenter__ = AsyncMock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value='complete plan')))))
+        first.__aexit__ = AsyncMock(return_value=False)
+        second.__aexit__ = AsyncMock(return_value=False)
+        clock = SimpleNamespace(time=providers.time.time, monotonic=MagicMock(side_effect=[10.0, 10.0, 106.0]))
+        with patch('nlp.providers.AsyncOpenAI', side_effect=[first, second]) as factory, patch('nlp.providers.time', clock):
+            result = asyncio.run(providers.acomplete({'messages': [], 'max_tokens': 16000}, request_timeout=120))
+        self.assertEqual(result, 'complete plan')
+        self.assertEqual(factory.call_args_list[0].kwargs['timeout'], 96)
+        self.assertEqual(factory.call_args_list[1].kwargs['timeout'], 24)
+        first.__aexit__.assert_awaited_once()
 
     def test_sync_single_provider_retries_temporary_server_error_once(self):
         self.configs[:] = self.configs[:1]

@@ -116,7 +116,9 @@ class TopicalMapTests(unittest.TestCase):
         payload['pages'][2]['intent_class'] = 'definition'
         conflict = {'passed': False, 'conflicts': [{'page_a': TOPICS[0][0], 'page_b': TOPICS[1][0], 'reason': 'Fixture: same task'}]}
         with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[
-            {'proposals': []}, payload, conflict, approved_review(payload),
+            {'proposals': []}, payload, conflict,
+            {'comparisons': [[0, True, True, 'Fixture: the same task requires the same answer.']]},
+            approved_review(payload),
         ])):
             result = asyncio.run(build_site_architecture([{'phrase': PRIMARY}, *({'phrase': t[0]} for t in TOPICS[:2])], primary_keyword=PRIMARY, discover_topics=True))
         self.assertEqual(len(result['spokes']), 1)
