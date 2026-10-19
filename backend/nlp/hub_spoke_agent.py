@@ -1990,8 +1990,8 @@ async def _classify_chunk(
     phrases = [item["phrase"] for item in chunk]
     result = await _achat_json(
         system_prompt="You are an SEO keyword classifier. Return only the requested JSON.",
-        user_prompt=f"""Classify each keyword into a topic cluster for a hub-and-spoke content plan.
-Primary topic (homepage): {primary_keyword}
+        user_prompt=f"""Classify each keyword into a topic cluster for a three-tier hub-and-spoke content plan.
+Primary topic (homepage / Tier 1): {primary_keyword}
 Website context: {(context or "No context.")[:3000]}
 
 Keywords to classify:
@@ -2000,14 +2000,16 @@ Keywords to classify:
 For each keyword return:
 - keyword: exact string from the list
 - cluster: short descriptive topic-cluster name (e.g. "Calculation Methods", "Age Interpretation")
-- role: "pillar" if this keyword deserves its own dedicated page, "supporting" if it should be a section/FAQ on a pillar page
+- role: one of "pillar", "cluster_page", or "supporting"
+  - "pillar" (Tier 2): the broadest keyword in a cluster that deserves a main pillar page
+  - "cluster_page" (Tier 3): a keyword that answers a distinct user question and deserves its own page under the pillar
+  - "supporting": a variation, synonym, or sub-question that should be a section/FAQ within a pillar or cluster page
 - intent: one-sentence search intent describing what the user wants
 
-A pillar keyword represents a distinct, substantial user task that needs a full page.
-A supporting keyword is a variation, sub-question, or synonym that belongs on a pillar page.
-The primary topic "{primary_keyword}" is always the homepage, not a pillar.
+The primary topic "{primary_keyword}" is always the homepage (Tier 1), not a pillar.
+Each cluster should have exactly ONE pillar. Most clusters will have 2-5 cluster_pages and several supporting keywords.
 
-Return: {{"classifications": [{{"keyword":"...","cluster":"...","role":"pillar"|"supporting","intent":"..."}}]}}
+Return: {{"classifications": [{{"keyword":"...","cluster":"...","role":"pillar"|"cluster_page"|"supporting","intent":"..."}}]}}
 """,
         temperature=0.1,
         max_tokens=4000,
@@ -2069,12 +2071,17 @@ async def _build_chunked_architecture(
 ) -> dict[str, Any]:
     """Build architecture using small chunked AI calls (bucket-sort algorithm).
 
+    Three-tier pillar-cluster hierarchy:
+      Tier 1: Main homepage (primary keyword)
+      Tier 2: Pillar pages (one per cluster, link UP to main)
+      Tier 3: Cluster spoke pages (link UP to their pillar)
+
     Algorithm:
     1. Split keywords into chunks of ~40
-    2. Classify each chunk: keyword → cluster + pillar/supporting role
+    2. Classify each chunk: keyword → cluster + role (pillar/cluster_page/supporting)
     3. Merge clusters, pick best pillar per cluster
-    4. Generate brief per pillar with its supporting keywords
-    5. Assemble into standard plan format
+    4. Generate brief per pillar with its cluster pages and supporting keywords
+    5. Assemble into standard plan format with 3-tier interlinking
     """
     main = clean_phrase(primary_keyword) or records[0]["phrase"]
     metrics = {item["phrase"]: item for item in records}
@@ -2125,7 +2132,7 @@ async def _build_chunked_architecture(
     for task in tasks:
         all_classifications.extend(task.result())
 
-    # --- Phase 3: Merge clusters and identify pillars ---
+    # --- Phase 3: Merge clusters and identify pillar / cluster_page / supporting ---
     clusters: dict[str, dict[str, Any]] = {}
     classified_keywords = set()
     for item in all_classifications:
@@ -2137,23 +2144,32 @@ async def _build_chunked_architecture(
         role = str(item.get("role") or "supporting").strip().lower()
         intent = str(item.get("intent") or "").strip()
         if cluster_name not in clusters:
-            clusters[cluster_name] = {"pillars": [], "supporting": [], "intents": {}}
+            clusters[cluster_name] = {"pillars": [], "cluster_pages": [], "supporting": [], "intents": {}}
         clusters[cluster_name]["intents"][kw] = intent
         if role == "pillar":
             clusters[cluster_name]["pillars"].append(kw)
+        elif role == "cluster_page":
+            clusters[cluster_name]["cluster_pages"].append(kw)
         else:
             clusters[cluster_name]["supporting"].append(kw)
 
-    # Catch any keywords that weren't classified (e.g., due to partial failure)
+    # Catch any keywords that weren't classified
     for item in non_primary:
         if item["phrase"] not in classified_keywords:
-            clusters.setdefault("Uncategorized", {"pillars": [], "supporting": [], "intents": {}})
+            clusters.setdefault("Uncategorized", {"pillars": [], "cluster_pages": [], "supporting": [], "intents": {}})
             clusters["Uncategorized"]["supporting"].append(item["phrase"])
 
-    # For each cluster, ensure exactly one pillar. If none, promote the highest-frequency keyword.
+    # Ensure exactly one pillar per cluster
     for cluster_name, cluster_data in clusters.items():
-        if not cluster_data["pillars"] and cluster_data["supporting"]:
-            # Promote the best supporting keyword to pillar
+        if not cluster_data["pillars"] and cluster_data["cluster_pages"]:
+            # Promote the best cluster page to pillar
+            best = max(
+                cluster_data["cluster_pages"],
+                key=lambda kw: (metrics.get(kw, {}).get("search_volume") or 0, metrics.get(kw, {}).get("frequency") or 0),
+            )
+            cluster_data["pillars"] = [best]
+            cluster_data["cluster_pages"].remove(best)
+        elif not cluster_data["pillars"] and cluster_data["supporting"]:
             best = max(
                 cluster_data["supporting"],
                 key=lambda kw: (metrics.get(kw, {}).get("search_volume") or 0, metrics.get(kw, {}).get("frequency") or 0),
@@ -2161,18 +2177,20 @@ async def _build_chunked_architecture(
             cluster_data["pillars"] = [best]
             cluster_data["supporting"].remove(best)
         elif len(cluster_data["pillars"]) > 1:
-            # Keep only the best as pillar, demote the rest to supporting
             sorted_pillars = sorted(
                 cluster_data["pillars"],
                 key=lambda kw: (metrics.get(kw, {}).get("search_volume") or 0, metrics.get(kw, {}).get("frequency") or 0),
                 reverse=True,
             )
             cluster_data["pillars"] = [sorted_pillars[0]]
-            cluster_data["supporting"].extend(sorted_pillars[1:])
+            # Demote excess pillars to cluster pages (Tier 3)
+            cluster_data["cluster_pages"].extend(sorted_pillars[1:])
 
     logger.info(
-        "Chunked architecture: %s clusters identified with %s pillar pages",
-        len(clusters), sum(len(c["pillars"]) for c in clusters.values()),
+        "Chunked architecture: %s clusters, %s pillars (Tier 2), %s cluster pages (Tier 3)",
+        len(clusters),
+        sum(len(c["pillars"]) for c in clusters.values()),
+        sum(len(c["cluster_pages"]) for c in clusters.values()),
     )
 
     # --- Phase 4: Generate page briefs per pillar ---
@@ -2184,7 +2202,6 @@ async def _build_chunked_architecture(
         async with brief_semaphore:
             remaining = brief_deadline - asyncio.get_running_loop().time()
             if remaining <= 3:
-                # Time ran out — create a minimal brief deterministically
                 return _deterministic_brief(pillar_kw, supporting_kws, cluster_name, metrics)
             try:
                 return await _generate_pillar_brief(
@@ -2199,15 +2216,94 @@ async def _build_chunked_architecture(
     async with asyncio.TaskGroup() as group:
         for cluster_name, cluster_data in clusters.items():
             for pillar_kw in cluster_data["pillars"]:
+                # Include cluster page keywords in the brief for context
+                all_supporting = cluster_data["cluster_pages"] + cluster_data["supporting"]
                 brief_tasks.append(group.create_task(
-                    generate_one_brief(cluster_name, pillar_kw, cluster_data["supporting"])
+                    generate_one_brief(cluster_name, pillar_kw, all_supporting)
                 ))
 
     for task in brief_tasks:
         pillar_briefs.append(task.result())
 
-    # --- Phase 5: Assemble into standard plan format ---
-    # Build master hub
+    # --- Phase 5: Assemble 3-tier architecture ---
+    #
+    #   Tier 1: MAIN PAGE (homepage)
+    #     ├── links to all Tier 2 pillars
+    #     └── receives links from all Tier 2 pillars
+    #
+    #   Tier 2: PILLAR PAGES (one per cluster)
+    #     ├── parent_target = main (links UP to Tier 1)
+    #     ├── links DOWN to its Tier 3 cluster pages
+    #     └── receives links from its Tier 3 cluster pages
+    #
+    #   Tier 3: CLUSTER SPOKE PAGES (supporting pages under each pillar)
+    #     ├── parent_target = pillar (links UP to Tier 2)
+    #     └── cross-links to sibling cluster pages
+
+    # Build pillar keyword → cluster mapping for quick lookup
+    pillar_to_cluster: dict[str, str] = {}
+    for cluster_name, cluster_data in clusters.items():
+        for pillar_kw in cluster_data["pillars"]:
+            pillar_to_cluster[pillar_kw] = cluster_name
+
+    # Tier 2: Pillar pages
+    spokes = []
+    pillar_set = set()
+    for brief in pillar_briefs:
+        target = clean_phrase(str(brief.get("target_keyword") or ""))
+        if not target or target == main:
+            continue
+        pillar_set.add(target)
+        cluster_name = pillar_to_cluster.get(target, "Supporting")
+        cluster_data = clusters.get(cluster_name, {})
+        # Pillar links: UP to main, DOWN to its cluster pages
+        pillar_internal_links = [main]
+        for cp_kw in cluster_data.get("cluster_pages", []):
+            pillar_internal_links.append(cp_kw)
+
+        page = _clean_page({
+            **brief,
+            "parent_target": main,
+            "spoke_category": cluster_name,
+            "ranking_role": "pillar",
+            "internal_links": pillar_internal_links,
+        }, metrics)
+        spokes.append(page)
+
+    # Tier 3: Cluster spoke pages (under each pillar)
+    for cluster_name, cluster_data in clusters.items():
+        pillar_kw = cluster_data["pillars"][0] if cluster_data["pillars"] else main
+        for cp_kw in cluster_data.get("cluster_pages", []):
+            if cp_kw in pillar_set or cp_kw == main:
+                continue
+            # Cluster page links: UP to its pillar, cross-links to siblings
+            cp_internal_links = [pillar_kw]
+            siblings = [s for s in cluster_data.get("cluster_pages", []) if s != cp_kw and s != main]
+            for sibling in siblings[:3]:  # limit cross-links to 3 most related siblings
+                cp_internal_links.append(sibling)
+
+            intent = cluster_data.get("intents", {}).get(cp_kw, f"Subtopic under {pillar_kw}")
+            page = _clean_page({
+                "target_keyword": cp_kw,
+                "article_title": cp_kw.title(),
+                "search_intent": intent or f"Focused guide on {cp_kw}",
+                "intent_class": _infer_intent_class(cp_kw),
+                "spoke_category": cluster_name,
+                "page_type": "article",
+                "content_brief": f"Detailed resource on {cp_kw}, a subtopic of {pillar_kw}.",
+                "user_problem": f"Learning about {cp_kw}",
+                "unique_page_value": f"Focused coverage of {cp_kw} not covered on the pillar page",
+                "reader_outcome": f"Understanding {cp_kw} in the context of {pillar_kw}",
+                "content_requirements": [f"Explain {cp_kw}", f"Connect to {pillar_kw}"],
+                "h2_sections": [],
+                "scope_out": [pillar_kw],
+                "parent_target": pillar_kw,
+                "ranking_role": "cluster_spoke",
+                "internal_links": cp_internal_links,
+            }, metrics)
+            spokes.append(page)
+
+    # Tier 1: Master hub (homepage)
     master = _clean_page({
         "target_keyword": main,
         "article_title": main.title(),
@@ -2215,40 +2311,31 @@ async def _build_chunked_architecture(
         "intent_class": _infer_intent_class(main),
         "spoke_category": "Main",
         "page_type": "article",
-        "content_brief": f"Comprehensive hub page for {main}, linking to all pillar topics.",
+        "content_brief": f"Comprehensive hub page for {main}. Links to all pillar topics for topical authority.",
         "user_problem": f"Finding authoritative information about {main}",
         "unique_page_value": f"Central resource connecting all {main} subtopics",
-        "reader_outcome": f"Understanding {main} and finding the right subtopic page",
+        "reader_outcome": f"Understanding {main} and navigating to the right pillar page",
         "content_requirements": [f"Overview of {main}", "Navigation to pillar topics"],
         "scope_out": [brief.get("target_keyword", "") for brief in pillar_briefs[:5]],
-        "h2_sections": [],
-        "internal_links": [brief.get("target_keyword", "") for brief in pillar_briefs],
+        "h2_sections": [
+            {"h2_heading": cluster_name, "section_definition": f"Overview linking to {cluster_name} pillar"}
+            for cluster_name in list(clusters.keys())[:10]
+        ],
+        "internal_links": list(pillar_set),  # main links DOWN to all pillars
         "parent_target": None,
     }, metrics)
     master["ranking_role"] = "master_hub"
     master["slug"] = "/"
 
-    # Build spokes from pillar briefs
-    spokes = []
-    for brief in pillar_briefs:
-        page = _clean_page({
-            **brief,
-            "parent_target": main,
-            "spoke_category": brief.get("spoke_category", brief.get("cluster", "Supporting")),
-            "internal_links": [main],
-        }, metrics)
-        spokes.append(page)
-
-    # Build keyword assignments
+    # --- Build keyword assignments ---
     assignments = []
-    # Primary keyword → homepage
+    # Tier 1: Primary keyword → homepage
     assignments.append({
         "keyword": main, "disposition": "page_target",
         "assigned_to": main, "placement": "title",
-        "reason": "Primary topic homepage",
+        "reason": "Tier 1: Primary topic homepage",
     })
-    # Pillar keywords → page_target
-    pillar_set = {brief.get("target_keyword", "") for brief in pillar_briefs}
+    # Tier 2: Pillar keywords → page_target
     for brief in pillar_briefs:
         target = clean_phrase(str(brief.get("target_keyword") or ""))
         if not target or target == main:
@@ -2256,17 +2343,29 @@ async def _build_chunked_architecture(
         assignments.append({
             "keyword": target, "disposition": "page_target",
             "assigned_to": target, "placement": "title",
-            "reason": f"Pillar page for {brief.get('search_intent', 'this topic')}",
+            "reason": f"Tier 2: Pillar page for cluster '{pillar_to_cluster.get(target, 'topic')}'",
         })
+    # Tier 3: Cluster page keywords → page_target
+    cluster_page_set = set()
+    for cluster_data in clusters.values():
+        for cp_kw in cluster_data.get("cluster_pages", []):
+            if cp_kw not in pillar_set and cp_kw != main:
+                cluster_page_set.add(cp_kw)
+                pillar_kw = cluster_data["pillars"][0] if cluster_data["pillars"] else main
+                assignments.append({
+                    "keyword": cp_kw, "disposition": "page_target",
+                    "assigned_to": cp_kw, "placement": "title",
+                    "reason": f"Tier 3: Cluster page under pillar '{pillar_kw}'",
+                })
 
-    # Supporting keywords → assigned to their pillar
-    assigned_keywords = {main} | pillar_set
+    # Supporting keywords → assigned to their pillar or cluster page
+    assigned_keywords = {main} | pillar_set | cluster_page_set
     for cluster_name, cluster_data in clusters.items():
         pillar_target = cluster_data["pillars"][0] if cluster_data["pillars"] else None
         if not pillar_target:
             continue
+        # Collect AI-generated placements from pillar brief
         placements = {}
-        # Use AI-generated placements if available
         matching_brief = next(
             (b for b in pillar_briefs if clean_phrase(str(b.get("target_keyword") or "")) == pillar_target), None
         )
@@ -2283,17 +2382,16 @@ async def _build_chunked_architecture(
             if kw in assigned_keywords:
                 continue
             assigned_keywords.add(kw)
-            kp = placements.get(kw, {"placement": "variation", "reason": f"Supporting keyword for {pillar_target}"})
+            kp = placements.get(kw, {"placement": "variation", "reason": f"Supporting keyword on pillar '{pillar_target}'"})
             assignments.append({
                 "keyword": kw, "disposition": "supporting",
                 "assigned_to": pillar_target, "placement": kp["placement"],
                 "reason": kp["reason"],
             })
 
-    # Catch any unassigned keywords — assign to closest pillar or discard
+    # Catch any unassigned keywords
     for item in records:
         if item["phrase"] not in assigned_keywords:
-            # Find the best pillar by checking if any pillar shares words
             best_pillar = None
             best_score = 0
             kw_words = set(item["phrase"].split())
@@ -2308,40 +2406,37 @@ async def _build_chunked_architecture(
                 assignments.append({
                     "keyword": item["phrase"], "disposition": "supporting",
                     "assigned_to": best_pillar, "placement": "variation",
-                    "reason": f"Related to {best_pillar}",
+                    "reason": f"Related to pillar '{best_pillar}'",
                 })
             else:
-                # Assign to the homepage as a variation
                 assignments.append({
                     "keyword": item["phrase"], "disposition": "supporting",
                     "assigned_to": main, "placement": "variation",
                     "reason": "Broadly related to the main topic",
                 })
 
-    # Build link plan
-    link_plan = []
-    for spoke in spokes:
-        link_plan.append({
-            "source_keyword": spoke["target_keyword"],
-            "target_keyword": main,
-            "anchor_text": main.title(),
-            "explanation": f"{spoke['target_keyword']} links to the main hub",
-        })
-        link_plan.append({
-            "source_keyword": main,
-            "target_keyword": spoke["target_keyword"],
-            "anchor_text": spoke["article_title"],
-            "explanation": f"Main hub links to {spoke['target_keyword']}",
-        })
-
+    tier3_count = len(cluster_page_set)
+    tier2_count = len(pillar_set)
     plan = {
-        "site_strategy": f"Three-tier topical authority: {main} as hub, {len(spokes)} pillar pages with supporting keywords",
-        "_planning_thought": f"Chunked architecture: {len(records)} keywords classified into {len(clusters)} clusters",
+        "site_strategy": (
+            f"Three-tier pillar-cluster architecture: {main} (Tier 1 hub) → "
+            f"{tier2_count} pillar pages (Tier 2) → {tier3_count} cluster pages (Tier 3). "
+            f"Cluster pages pass link equity to pillars, pillars pass equity to the homepage."
+        ),
+        "_planning_thought": (
+            f"Chunked bucket-sort: {len(records)} keywords → {len(clusters)} clusters → "
+            f"{tier2_count} pillars + {tier3_count} cluster pages. "
+            f"Link flow: Tier 3 → Tier 2 → Tier 1."
+        ),
         "master_hub": master,
         "spokes": spokes,
         "keyword_assignments": assignments,
-        "link_plan": link_plan,
-        "interlinking_strategy": f"Each pillar page links to the main hub. The main hub links to all pillars. Supporting keywords are placed within their pillar's page sections.",
+        "interlinking_strategy": (
+            f"Three-tier interlinking: {tier3_count} Tier 3 cluster pages link UP to their Tier 2 pillar. "
+            f"{tier2_count} Tier 2 pillars link UP to the Tier 1 homepage and DOWN to their cluster pages. "
+            f"The Tier 1 homepage links DOWN to all pillars. Cross-links between sibling cluster pages "
+            f"strengthen the topical cluster. Link equity flows: clusters → pillars → homepage."
+        ),
         "writing_standards": WRITING_STANDARDS,
         "_keyword_metrics": records,
         "_semantic_audit_status": "passed",
@@ -2358,6 +2453,7 @@ async def _build_chunked_architecture(
                 "Your previous saved map is unchanged."
             )
         plan["authority_coverage"]["discovery_message"] = reason
+    # attach_topical_map builds the link_plan from parent_target + internal_links
     from nlp.topical_map import attach_topical_map
     return attach_topical_map(_apply_assignments(plan))
 
