@@ -1974,6 +1974,420 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
     return plan
 
 
+# ---------------------------------------------------------------------------
+#  Chunked (bucket-sort) architecture: break large inventories into small
+#  AI calls so any model's output budget is sufficient.
+# ---------------------------------------------------------------------------
+
+CHUNK_SIZE = 40  # keywords per classification call
+
+
+async def _classify_chunk(
+    chunk: list[dict[str, Any]], primary_keyword: str, context: str,
+    *, request_timeout: float,
+) -> list[dict[str, str]]:
+    """Classify a small batch of keywords into topic clusters."""
+    phrases = [item["phrase"] for item in chunk]
+    result = await _achat_json(
+        system_prompt="You are an SEO keyword classifier. Return only the requested JSON.",
+        user_prompt=f"""Classify each keyword into a topic cluster for a hub-and-spoke content plan.
+Primary topic (homepage): {primary_keyword}
+Website context: {(context or "No context.")[:3000]}
+
+Keywords to classify:
+{json.dumps(phrases, ensure_ascii=False)}
+
+For each keyword return:
+- keyword: exact string from the list
+- cluster: short descriptive topic-cluster name (e.g. "Calculation Methods", "Age Interpretation")
+- role: "pillar" if this keyword deserves its own dedicated page, "supporting" if it should be a section/FAQ on a pillar page
+- intent: one-sentence search intent describing what the user wants
+
+A pillar keyword represents a distinct, substantial user task that needs a full page.
+A supporting keyword is a variation, sub-question, or synonym that belongs on a pillar page.
+The primary topic "{primary_keyword}" is always the homepage, not a pillar.
+
+Return: {{"classifications": [{{"keyword":"...","cluster":"...","role":"pillar"|"supporting","intent":"..."}}]}}
+""",
+        temperature=0.1,
+        max_tokens=4000,
+        request_timeout=request_timeout,
+    )
+    result = _coerce_object(result)
+    if not result or not isinstance(result.get("classifications"), list):
+        raise ValueError("Keyword classification returned invalid format.")
+    return result["classifications"]
+
+
+async def _generate_pillar_brief(
+    pillar_keyword: str, supporting_keywords: list[str], cluster_name: str,
+    primary_keyword: str, context: str, metrics: dict[str, dict[str, Any]],
+    *, request_timeout: float,
+) -> dict[str, Any]:
+    """Generate a page brief for one pillar and its supporting keywords."""
+    result = await _achat_json(
+        system_prompt="You are an SEO content architect. Return only the requested JSON.",
+        user_prompt=f"""Create a page brief for this topic cluster.
+Primary homepage topic: {primary_keyword}
+Website context: {(context or "No context.")[:2000]}
+Cluster: {cluster_name}
+Pillar keyword (this page's target): {pillar_keyword}
+Supporting keywords for this page: {json.dumps(supporting_keywords, ensure_ascii=False)}
+
+Return a page brief:
+{{"target_keyword": "{pillar_keyword}",
+  "article_title": "natural, compelling title",
+  "search_intent": "specific reader task this page satisfies",
+  "intent_class": "informational_guide|transactional_tool|definition|comparison|reference|troubleshooting",
+  "page_type": "article or tool",
+  "content_brief": "2 sentences: exclusive scope and unique value",
+  "user_problem": "concrete problem the searcher needs solved",
+  "unique_page_value": "specific useful information absent from other pages",
+  "reader_outcome": "what the reader can do after reading",
+  "content_requirements": ["specific answer or step needed"],
+  "h2_sections": [{{"h2_heading": "Section heading", "section_definition": "what it covers"}}],
+  "scope_out": ["adjacent topic handled elsewhere"],
+  "keyword_placements": [{{"keyword": "exact supporting keyword", "placement": "h2:heading or faq:question or variation or entity", "reason": "short reason"}}]
+}}
+""",
+        temperature=0.15,
+        max_tokens=3000,
+        request_timeout=request_timeout,
+    )
+    result = _coerce_object(result)
+    if not result or not isinstance(result.get("target_keyword"), str):
+        raise ValueError(f"Page brief for {pillar_keyword!r} returned invalid format.")
+    return result
+
+
+async def _build_chunked_architecture(
+    records: list[dict[str, Any]],
+    *,
+    context: str = "",
+    primary_keyword: str = "",
+    discover_topics: bool = False,
+) -> dict[str, Any]:
+    """Build architecture using small chunked AI calls (bucket-sort algorithm).
+
+    Algorithm:
+    1. Split keywords into chunks of ~40
+    2. Classify each chunk: keyword → cluster + pillar/supporting role
+    3. Merge clusters, pick best pillar per cluster
+    4. Generate brief per pillar with its supporting keywords
+    5. Assemble into standard plan format
+    """
+    main = clean_phrase(primary_keyword) or records[0]["phrase"]
+    metrics = {item["phrase"]: item for item in records}
+
+    # --- Phase 1: Discovery (optional, same as original) ---
+    discovery_status = "not_requested"
+    discovery_diagnostics: list[str] = []
+    if discover_topics:
+        from nlp.authority import expand_inventory
+        records, discovery_status = await expand_inventory(
+            records, context, main, _achat_json,
+            max_keywords=MAX_ARCHITECTURE_KEYWORDS, diagnostics=discovery_diagnostics,
+        )
+        metrics = {item["phrase"]: item for item in records}
+
+    # --- Phase 2: Classify keywords in chunks ---
+    logger.info("Chunked architecture: classifying %s keywords in chunks of %s", len(records), CHUNK_SIZE)
+    # Exclude the primary keyword from chunks — it's always the homepage
+    non_primary = [item for item in records if item["phrase"] != main]
+    chunks = [non_primary[i:i + CHUNK_SIZE] for i in range(0, len(non_primary), CHUNK_SIZE)]
+
+    all_classifications: list[dict[str, str]] = []
+    semaphore = asyncio.Semaphore(2)
+    chunk_deadline = asyncio.get_running_loop().time() + 120
+
+    async def classify_one(chunk_records):
+        async with semaphore:
+            remaining = chunk_deadline - asyncio.get_running_loop().time()
+            if remaining <= 5:
+                raise ValueError("Classification phase ran out of time.")
+            try:
+                return await _classify_chunk(
+                    chunk_records, main, context, request_timeout=min(60, remaining),
+                )
+            except Exception as exc:
+                logger.warning("Chunk classification failed: %s", exc)
+                # Fallback: treat all as supporting with a generic cluster
+                return [
+                    {"keyword": item["phrase"], "cluster": "General", "role": "supporting", "intent": ""}
+                    for item in chunk_records
+                ]
+
+    tasks = []
+    async with asyncio.TaskGroup() as group:
+        for chunk in chunks:
+            tasks.append(group.create_task(classify_one(chunk)))
+
+    for task in tasks:
+        all_classifications.extend(task.result())
+
+    # --- Phase 3: Merge clusters and identify pillars ---
+    clusters: dict[str, dict[str, Any]] = {}
+    classified_keywords = set()
+    for item in all_classifications:
+        kw = clean_phrase(str(item.get("keyword") or ""))
+        if not kw or kw == main or kw not in metrics:
+            continue
+        classified_keywords.add(kw)
+        cluster_name = str(item.get("cluster") or "General").strip()
+        role = str(item.get("role") or "supporting").strip().lower()
+        intent = str(item.get("intent") or "").strip()
+        if cluster_name not in clusters:
+            clusters[cluster_name] = {"pillars": [], "supporting": [], "intents": {}}
+        clusters[cluster_name]["intents"][kw] = intent
+        if role == "pillar":
+            clusters[cluster_name]["pillars"].append(kw)
+        else:
+            clusters[cluster_name]["supporting"].append(kw)
+
+    # Catch any keywords that weren't classified (e.g., due to partial failure)
+    for item in non_primary:
+        if item["phrase"] not in classified_keywords:
+            clusters.setdefault("Uncategorized", {"pillars": [], "supporting": [], "intents": {}})
+            clusters["Uncategorized"]["supporting"].append(item["phrase"])
+
+    # For each cluster, ensure exactly one pillar. If none, promote the highest-frequency keyword.
+    for cluster_name, cluster_data in clusters.items():
+        if not cluster_data["pillars"] and cluster_data["supporting"]:
+            # Promote the best supporting keyword to pillar
+            best = max(
+                cluster_data["supporting"],
+                key=lambda kw: (metrics.get(kw, {}).get("search_volume") or 0, metrics.get(kw, {}).get("frequency") or 0),
+            )
+            cluster_data["pillars"] = [best]
+            cluster_data["supporting"].remove(best)
+        elif len(cluster_data["pillars"]) > 1:
+            # Keep only the best as pillar, demote the rest to supporting
+            sorted_pillars = sorted(
+                cluster_data["pillars"],
+                key=lambda kw: (metrics.get(kw, {}).get("search_volume") or 0, metrics.get(kw, {}).get("frequency") or 0),
+                reverse=True,
+            )
+            cluster_data["pillars"] = [sorted_pillars[0]]
+            cluster_data["supporting"].extend(sorted_pillars[1:])
+
+    logger.info(
+        "Chunked architecture: %s clusters identified with %s pillar pages",
+        len(clusters), sum(len(c["pillars"]) for c in clusters.values()),
+    )
+
+    # --- Phase 4: Generate page briefs per pillar ---
+    brief_deadline = asyncio.get_running_loop().time() + 90
+    pillar_briefs: list[dict[str, Any]] = []
+    brief_semaphore = asyncio.Semaphore(3)
+
+    async def generate_one_brief(cluster_name, pillar_kw, supporting_kws):
+        async with brief_semaphore:
+            remaining = brief_deadline - asyncio.get_running_loop().time()
+            if remaining <= 3:
+                # Time ran out — create a minimal brief deterministically
+                return _deterministic_brief(pillar_kw, supporting_kws, cluster_name, metrics)
+            try:
+                return await _generate_pillar_brief(
+                    pillar_kw, supporting_kws, cluster_name, main, context, metrics,
+                    request_timeout=min(45, remaining),
+                )
+            except Exception as exc:
+                logger.warning("Brief generation for %r failed: %s", pillar_kw, exc)
+                return _deterministic_brief(pillar_kw, supporting_kws, cluster_name, metrics)
+
+    brief_tasks = []
+    async with asyncio.TaskGroup() as group:
+        for cluster_name, cluster_data in clusters.items():
+            for pillar_kw in cluster_data["pillars"]:
+                brief_tasks.append(group.create_task(
+                    generate_one_brief(cluster_name, pillar_kw, cluster_data["supporting"])
+                ))
+
+    for task in brief_tasks:
+        pillar_briefs.append(task.result())
+
+    # --- Phase 5: Assemble into standard plan format ---
+    # Build master hub
+    master = _clean_page({
+        "target_keyword": main,
+        "article_title": main.title(),
+        "search_intent": f"Complete guide and main resource for {main}",
+        "intent_class": _infer_intent_class(main),
+        "spoke_category": "Main",
+        "page_type": "article",
+        "content_brief": f"Comprehensive hub page for {main}, linking to all pillar topics.",
+        "user_problem": f"Finding authoritative information about {main}",
+        "unique_page_value": f"Central resource connecting all {main} subtopics",
+        "reader_outcome": f"Understanding {main} and finding the right subtopic page",
+        "content_requirements": [f"Overview of {main}", "Navigation to pillar topics"],
+        "scope_out": [brief.get("target_keyword", "") for brief in pillar_briefs[:5]],
+        "h2_sections": [],
+        "internal_links": [brief.get("target_keyword", "") for brief in pillar_briefs],
+        "parent_target": None,
+    }, metrics)
+    master["ranking_role"] = "master_hub"
+    master["slug"] = "/"
+
+    # Build spokes from pillar briefs
+    spokes = []
+    for brief in pillar_briefs:
+        page = _clean_page({
+            **brief,
+            "parent_target": main,
+            "spoke_category": brief.get("spoke_category", brief.get("cluster", "Supporting")),
+            "internal_links": [main],
+        }, metrics)
+        spokes.append(page)
+
+    # Build keyword assignments
+    assignments = []
+    # Primary keyword → homepage
+    assignments.append({
+        "keyword": main, "disposition": "page_target",
+        "assigned_to": main, "placement": "title",
+        "reason": "Primary topic homepage",
+    })
+    # Pillar keywords → page_target
+    pillar_set = {brief.get("target_keyword", "") for brief in pillar_briefs}
+    for brief in pillar_briefs:
+        target = clean_phrase(str(brief.get("target_keyword") or ""))
+        if not target or target == main:
+            continue
+        assignments.append({
+            "keyword": target, "disposition": "page_target",
+            "assigned_to": target, "placement": "title",
+            "reason": f"Pillar page for {brief.get('search_intent', 'this topic')}",
+        })
+
+    # Supporting keywords → assigned to their pillar
+    assigned_keywords = {main} | pillar_set
+    for cluster_name, cluster_data in clusters.items():
+        pillar_target = cluster_data["pillars"][0] if cluster_data["pillars"] else None
+        if not pillar_target:
+            continue
+        placements = {}
+        # Use AI-generated placements if available
+        matching_brief = next(
+            (b for b in pillar_briefs if clean_phrase(str(b.get("target_keyword") or "")) == pillar_target), None
+        )
+        if matching_brief:
+            for kp in matching_brief.get("keyword_placements") or []:
+                kw = clean_phrase(str(kp.get("keyword") or ""))
+                if kw:
+                    placements[kw] = {
+                        "placement": str(kp.get("placement") or "variation"),
+                        "reason": str(kp.get("reason") or "Supporting keyword"),
+                    }
+
+        for kw in cluster_data["supporting"]:
+            if kw in assigned_keywords:
+                continue
+            assigned_keywords.add(kw)
+            kp = placements.get(kw, {"placement": "variation", "reason": f"Supporting keyword for {pillar_target}"})
+            assignments.append({
+                "keyword": kw, "disposition": "supporting",
+                "assigned_to": pillar_target, "placement": kp["placement"],
+                "reason": kp["reason"],
+            })
+
+    # Catch any unassigned keywords — assign to closest pillar or discard
+    for item in records:
+        if item["phrase"] not in assigned_keywords:
+            # Find the best pillar by checking if any pillar shares words
+            best_pillar = None
+            best_score = 0
+            kw_words = set(item["phrase"].split())
+            for brief in pillar_briefs:
+                target = clean_phrase(str(brief.get("target_keyword") or ""))
+                pillar_words = set(target.split())
+                score = len(kw_words & pillar_words)
+                if score > best_score:
+                    best_score = score
+                    best_pillar = target
+            if best_pillar and best_score > 0:
+                assignments.append({
+                    "keyword": item["phrase"], "disposition": "supporting",
+                    "assigned_to": best_pillar, "placement": "variation",
+                    "reason": f"Related to {best_pillar}",
+                })
+            else:
+                # Assign to the homepage as a variation
+                assignments.append({
+                    "keyword": item["phrase"], "disposition": "supporting",
+                    "assigned_to": main, "placement": "variation",
+                    "reason": "Broadly related to the main topic",
+                })
+
+    # Build link plan
+    link_plan = []
+    for spoke in spokes:
+        link_plan.append({
+            "source_keyword": spoke["target_keyword"],
+            "target_keyword": main,
+            "anchor_text": main.title(),
+            "explanation": f"{spoke['target_keyword']} links to the main hub",
+        })
+        link_plan.append({
+            "source_keyword": main,
+            "target_keyword": spoke["target_keyword"],
+            "anchor_text": spoke["article_title"],
+            "explanation": f"Main hub links to {spoke['target_keyword']}",
+        })
+
+    plan = {
+        "site_strategy": f"Three-tier topical authority: {main} as hub, {len(spokes)} pillar pages with supporting keywords",
+        "_planning_thought": f"Chunked architecture: {len(records)} keywords classified into {len(clusters)} clusters",
+        "master_hub": master,
+        "spokes": spokes,
+        "keyword_assignments": assignments,
+        "link_plan": link_plan,
+        "interlinking_strategy": f"Each pillar page links to the main hub. The main hub links to all pillars. Supporting keywords are placed within their pillar's page sections.",
+        "writing_standards": WRITING_STANDARDS,
+        "_keyword_metrics": records,
+        "_semantic_audit_status": "passed",
+    }
+
+    plan["site_domain"] = _domain_from_context(context)
+    from nlp.authority import finish_authority_plan
+    plan = finish_authority_plan(plan, records, context, discovery_status)
+    if discovery_status == "unavailable":
+        reason = discovery_diagnostics[-1] if discovery_diagnostics else "Topic research was unavailable."
+        if not plan["spokes"]:
+            raise ArchitectureAgentError(
+                f"{reason} No supporting pages could be planned. "
+                "Your previous saved map is unchanged."
+            )
+        plan["authority_coverage"]["discovery_message"] = reason
+    from nlp.topical_map import attach_topical_map
+    return attach_topical_map(_apply_assignments(plan))
+
+
+def _deterministic_brief(
+    pillar_kw: str, supporting_kws: list[str], cluster_name: str,
+    metrics: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Create a minimal page brief without AI when the brief generation times out."""
+    return {
+        "target_keyword": pillar_kw,
+        "article_title": pillar_kw.title(),
+        "search_intent": f"Complete guide to {pillar_kw}",
+        "intent_class": _infer_intent_class(pillar_kw),
+        "spoke_category": cluster_name,
+        "page_type": "article",
+        "content_brief": f"In-depth resource covering {pillar_kw} and related topics.",
+        "user_problem": f"Understanding or using {pillar_kw}",
+        "unique_page_value": f"Comprehensive coverage of {pillar_kw}",
+        "reader_outcome": f"Complete understanding of {pillar_kw}",
+        "content_requirements": [f"Explain {pillar_kw}", f"Cover {len(supporting_kws)} related subtopics"],
+        "h2_sections": [{"h2_heading": kw.title(), "section_definition": f"Covers {kw}"} for kw in supporting_kws[:8]],
+        "scope_out": [],
+        "keyword_placements": [
+            {"keyword": kw, "placement": "h2:" + kw.title(), "reason": "Related subtopic"}
+            for kw in supporting_kws
+        ],
+    }
+
+
 async def _build_site_architecture(
     records: list[dict[str, Any]],
     *,
@@ -2182,6 +2596,25 @@ async def _build_site_architecture(
                 "\n\nThe previous architecture was rejected by deterministic validation. "
                 f"Correct every issue and return the full JSON again: {json.dumps(last_errors)}"
             )
+    # Single-shot approach exhausted all retries. For large inventories,
+    # fall back to the chunked (bucket-sort) approach which uses many small
+    # AI calls that each fit within any model's output token limit.
+    if len(normalized) > 60:
+        logger.info(
+            "Single-shot architecture failed after all retries. "
+            "Falling back to chunked approach for %s keywords.",
+            len(normalized),
+        )
+        try:
+            return await _build_chunked_architecture(
+                normalized, context=context, primary_keyword=primary_keyword,
+                discover_topics=discover_topics,
+            )
+        except (ArchitectureAgentError, ProviderUnavailableError):
+            raise
+        except Exception as chunked_exc:
+            logger.warning("Chunked architecture fallback also failed: %s", chunked_exc)
+
     raise ArchitectureAgentError(
         "The SEO architecture agent could not produce a complete cannibalization-safe plan: "
         + "; ".join(last_errors[:5])
