@@ -250,6 +250,95 @@ def _has_complete_json_containers(content: str) -> bool:
     return False
 
 
+def _is_repairable_json(content: str) -> bool:
+    """Accept documents that are complete OR nearly complete (≤3 unclosed containers).
+
+    Large architecture responses sometimes get truncated by a few closing
+    brackets.  A model-assisted repair or simple bracket-closing can recover
+    these; rejecting them outright causes the recurring 'incomplete structured
+    response' error.
+    """
+    value = _strip_code_fences(content)
+    if not value or value[0] not in '{[':
+        return False
+    # Must have a reasonable amount of content to be worth repairing.
+    if len(value) < 200:
+        return False
+    stack = []
+    quoted = escaped = False
+    for char in value:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == '"':
+                quoted = False
+            continue
+        if char == '"':
+            quoted = True
+        elif char in '{[':
+            stack.append(char)
+        elif char in '}]':
+            expected = '{' if char == '}' else '['
+            if stack and stack[-1] == expected:
+                stack.pop()
+    # Fully balanced = great.  Up to 3 unclosed containers = still repairable.
+    return len(stack) <= 3
+
+
+def _try_close_truncated_json(content: str) -> str | None:
+    """Attempt to close a truncated JSON document by appending missing brackets.
+
+    Returns the repaired string if it parses, or None if the damage is too deep.
+    This handles the common case where the model ran out of tokens and the
+    response is missing 1-3 closing brackets/braces.
+    """
+    value = _strip_code_fences(content)
+    if not value or value[0] not in '{[':
+        return None
+    # Remove any trailing incomplete key or value (after the last comma or colon)
+    # by stripping back to the last structural character.
+    stripped = _remove_json_trailing_commas(value)
+    # Walk the string to find unclosed containers.
+    stack = []
+    quoted = escaped = False
+    for char in stripped:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == '"':
+                quoted = False
+            continue
+        if char == '"':
+            quoted = True
+        elif char in '{[':
+            stack.append(char)
+        elif char in '}]':
+            expected = '{' if char == '}' else '['
+            if stack and stack[-1] == expected:
+                stack.pop()
+    if not stack or len(stack) > 5:
+        return None
+    # If we're inside an open string, close it first.
+    if quoted:
+        stripped += '"'
+    # Trim any trailing partial token (unfinished key, dangling comma/colon).
+    trimmed = stripped.rstrip()
+    while trimmed and trimmed[-1] in ',: ':
+        trimmed = trimmed[:-1].rstrip()
+    # Append the missing closing brackets in reverse order.
+    suffix = ''.join('}' if opener == '{' else ']' for opener in reversed(stack))
+    candidate = trimmed + suffix
+    try:
+        json.loads(candidate)
+        return candidate
+    except json.JSONDecodeError:
+        return None
+
+
 async def _achat_json(
     *,
     system_prompt: str,
@@ -287,10 +376,24 @@ async def _achat_json(
         return _parse_json_payload(content)
     except json.JSONDecodeError as exc:
         remaining = deadline - time.monotonic()
-        if not json_object:
+        # Attempt repair for ANY response that looks like JSON, regardless of
+        # whether json_object mode was requested.  The architecture call does
+        # not use json_object=True, but it still expects a JSON object back.
+        stripped_probe = _strip_code_fences(content)
+        looks_like_json = stripped_probe[:1] in ('{', '[')
+        if not json_object and not looks_like_json:
             raise
         logger.warning('Architecture JSON syntax failed at line %s column %s', exc.lineno, exc.colno)
-        if remaining <= 1 or not _has_complete_json_containers(content):
+        # Quick local fix: try closing truncated brackets before model repair.
+        closed = _try_close_truncated_json(content)
+        if closed:
+            try:
+                result = _parse_json_payload(closed)
+                logger.info('Recovered truncated JSON by closing %s missing bracket(s)', len(closed) - len(_strip_code_fences(content)))
+                return result
+            except json.JSONDecodeError:
+                pass
+        if remaining <= 1 or not _is_repairable_json(content):
             raise ValueError('The AI returned an incomplete structured response; regenerate the complete JSON object.') from exc
         # Repair syntax in place once, within the ORIGINAL stage deadline.
         # Incomplete documents must be regenerated, never completed by guessing.
