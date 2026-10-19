@@ -367,9 +367,22 @@ async def _achat_json(
     timeout_options = {"request_timeout": request_timeout} if request_timeout is not None else {}
     response = await acomplete(request, writing=use_writing_model, **timeout_options)
     if getattr(response.choices[0], 'finish_reason', None) == 'length':
+        # The response hit the model's output token cap.  For large inventories
+        # the JSON may be structurally complete but missing trailing keywords.
+        # Try bracket-closing recovery before discarding the whole response.
+        content = response.choices[0].message.content or ""
+        logger.warning('Response hit output token limit (finish_reason=length), attempting truncation recovery')
+        closed = _try_close_truncated_json(content)
+        if closed:
+            try:
+                result = _parse_json_payload(closed)
+                logger.info('Recovered token-limited response by closing missing brackets')
+                return result
+            except json.JSONDecodeError:
+                pass
         raise ValueError(
-            'The JSON response reached its output limit. Return a complete object using shorter '
-            'descriptions and grouped keyword references; preserve all keyword decisions and distinct tasks.'
+            'The JSON response reached its output limit and could not be recovered. '
+            'Reduce the keyword inventory or use a model with a higher output token limit.'
         )
     content = response.choices[0].message.content or ""
     try:

@@ -2141,10 +2141,47 @@ async def _build_site_architecture(
         except Exception as exc:
             last_errors = [str(exc) or type(exc).__name__]
             logger.warning("SEO architecture agent attempt %s failed: %s", attempt + 1, last_errors[0])
-        prompt += (
-            "\n\nThe previous architecture was rejected by deterministic validation. "
-            f"Correct every issue and return the full JSON again: {json.dumps(last_errors)}"
+        # Detect output-limit truncation and reduce inventory on retry.
+        is_output_limit = any(
+            'output limit' in err or 'output token limit' in err
+            or 'reached its output' in err or 'incomplete structured response' in err
+            for err in last_errors
         )
+        if is_output_limit and len(normalized) > 60:
+            # Trim to ~60% to fit within the model's output token budget.
+            # Preserve the primary keyword and high-value gap keywords;
+            # shed editorial proposals, pending research and low-frequency terms first.
+            target_count = max(60, int(len(normalized) * 0.6))
+            primary_set = {main}
+
+            def _trim_priority(item):
+                """Lower priority = kept first. High priority = trimmed first."""
+                if item["phrase"] in primary_set:
+                    return 0  # never trim primary
+                evidence = item.get("evidence_type", "")
+                if evidence == "editorial_proposal":
+                    return 4  # trim first
+                if item.get("research_status") == "pending":
+                    return 3
+                if evidence == "owned_page":
+                    return 1  # keep existing pages
+                return 2  # regular gap keywords
+
+            sorted_records = sorted(normalized, key=_trim_priority)
+            normalized = sorted_records[:target_count]
+            # Ensure primary keyword is present
+            if not any(item["phrase"] == main for item in normalized):
+                normalized.insert(0, next(item for item in sorted_records if item["phrase"] == main))
+            logger.info(
+                "Reduced keyword inventory from %s to %s after output token limit hit",
+                len(sorted_records), len(normalized),
+            )
+            prompt = _prompt(normalized, context, main)
+        else:
+            prompt += (
+                "\n\nThe previous architecture was rejected by deterministic validation. "
+                f"Correct every issue and return the full JSON again: {json.dumps(last_errors)}"
+            )
     raise ArchitectureAgentError(
         "The SEO architecture agent could not produce a complete cannibalization-safe plan: "
         + "; ".join(last_errors[:5])
