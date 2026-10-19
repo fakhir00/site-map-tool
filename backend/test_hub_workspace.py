@@ -185,6 +185,21 @@ class HubWorkspaceTests(unittest.TestCase):
         content = "Here is the requested architecture:\n```json\n" + json.dumps(payload) + "\n```"
         self.assertEqual(_parse_json_payload(content), payload)
 
+    def test_complete_ai_json_recovers_trailing_commas_without_changing_text(self):
+        payload = {'pages': [{'target_keyword': 'dot plot maker',
+                             'scope': 'Keep literal ,} and ,] and escaped "quotes" unchanged.'}],
+                   'discarded': []}
+        text = json.dumps(payload).replace('}],', '},],')
+        text = text[:-1] + ',}'
+        self.assertEqual(_parse_json_payload(text), payload)
+
+    def test_json_recovery_never_invents_truncated_fields_or_closing_containers(self):
+        for text in ('{"pages":[{"target_keyword":"dot plot maker",},],',
+                     '{"pages":[{"target_keyword":', '{"pages": [1,,2]}',
+                     '{"pages": [1], "scope": unquoted}'):
+            with self.subTest(text=text), self.assertRaises(json.JSONDecodeError):
+                _parse_json_payload(text)
+
     def test_truncated_outer_json_never_becomes_a_nested_page_or_keyword(self):
         for content in (
             '{"pages":[{"target_keyword":"spirit animal quiz"}], "keyword_decisions": [',

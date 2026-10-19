@@ -36,6 +36,31 @@ class ProviderReliabilityTests(TestCase):
             with self.assertRaisesRegex(ValueError, 'output limit.*preserve all keyword decisions'):
                 asyncio.run(_achat_json(system_prompt='Return JSON.', user_prompt='Build the plan.'))
 
+    def test_complete_malformed_json_is_repaired_once_with_remaining_stage_budget(self):
+        from nlp.hub_spoke_agent import _achat_json
+        broken = '{"pages":[{target_keyword:"dot plot maker"}],"discarded":[]}'
+        fixed = '{"pages":[{"target_keyword":"dot plot maker"}],"discarded":[]}'
+        responses = [SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',
+                     message=SimpleNamespace(content=body))]) for body in (broken, fixed)]
+        clock = SimpleNamespace(monotonic=MagicMock(side_effect=[10.0, 15.0]))
+        with patch('nlp.openrouter.time', clock), patch('nlp.providers.acomplete', new=AsyncMock(side_effect=responses)) as complete:
+            result = asyncio.run(_achat_json(system_prompt='Return JSON.', user_prompt='Build the plan.', request_timeout=30))
+        self.assertEqual(result['pages'][0]['target_keyword'], 'dot plot maker')
+        self.assertEqual(complete.await_count, 2)
+        self.assertEqual(complete.await_args_list[1].kwargs['request_timeout'], 25)
+        self.assertEqual(complete.await_args_list[1].args[0]['messages'][1]['content'], broken)
+
+    def test_format_repair_never_completes_truncated_documents_or_loops_forever(self):
+        from nlp.hub_spoke_agent import _achat_json
+        for content, calls in (('{"pages":[{"target_keyword":"dot plot maker"}', 1),
+                               ('{"pages": [unquoted]}', 2)):
+            response = SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',
+                                       message=SimpleNamespace(content=content))])
+            with self.subTest(content=content), patch('nlp.providers.acomplete', new=AsyncMock(return_value=response)) as complete:
+                with self.assertRaisesRegex(ValueError, 'incomplete structured|still malformed'):
+                    asyncio.run(_achat_json(system_prompt='Return JSON.', user_prompt='Build the plan.', request_timeout=30))
+            self.assertEqual(complete.await_count, calls)
+
     def test_sync_falls_back_on_balance_failure_and_does_not_expose_keys(self):
         error = RuntimeError('secret-one raw provider error')
         error.status_code = 402

@@ -62,6 +62,66 @@ class IntentConsolidationTests(unittest.TestCase):
             accepted = asyncio.run(_verify_intent_merges(plan, conflicts, '', request_timeout=30))
         self.assertEqual(len(accepted), 1)
 
+    def test_independent_eligibility_resolves_disagreement_without_repeating_full_review(self):
+        targets = ['dot plot maker', 'how to make a dot plot by hand', 'dot plot vs stem and leaf plot']
+        payload = payload_for(targets)
+        review = approved_review(payload)
+        assessments = review.pop('url_assessments')
+        review.update(passed=False, conflicts=[{
+            'page_a': targets[1], 'page_b': targets[2], 'reason': 'Both discuss drawing data distributions.',
+            'one_page_test': SAME_PAGE,
+        }])
+        independent = {'comparisons': [[0, False, False,
+                       'Drawing a dot plot manually and choosing a chart require different steps and answers.']],
+                       'url_assessments': assessments}
+        chat = AsyncMock(side_effect=[payload, review, independent])
+        with patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True), patch('nlp.hub_spoke_agent._achat_json', chat):
+            plan = asyncio.run(build_site_architecture([{'phrase': target} for target in targets], primary_keyword=targets[0]))
+        self.assertEqual(plan['_semantic_audit_status'], 'passed')
+        self.assertEqual(len(plan['spokes']), 2)
+        self.assertTrue(all(page.get('url_assessment') for page in plan['spokes']))
+        self.assertEqual(chat.await_count, 3)
+
+    def test_independent_merge_denial_cannot_approve_an_unsupported_page(self):
+        from nlp.hub_spoke_agent import _audit_intent_cannibalization, _normalize_plan
+        targets = ['dot plot maker', 'dot plot ai data generation']
+        payload = payload_for(targets)
+        review = {'passed': False, 'conflicts': [{'page_a': targets[0], 'page_b': targets[1],
+                  'one_page_test': SAME_PAGE}], 'rejections': [], 'url_assessments': []}
+        independent = {'comparisons': [[0, False, False, 'Generating data differs from plotting supplied data.']],
+                       'url_assessments': [{'target_keyword': targets[1], 'classification': 'unsupported',
+                                            'independent_task': 'Generate data', 'unique_value': 'AI data generation',
+                                            'capability_basis': 'Not supported by the site'}]}
+        plan = _normalize_plan(payload, [{'phrase': target} for target in targets], targets[0])
+        with patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[review, independent])):
+            conflicts, rejections, errors = asyncio.run(_audit_intent_cannibalization(plan, 'Only plots user-supplied numbers.'))
+        self.assertTrue(errors)
+        self.assertIn('supported capability', errors[0])
+        self.assertNotIn('url_assessment', plan['spokes'][0])
+
+    def test_partial_eligibility_reviews_accumulate_only_for_an_unchanged_plan(self):
+        from nlp.hub_spoke_agent import _audit_intent_cannibalization, _normalize_plan, _apply_assignments
+        targets = ['dot plot maker', 'how to make a dot plot by hand', 'dot plot vs histogram']
+        payload = payload_for(targets)
+        complete = approved_review(payload)
+        for change in (False, True):
+            with self.subTest(change=change):
+                plan = _normalize_plan(payload, [{'phrase': target} for target in targets], targets[0])
+                responses = [{**complete, 'url_assessments': [item]} for item in complete['url_assessments']
+                             if item['target_keyword'] != targets[0]]
+                async def run():
+                    first = await _audit_intent_cannibalization(plan, 'Dot plot editor and educational guides')
+                    self.assertTrue(first[2])
+                    if change:
+                        plan['spokes'][0]['content_requirements'] = ['An unreviewed change to the answer']
+                    return await _audit_intent_cannibalization(plan, 'Dot plot editor and educational guides')
+                with patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=responses)):
+                    conflicts, rejections, errors = asyncio.run(run())
+                self.assertEqual(bool(errors), change)
+                if not change:
+                    self.assertTrue(all(page.get('url_assessment') for page in plan['spokes']))
+                    self.assertNotIn('_url_review_cache', _apply_assignments(plan))
+
     def test_independent_merge_review_batches_every_pair_and_fails_atomically(self):
         from copy import deepcopy
         from nlp.hub_spoke_agent import _normalize_plan, _verify_intent_merges, normalize_keyword_records

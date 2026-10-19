@@ -131,6 +131,22 @@ class KeywordCoverageTests(unittest.TestCase):
         self.assertTrue(all(page['content_requirements'] for page in plan['spokes']))
         self.assertEqual(plan['_semantic_audit_status'], 'passed')
 
+    def test_coverage_echoed_destination_does_not_duplicate_or_overwrite_owned_page(self):
+        primary, records, payload, destinations = animal_inventory()
+        plan = _repair_plan_consistency(_normalize_plan(payload, records, primary), records, primary)
+        original_pages = deepcopy([plan['master_hub'], *plan['spokes']])
+        async def respond(**kwargs):
+            reply = coverage_reply(kwargs['user_prompt'], destinations)
+            reply['pages'] = [{**payload['pages'][1], 'existing_url': 'https://untrusted.example/replacement/'}]
+            return reply
+        async def run():
+            return await _review_keyword_coverage(plan, records, 'Animal profiles', deadline=asyncio.get_running_loop().time() + 45)
+        with patch('nlp.hub_spoke_agent._achat_json', side_effect=respond):
+            result = asyncio.run(run())
+        self.assertEqual([result['master_hub'], *result['spokes']], original_pages)
+        self.assertEqual(validate_architecture(result, records, primary), [])
+        self.assertEqual(_apply_assignments(result)['keyword_coverage']['used'], 73)
+
     def test_full_build_uses_73_keywords_across_seven_pages_without_duplicate_urls(self):
         primary, records, payload, destinations = animal_inventory()
         coverage_batches = []

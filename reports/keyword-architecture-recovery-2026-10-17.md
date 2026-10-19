@@ -82,8 +82,17 @@ semantic audit. Of the original 134 gap rows, 128 were retained. Inspection of
 that output then prompted the final locale and historical-brand fixes above.
 The second clean scan exposed the taxonomy conflict above and stopped at 21
 gaps. Its actual provider output confirmed the exclusion of `animal`; this was
-not a lack of available topics. The corrected research stages are being rerun
-against the same freshly crawled pages before final architecture validation.
+not a lack of available topics. Corrected research against the same fresh crawl
+then stored **94 gaps**. A subsequent live map used **285 of 300 phrases across
+56 pages**, reusing 44 existing URLs and proposing 12 new pages. It retained
+84 of the 94 gap rows and passed semantic review. The saved
+[keyword placements](animalsoulquiz-keyword-placements-2026-10-17.csv) and
+[page plan](animalsoulquiz-page-plan-2026-10-17.md) record that run.
+
+Repeated builds still exposed response-format and review-retry failures. See the
+[19 October dotplotmaker investigation](dotplotmaker-map-recovery-2026-10-19.md)
+for the subsequent reliability fixes and verification; one successful build
+was not sufficient evidence that those remaining failures were resolved.
 
 These checks use an isolated local database, not customer production records.
 The hosted backend must run the updated revision before users receive the fixes.

@@ -7,6 +7,7 @@ import asyncio
 import logging
 import math
 import re
+import hashlib
 from difflib import SequenceMatcher
 from typing import Any
 from urllib.parse import urlparse
@@ -1070,8 +1071,19 @@ Only return pages for new page_target decisions. An empty pages list is valid.
             batch_keywords = {item["keyword"] for item in batch}
             proposed = []
             for raw in payload.get("pages") or []:
-                if not isinstance(raw, dict) or clean_phrase(str(raw.get("target_keyword") or "")) not in batch_keywords - page_targets:
-                    raise ValueError("Keyword coverage review proposed an unknown or duplicate page.")
+                if not isinstance(raw, dict):
+                    raise ValueError("Keyword coverage review pages must contain complete page objects.")
+                target = clean_phrase(str(raw.get("target_keyword") or ""))
+                if target in page_targets:
+                    # Some responses echo a destination brief. The original
+                    # planned page owns this target; never duplicate or replace it.
+                    continue
+                if target not in batch_keywords:
+                    raise ValueError(
+                        f"Recovered page target {target!r} is outside this batch. "
+                        f"New page targets must be one of {json.dumps(sorted(batch_keywords - page_targets))}. "
+                        "Use existing planned targets only as supporting destinations."
+                    )
                 if not all(isinstance(raw.get(key), str) and raw[key].strip() for key in (
                     "article_title", "search_intent", "content_brief", "user_problem", "unique_page_value",
                 )):
@@ -1276,11 +1288,14 @@ def validate_architecture(
     return list(dict.fromkeys(errors))
 
 
-async def _verify_intent_merges(plan, conflicts, context, *, request_timeout):
+async def _verify_intent_merges(plan, conflicts, context, *, request_timeout, url_assessments=None):
     """Independently check destructive merges without the first review's verdicts."""
     pages = {page['target_keyword']: page for page in [plan['master_hub'], *plan['spokes']]}
     deadline = asyncio.get_running_loop().time() + request_timeout
     semaphore = asyncio.Semaphore(2)
+    scopes = [{key: page.get(key) for key in (
+        'target_keyword', 'user_problem', 'unique_page_value', 'existing_url',
+    )} for page in pages.values()]
 
     async def verify_batch(batch):
         async with semaphore:
@@ -1297,6 +1312,8 @@ async def _verify_intent_merges(plan, conflicts, context, *, request_timeout):
                 system_prompt='You are an independent editorial scope reviewer. Evaluate actual answer interchangeability. Return JSON.',
                 user_prompt=f"""Compare these page pairs independently. Preserve useful topical depth.
         Page briefs: {json.dumps(briefs, ensure_ascii=False)}
+        Site capabilities and owned-page evidence: {context}
+        Other planned page scopes: {json.dumps(scopes, ensure_ascii=False)}
         Pairs [id, left target, right target]: {json.dumps(pairs, ensure_ascii=False)}
         Would a reader seeking the specific LEFT answer be fully served by the RIGHT answer, and vice versa?
         Shared article formats, headings, audiences, broad topics or overlapping introductions are insufficient.
@@ -1309,13 +1326,20 @@ async def _verify_intent_merges(plan, conflicts, context, *, request_timeout):
         Use actual JSON booleans. An answer is interchangeable only when the substantial useful information
         or functionality is the same. Do not assume every proposed pair needs merging. Return every ID once, with reasons of at most 35 words.
         Return an object with a comparisons array containing those four-element rows. Both booleans must reflect the actual pair.
+        Also return url_assessments for pages in pairs you judge should remain separate. For each page
+        verify its independent task against ALL planned scopes and the supplied site capabilities.
+        Each assessment must contain target_keyword, classification (distinct_task, meaningful_entity,
+        independent_workflow, major_feature, small_feature, subsection, or unsupported), independent_task,
+        unique_value, and capability_basis. Keep each explanation under 20 words, grounded in the evidence.
+        Do not approve a page merely because you rejected one pair. A small feature/subsection or an
+        unsupported capability must never be classified as an independent page to finish the review.
         """,
-                temperature=0, max_tokens=3500, request_timeout=remaining,
+                temperature=0, max_tokens=6000, request_timeout=remaining,
             ))
             rows = result.get('comparisons') if isinstance(result, dict) else None
             if not isinstance(rows, list) or len(rows) != len(batch):
                 raise ValueError('Independent merge review must compare every proposed pair.')
-            accepted, seen = [], set()
+            accepted, seen, separate = [], set(), set()
             for row in rows:
                 if (not isinstance(row, list) or len(row) != 4 or type(row[0]) is not int
                         or row[0] not in range(len(batch)) or row[0] in seen
@@ -1325,7 +1349,13 @@ async def _verify_intent_merges(plan, conflicts, context, *, request_timeout):
                 seen.add(row[0])
                 if row[1] and row[2]:
                     accepted.append({**batch[row[0]], 'reason': row[3]})
-            return accepted
+                else:
+                    separate.update(batch[row[0]][key] for key in ('page_a', 'page_b'))
+            assessments = result.get('url_assessments') or []
+            if not isinstance(assessments, list):
+                raise ValueError('Independent URL eligibility assessments must be a list.')
+            return accepted, [item for item in assessments if isinstance(item, dict)
+                              and clean_phrase(str(item.get('target_keyword') or '')) in separate]
 
     tasks = []
     try:
@@ -1334,7 +1364,11 @@ async def _verify_intent_merges(plan, conflicts, context, *, request_timeout):
                 tasks.append(group.create_task(verify_batch(conflicts[index:index + 12])))
     except ExceptionGroup as exc:
         raise exc.exceptions[0] from exc
-    return [item for task in tasks for item in task.result()]
+    if url_assessments is not None:
+        # Commit only after every batch succeeds. The caller applies the same
+        # eligibility validation used for the original reviewer below.
+        url_assessments.extend(item for task in tasks for item in task.result()[1])
+    return [item for task in tasks for item in task.result()[0]]
 
 
 
@@ -1373,6 +1407,13 @@ async def _audit_intent_cannibalization(
         "assigned_to": item.get("assigned_to"),
         "disposition": item.get("disposition"),
     } for item in plan.get("keyword_assignments") or [] if item.get("disposition") != "discard"]
+    fingerprint = hashlib.sha256(json.dumps(
+        [context, review_input, keyword_placements], sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
+    cache = plan.get('_url_review_cache')
+    if not isinstance(cache, dict) or cache.get('fingerprint') != fingerprint:
+        cache = {'fingerprint': fingerprint, 'assessments': {}}
+        plan['_url_review_cache'] = cache
     audit = await _achat_json(
         system_prompt=(
             "You are the final SEO cannibalization reviewer. Compare page intents as user goals and "
@@ -1555,11 +1596,14 @@ Only add that clarification where the parent already discusses a related support
             )
             continue
         conflicts.append(item)
+    independent_assessments = []
     if conflicts:
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 1:
             return [], rejections, ['Independent merge verification needs more review time.']
-        conflicts = await _verify_intent_merges(plan, conflicts, context, request_timeout=remaining)
+        conflicts = await _verify_intent_merges(
+            plan, conflicts, context, request_timeout=remaining, url_assessments=independent_assessments,
+        )
     if invalid_conflicts:
         return conflicts, rejections, [
             "the semantic review referenced invalid page conflicts: " + "; ".join(invalid_conflicts[:10])
@@ -1572,22 +1616,47 @@ Only add that clarification where the parent already discusses a related support
         assessments = audit.get("url_assessments", [])
         if not isinstance(assessments, list):
             return [], [], ["the URL eligibility review returned invalid assessments"]
-        approved = {}
+        # The first reviewer may omit pages it wanted to merge. If the independent
+        # reviewer rejects those merges, carry its explicit eligibility verdicts
+        # forward instead of asking the first reviewer the same question forever.
+        existing_assessments = {resolve_page(item.get('target_keyword') or item.get('page_id'))
+                                for item in assessments if isinstance(item, dict)}
+        recovered = {}
+        for item in independent_assessments:
+            target = resolve_page(item.get('target_keyword'))
+            if target not in existing_assessments:
+                if target in recovered:
+                    allowed = {'independent_workflow', 'distinct_task', 'meaningful_entity', 'major_feature'}
+                    if any(row.get('classification') not in allowed or not all(
+                        isinstance(row.get(key), str) and row[key].strip()
+                        for key in ('independent_task', 'unique_value', 'capability_basis')
+                    ) for row in (recovered[target], item)):
+                        return [], [], [f'Independent eligibility reviews disagreed about {target!r}.']
+                else:
+                    recovered[target] = item
+        assessments = [*assessments, *recovered.values()]
+        # Partial reviews often omit a different page on each retry. Preserve
+        # explicit approvals only while the ENTIRE plan and evidence are identical.
+        approved = {target: item for target, item in cache['assessments'].items() if target in required}
+        seen_assessments = set()
         for item in assessments:
             if not isinstance(item, dict):
                 continue
             target = resolve_page(item.get("target_keyword") or item.get("page_id"))
             if target not in required:
                 continue
-            if target in approved or item.get("classification") not in {
+            if target in seen_assessments or item.get("classification") not in {
                 "independent_workflow", "distinct_task", "meaningful_entity", "major_feature",
             } or not all(isinstance(item.get(key), str) and item[key].strip() for key in (
                 "independent_task", "unique_value", "capability_basis",
             )):
+                cache['assessments'].pop(target, None)
                 return [], [], [f"spoke {target!r} lacks independent user value or supported capability evidence; "
                                 "supply classification, independent_task, unique_value and capability_basis, "
                                 "or propose a valid merge/rejection for this page"]
             approved[target] = item
+            seen_assessments.add(target)
+            cache['assessments'][target] = item
         if required != set(approved):
             return [], [], ["the URL eligibility review must justify every surviving spoke; missing: "
                             + json.dumps(sorted(required - set(approved)))]
@@ -1837,6 +1906,7 @@ def _merge_intent_conflicts(
 
 
 def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
+    plan.pop('_url_review_cache', None)
     master = plan["master_hub"]
     pages = [master, *plan["spokes"]]
     by_target = {page["target_keyword"]: page for page in pages}
