@@ -39,13 +39,31 @@ export function keywordCoverage(mapping: Mapping) {
   return { total: inventory.size, used: used.size, supporting: [...used].filter(keyword => !primary.has(keyword)).length,
     excluded: excluded.size, unassigned: [...inventory].filter(keyword => !used.has(keyword) && !excluded.has(keyword)).length }
 }
-export const pageEditor = (page: PageDetail) => ['tool', 'page', 'landing_page', 'service', 'product'].includes(page.page_type || '') ? 'page' : 'blog'
-export const pageActionLabel = (page: PageDetail) => isExistingPage(page) ? 'Improve existing page' : pageEditor(page) === 'page' ? 'Create page' : 'Create blog'
-export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'
+export const toolIntent = /\b(tool|software|calculator|calc|generator|maker|builder|creator|checker|converter|app|simulator|estimator|planner|tracker|lookup|finder|counter|solver|analyzer|tester|grader|widget)\b/i
+export const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs|terms(?: and conditions)?|privacy(?: policy)?|disclaimer|legal|about us|contact us|cookie policy|refund policy|editorial policy|accessibility|support|faq)\b/i
+export const shouldBuildTool = (keyword: string) => toolIntent.test(keyword) && !informationalIntent.test(keyword)
 
-const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
-const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs|terms(?: and conditions)?|privacy(?: policy)?|disclaimer|legal|about us|contact us|cookie policy|refund policy|editorial policy|accessibility|support|faq)\b/i
-const shouldBuildTool = (keyword: string) => toolIntent.test(keyword) && !informationalIntent.test(keyword)
+export const isToolPage = (page: PageDetail): boolean => {
+  if (page.page_type === 'tool' || page.page_type === 'transactional_tool') return true
+  const target = page.target_keyword || ''
+  const title = page.article_title || ''
+  const intent = page.search_intent || ''
+  if (shouldBuildTool(target) || shouldBuildTool(title)) return true
+  if (toolIntent.test(intent) && !informationalIntent.test(intent)) return true
+  return false
+}
+
+export const pageEditor = (page: PageDetail): 'page' | 'blog' =>
+  isToolPage(page) || ['tool', 'page', 'landing_page', 'service', 'product'].includes(page.page_type || '') ? 'page' : 'blog'
+
+export const pageActionLabel = (page: PageDetail): string => {
+  if (isExistingPage(page)) return 'Improve existing page'
+  if (isToolPage(page)) return 'Create tool'
+  if (pageEditor(page) === 'page') return 'Create page'
+  return 'Create blog'
+}
+
+export const PILLAR_CLUSTER_PROCESS = 'KEYWORD → SEARCH INTENT → USER PROBLEM → ENTITY/TOPIC → CONTENT REQUIREMENT → URL DECISION'
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const pageSlug = (keyword: string, supplied?: string) => supplied || `/${slugify(keyword)}/`
 
@@ -204,24 +222,37 @@ export function pageArchitectureBrief(page: PageDetail, mapping: Mapping): strin
 export function normalizeSavedMapping(mapping: Mapping): Mapping {
   if (mapping.master_hub || mapping.spokes?.length || !mapping.hubs?.length) return {
     ...mapping,
-    master_hub: mapping.master_hub?.existing_url ? { ...mapping.master_hub, action: 'update' } : mapping.master_hub,
-    spokes: mapping.spokes?.map(page => page.existing_url ? { ...page, action: 'update' } : page),
+    master_hub: mapping.master_hub ? {
+      ...mapping.master_hub,
+      page_type: isToolPage(mapping.master_hub) ? 'tool' : (mapping.master_hub.page_type || 'article'),
+      action: mapping.master_hub.existing_url ? 'update' : mapping.master_hub.action,
+    } : mapping.master_hub,
+    spokes: mapping.spokes?.map(page => ({
+      ...page,
+      page_type: isToolPage(page) ? 'tool' : (page.page_type || 'article'),
+      action: page.existing_url ? 'update' : page.action,
+    })),
   }
   const [root, ...otherHubs] = mapping.hubs
   const spokes: SpokeDetail[] = []
   const visit = (hub: Hub, includeHub: boolean) => {
-    if (includeHub && hub.target_keyword) spokes.push({ article_title: hub.hub_title, target_keyword: hub.target_keyword, slug: pageSlug(hub.target_keyword), targeted_keywords: hub.h2_keywords || [], spoke_category: 'Supporting hubs' })
+    if (includeHub && hub.target_keyword) {
+      const isTool = hub.hub_title.includes('[Tool]') || shouldBuildTool(hub.target_keyword) || shouldBuildTool(hub.hub_title)
+      spokes.push({ article_title: hub.hub_title, target_keyword: hub.target_keyword, slug: pageSlug(hub.target_keyword), targeted_keywords: hub.h2_keywords || [], spoke_category: 'Supporting hubs', page_type: isTool ? 'tool' : 'article' })
+    }
     for (const [category, values] of Object.entries(hub.layers || {})) {
       for (const value of values || []) {
         const target = value.match(/\(Target Keyword:\s*(.*?)\)/i)?.[1]?.trim() || value.trim()
         const title = value.split(/\(Target Keyword:/i)[0].replace('[Tool]', '').trim() || target
         if (!target || target === root.target_keyword || spokes.some(page => page.target_keyword === target)) continue
-        spokes.push({ article_title: title, target_keyword: target, spoke_category: category, slug: pageSlug(target), page_type: value.includes('[Tool]') ? 'tool' : 'article', internal_links: [root.target_keyword] })
+        const isTool = value.includes('[Tool]') || shouldBuildTool(target) || shouldBuildTool(title)
+        spokes.push({ article_title: title, target_keyword: target, spoke_category: category, slug: pageSlug(target), page_type: isTool ? 'tool' : 'article', internal_links: [root.target_keyword] })
       }
     }
     for (const child of hub.sub_silos || []) visit(child, true)
   }
   visit(root, false)
   otherHubs.forEach(hub => visit(hub, true))
-  return { ...mapping, master_hub: { target_keyword: root.target_keyword, article_title: root.hub_title, slug: '/', targeted_keywords: root.h2_keywords || [], internal_links: [] }, spokes }
+  const rootIsTool = root.hub_title.includes('[Tool]') || shouldBuildTool(root.target_keyword) || shouldBuildTool(root.hub_title)
+  return { ...mapping, master_hub: { target_keyword: root.target_keyword, article_title: root.hub_title, slug: '/', targeted_keywords: root.h2_keywords || [], internal_links: [], page_type: rootIsTool ? 'tool' : 'article' }, spokes }
 }

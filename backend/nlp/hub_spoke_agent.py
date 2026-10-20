@@ -170,14 +170,14 @@ def _has_tool_intent(keyword: str) -> bool:
     ):
         return False
     return bool(re.search(
-        r"\b(calculator|generator|checker|converter|builder|maker|simulator|estimator|planner|tool|software)\b",
+        r"\b(calculator|calc|generator|checker|converter|builder|maker|simulator|estimator|planner|tool|software|app|tracker|lookup|finder|counter|solver|analyzer|tester|grader|widget)\b",
         value,
     ))
 
 
 def _has_strong_tool_intent(keyword: str) -> bool:
     return _has_tool_intent(keyword) and bool(re.search(
-        r"\b(calculator|generator|checker|converter|simulator|estimator)\b",
+        r"\b(calculator|calc|generator|checker|converter|simulator|estimator|tracker|lookup|finder|counter|solver)\b",
         clean_phrase(keyword),
     ))
 
@@ -693,10 +693,11 @@ def _clean_page(raw: dict[str, Any], metrics: dict[str, dict[str, Any]]) -> dict
                 clean_phrase(str(value)) for value in raw_faq.get("targeted_keywords_placed_here") or []
             ],
         })
-    page_type = "tool" if str(raw.get("page_type") or "").lower() == "tool" else "article"
+    raw_pt = str(raw.get("page_type") or "").strip().lower()
+    page_type = "tool" if (raw_pt == "tool" or _has_strong_tool_intent(target)) else "article"
     intent_class = str(raw.get("intent_class") or "").strip().lower().replace(" ", "_")
-    if not intent_class:
-        intent_class = "transactional_tool" if page_type == "tool" else "informational_guide"
+    if not intent_class or (page_type == "tool" and intent_class not in {"transactional_tool", "tool"}):
+        intent_class = "transactional_tool" if page_type == "tool" else _infer_intent_class(target)
     return {
         "spoke_category": str(raw.get("spoke_category") or "Strategic topic").strip(),
         "article_title": str(raw.get("article_title") or target.title()).strip(),
@@ -787,6 +788,8 @@ def _infer_intent_class(keyword: str) -> str:
         return "review"
     if re.search(r"\b(vs|versus|compare|comparison|difference)\b", value):
         return "comparison"
+    if _has_tool_intent(value):
+        return "transactional_tool"
     if re.search(r"\b(how|manual|calculate|guide|tutorial)\b", value):
         return "informational_guide"
     if re.search(r"\b(accuracy|accurate|unknown|without|wrong|error|birth time)\b", value):
@@ -795,8 +798,6 @@ def _infer_intent_class(keyword: str) -> str:
         return "definition"
     if re.search(r"\b(interpret|purpose|direction|expression|reveal)\w*\b", value):
         return "interpretation"
-    if "calculator" in value:
-        return "transactional_tool"
     return "reference"
 
 
@@ -2004,12 +2005,13 @@ For each keyword return:
   - "pillar" (Tier 2): the broadest keyword in a cluster that deserves a main pillar page
   - "cluster_page" (Tier 3): a keyword that answers a distinct user question and deserves its own page under the pillar
   - "supporting": a variation, synonym, or sub-question that should be a section/FAQ within a pillar or cluster page
+- page_type: "tool" if the keyword represents an interactive tool/calculator/converter/checker/app, or "article" if it represents an informational guide/explanation
 - intent: one-sentence search intent describing what the user wants
 
 The primary topic "{primary_keyword}" is always the homepage (Tier 1), not a pillar.
 Each cluster should have exactly ONE pillar. Most clusters will have 2-5 cluster_pages and several supporting keywords.
 
-Return: {{"classifications": [{{"keyword":"...","cluster":"...","role":"pillar"|"cluster_page"|"supporting","intent":"..."}}]}}
+Return: {{"classifications": [{{"keyword":"...","cluster":"...","role":"pillar"|"cluster_page"|"supporting","page_type":"tool"|"article","intent":"..."}}]}}
 """,
         temperature=0.1,
         max_tokens=4000,
@@ -2143,9 +2145,12 @@ async def _build_chunked_architecture(
         cluster_name = str(item.get("cluster") or "General").strip()
         role = str(item.get("role") or "supporting").strip().lower()
         intent = str(item.get("intent") or "").strip()
+        raw_pt = str(item.get("page_type") or "").strip().lower()
+        page_type = "tool" if (raw_pt == "tool" or _has_strong_tool_intent(kw)) else ("tool" if _has_tool_intent(kw) else "article")
         if cluster_name not in clusters:
-            clusters[cluster_name] = {"pillars": [], "cluster_pages": [], "supporting": [], "intents": {}}
+            clusters[cluster_name] = {"pillars": [], "cluster_pages": [], "supporting": [], "intents": {}, "page_types": {}}
         clusters[cluster_name]["intents"][kw] = intent
+        clusters[cluster_name]["page_types"][kw] = page_type
         if role == "pillar":
             clusters[cluster_name]["pillars"].append(kw)
         elif role == "cluster_page":
@@ -2156,8 +2161,9 @@ async def _build_chunked_architecture(
     # Catch any keywords that weren't classified
     for item in non_primary:
         if item["phrase"] not in classified_keywords:
-            clusters.setdefault("Uncategorized", {"pillars": [], "cluster_pages": [], "supporting": [], "intents": {}})
+            clusters.setdefault("Uncategorized", {"pillars": [], "cluster_pages": [], "supporting": [], "intents": {}, "page_types": {}})
             clusters["Uncategorized"]["supporting"].append(item["phrase"])
+            clusters["Uncategorized"]["page_types"][item["phrase"]] = "tool" if _has_tool_intent(item["phrase"]) else "article"
 
     # Ensure exactly one pillar per cluster
     for cluster_name, cluster_data in clusters.items():
@@ -2261,11 +2267,13 @@ async def _build_chunked_architecture(
         for cp_kw in cluster_data.get("cluster_pages", []):
             pillar_internal_links.append(cp_kw)
 
+        pillar_is_tool = _has_tool_intent(target) or str(brief.get("page_type") or "").lower() == "tool"
         page = _clean_page({
             **brief,
             "parent_target": main,
             "spoke_category": cluster_name,
             "ranking_role": "pillar",
+            "page_type": "tool" if pillar_is_tool else brief.get("page_type", "article"),
             "internal_links": pillar_internal_links,
         }, metrics)
         spokes.append(page)
@@ -2282,19 +2290,20 @@ async def _build_chunked_architecture(
             for sibling in siblings[:3]:  # limit cross-links to 3 most related siblings
                 cp_internal_links.append(sibling)
 
-            intent = cluster_data.get("intents", {}).get(cp_kw, f"Subtopic under {pillar_kw}")
+            cp_is_tool = _has_tool_intent(cp_kw) or cluster_data.get("page_types", {}).get(cp_kw) == "tool"
+            intent = cluster_data.get("intents", {}).get(cp_kw, "")
             page = _clean_page({
                 "target_keyword": cp_kw,
                 "article_title": cp_kw.title(),
-                "search_intent": intent or f"Focused guide on {cp_kw}",
-                "intent_class": _infer_intent_class(cp_kw),
+                "search_intent": intent or (f"Interactive tool for {cp_kw}" if cp_is_tool else f"Focused guide on {cp_kw}"),
+                "intent_class": "transactional_tool" if cp_is_tool else _infer_intent_class(cp_kw),
                 "spoke_category": cluster_name,
-                "page_type": "article",
-                "content_brief": f"Detailed resource on {cp_kw}, a subtopic of {pillar_kw}.",
-                "user_problem": f"Learning about {cp_kw}",
-                "unique_page_value": f"Focused coverage of {cp_kw} not covered on the pillar page",
-                "reader_outcome": f"Understanding {cp_kw} in the context of {pillar_kw}",
-                "content_requirements": [f"Explain {cp_kw}", f"Connect to {pillar_kw}"],
+                "page_type": "tool" if cp_is_tool else "article",
+                "content_brief": f"Interactive tool for {cp_kw}, supporting {pillar_kw}." if cp_is_tool else f"Detailed resource on {cp_kw}, a subtopic of {pillar_kw}.",
+                "user_problem": f"Using {cp_kw} to get an immediate result" if cp_is_tool else f"Learning about {cp_kw}",
+                "unique_page_value": f"Interactive functionality for {cp_kw} not available on the pillar page" if cp_is_tool else f"Focused coverage of {cp_kw} not covered on the pillar page",
+                "reader_outcome": f"Solving {cp_kw} interactively" if cp_is_tool else f"Understanding {cp_kw} in the context of {pillar_kw}",
+                "content_requirements": [f"Interactive calculator or tool for {cp_kw}", f"Connect to {pillar_kw}"] if cp_is_tool else [f"Explain {cp_kw}", f"Connect to {pillar_kw}"],
                 "h2_sections": [],
                 "scope_out": [pillar_kw],
                 "parent_target": pillar_kw,
@@ -2304,18 +2313,19 @@ async def _build_chunked_architecture(
             spokes.append(page)
 
     # Tier 1: Master hub (homepage)
+    master_is_tool = _has_tool_intent(main)
     master = _clean_page({
         "target_keyword": main,
         "article_title": main.title(),
-        "search_intent": f"Complete guide and main resource for {main}",
-        "intent_class": _infer_intent_class(main),
+        "search_intent": f"Interactive tool and main resource for {main}" if master_is_tool else f"Complete guide and main resource for {main}",
+        "intent_class": "transactional_tool" if master_is_tool else _infer_intent_class(main),
         "spoke_category": "Main",
-        "page_type": "article",
-        "content_brief": f"Comprehensive hub page for {main}. Links to all pillar topics for topical authority.",
-        "user_problem": f"Finding authoritative information about {main}",
-        "unique_page_value": f"Central resource connecting all {main} subtopics",
-        "reader_outcome": f"Understanding {main} and navigating to the right pillar page",
-        "content_requirements": [f"Overview of {main}", "Navigation to pillar topics"],
+        "page_type": "tool" if master_is_tool else "article",
+        "content_brief": f"Comprehensive hub and interactive tool for {main}. Links to all pillar topics for topical authority." if master_is_tool else f"Comprehensive hub page for {main}. Links to all pillar topics for topical authority.",
+        "user_problem": f"Using {main} to solve calculation tasks and exploring related topics" if master_is_tool else f"Finding authoritative information about {main}",
+        "unique_page_value": f"Central interactive tool and resource connecting all {main} subtopics",
+        "reader_outcome": f"Calculating {main} and navigating to the right pillar page" if master_is_tool else f"Understanding {main} and navigating to the right pillar page",
+        "content_requirements": [f"Interactive calculator or tool for {main}", "Navigation to pillar topics"] if master_is_tool else [f"Overview of {main}", "Navigation to pillar topics"],
         "scope_out": [brief.get("target_keyword", "") for brief in pillar_briefs[:5]],
         "h2_sections": [
             {"h2_heading": cluster_name, "section_definition": f"Overview linking to {cluster_name} pillar"}
@@ -2443,6 +2453,7 @@ async def _build_chunked_architecture(
     }
 
     plan["site_domain"] = _domain_from_context(context)
+    plan = _apply_tool_roi_rules(plan, records)
     from nlp.authority import finish_authority_plan
     plan = finish_authority_plan(plan, records, context, discovery_status)
     if discovery_status == "unavailable":
@@ -2463,18 +2474,19 @@ def _deterministic_brief(
     metrics: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """Create a minimal page brief without AI when the brief generation times out."""
+    pillar_is_tool = _has_tool_intent(pillar_kw)
     return {
         "target_keyword": pillar_kw,
         "article_title": pillar_kw.title(),
-        "search_intent": f"Complete guide to {pillar_kw}",
-        "intent_class": _infer_intent_class(pillar_kw),
+        "search_intent": f"Interactive tool and calculator for {pillar_kw}" if pillar_is_tool else f"Complete guide to {pillar_kw}",
+        "intent_class": "transactional_tool" if pillar_is_tool else _infer_intent_class(pillar_kw),
         "spoke_category": cluster_name,
-        "page_type": "article",
-        "content_brief": f"In-depth resource covering {pillar_kw} and related topics.",
-        "user_problem": f"Understanding or using {pillar_kw}",
-        "unique_page_value": f"Comprehensive coverage of {pillar_kw}",
-        "reader_outcome": f"Complete understanding of {pillar_kw}",
-        "content_requirements": [f"Explain {pillar_kw}", f"Cover {len(supporting_kws)} related subtopics"],
+        "page_type": "tool" if pillar_is_tool else "article",
+        "content_brief": f"Interactive tool and resource for {pillar_kw}." if pillar_is_tool else f"In-depth resource covering {pillar_kw} and related topics.",
+        "user_problem": f"Using {pillar_kw} to get an immediate result" if pillar_is_tool else f"Understanding or using {pillar_kw}",
+        "unique_page_value": f"Interactive functionality for {pillar_kw} not available on other pages" if pillar_is_tool else f"Comprehensive coverage of {pillar_kw}",
+        "reader_outcome": f"Solving {pillar_kw} interactively" if pillar_is_tool else f"Complete understanding of {pillar_kw}",
+        "content_requirements": [f"Interactive calculator or tool for {pillar_kw}", f"Cover {len(supporting_kws)} related subtopics"] if pillar_is_tool else [f"Explain {pillar_kw}", f"Cover {len(supporting_kws)} related subtopics"],
         "h2_sections": [{"h2_heading": kw.title(), "section_definition": f"Covers {kw}"} for kw in supporting_kws[:8]],
         "scope_out": [],
         "keyword_placements": [

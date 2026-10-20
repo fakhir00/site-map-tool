@@ -314,7 +314,7 @@ test('Pages actions open the correct editor directly, carrying the selected brie
   await expect(page.getByLabel('Architecture brief', { exact: true })).toContainText(proposal.target_keyword)
   await loadSaved(page)
   await page.getByRole('tab', { name: /^pages$/i }).click()
-  await page.getByRole('button', { name: 'Create page: Lunar Date Converter', exact: true }).click()
+  await page.getByRole('button', { name: 'Create tool: Lunar Date Converter', exact: true }).click()
   await expect(page).toHaveURL(/gap-page-prompts\?/)
   await expect(page.getByLabel('Architecture brief', { exact: true })).toContainText(tool.target_keyword)
   expect(new URL(page.url()).searchParams.get('project_id')).toBe(id)

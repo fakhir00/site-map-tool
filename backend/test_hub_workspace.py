@@ -20,9 +20,13 @@ from app.hub_spoke.router import (
 from nlp.hub_spoke_agent import (
     ArchitectureAgentError,
     _apply_tool_roi_rules,
+    _clean_page,
     _coerce_object,
     _generated_page,
+    _has_strong_tool_intent,
+    _has_tool_intent,
     _has_unrelated_leading_brand,
+    _infer_intent_class,
     _is_core_entity_relevant,
     _is_protected_emd_entity,
     _looks_incomplete_keyword,
@@ -564,6 +568,26 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(page_types["tiny widget builder"], "article")
         self.assertEqual(page_types["widget calculation guide"], "article")
         self.assertEqual(page_types["widget calculator terms and conditions"], "article")
+
+    def test_tool_intent_detection_and_page_classification(self):
+        self.assertTrue(_has_tool_intent("chinese lunar calculator"))
+        self.assertTrue(_has_strong_tool_intent("chinese lunar calculator"))
+        self.assertEqual(_infer_intent_class("chinese lunar calculator"), "transactional_tool")
+
+        self.assertFalse(_has_tool_intent("how to calculate chinese lunar age"))
+        self.assertEqual(_infer_intent_class("how to calculate chinese lunar age"), "informational_guide")
+
+        metrics = {
+            "chinese lunar calculator": {"phrase": "chinese lunar calculator", "search_volume": 5000, "difficulty": 40},
+            "how to calculate chinese lunar age": {"phrase": "how to calculate chinese lunar age", "search_volume": 1200, "difficulty": 25},
+        }
+        tool_page = _clean_page({"target_keyword": "chinese lunar calculator"}, metrics)
+        self.assertEqual(tool_page["page_type"], "tool")
+        self.assertEqual(tool_page["intent_class"], "transactional_tool")
+
+        article_page = _clean_page({"target_keyword": "how to calculate chinese lunar age"}, metrics)
+        self.assertEqual(article_page["page_type"], "article")
+        self.assertEqual(article_page["intent_class"], "informational_guide")
 
     def test_incomplete_keyword_fragments_are_detected(self):
         self.assertTrue(_looks_incomplete_keyword("what dental"))

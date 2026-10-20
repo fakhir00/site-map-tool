@@ -40,7 +40,7 @@ type OldSchema = Record<string, string[] | Record<string, string[]>>
 type ClusterData = NewSchema | OldSchema
 
 function shouldBuildTool(keyword: string) {
-  const toolIntent = /\b(tool|software|calculator|generator|maker|builder|creator|checker|converter|app)\b/i
+  const toolIntent = /\b(tool|software|calculator|calc|generator|maker|builder|creator|checker|converter|app|simulator|estimator|planner|tracker|lookup|finder|counter|solver|analyzer|tester|grader|widget)\b/i
   const informationalIntent = /^(how|what|why|when|where|can|does)\b|\b(guide|tutorial|examples|symbols|definition|meaning|tips|troubleshooting|review|comparison|alternatives|vs)\b/i
   return toolIntent.test(keyword) && !informationalIntent.test(keyword)
 }
@@ -176,7 +176,7 @@ function TreeHub({
                         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline gap-x-3 gap-y-0.5 flex-1 min-w-0">
                           <div className="flex flex-col gap-0.5">
                             <button type="button" onClick={() => {
-                              const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
+                              const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]') || shouldBuildTool(targetKeyword || finalTitle) || shouldBuildTool(displayTitle)
                               onWrite(targetKeyword || finalTitle, isTool ? 'tool/app' : 'article', included)
                             }} className="text-left text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
                               {isSubheading ? `"${finalTitle}"` : finalTitle}
@@ -196,7 +196,7 @@ function TreeHub({
                       <div className="flex items-center gap-4 ml-6 sm:ml-auto w-full sm:w-auto justify-end">
                         <button 
                           onClick={() => {
-                            const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
+                            const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]') || shouldBuildTool(targetKeyword || finalTitle) || shouldBuildTool(displayTitle)
                             const instruction = isTool 
                               ? "INSTRUCTION: This is a Spoke tool/app page supporting a main hub. It MUST be an interactive tool, calculator, or interactive component."
                               : "INSTRUCTION: This is a Spoke article supporting a main hub. Provide enough content to completely satisfy its unique intent, with no fixed word count or padding."
@@ -205,8 +205,8 @@ function TreeHub({
                           className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-cyan-600 hover:text-cyan-500 hover:underline transition-opacity shrink-0"
                         >
                           {(() => {
-                            const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]')
-                            return isTool ? '[ Make Tool ]' : '[ Write ]'
+                            const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]') || shouldBuildTool(targetKeyword || finalTitle) || shouldBuildTool(displayTitle)
+                            return isTool ? '[ Create Tool ]' : '[ Write ]'
                           })()}
                         </button>
                         <div className="shrink-0 text-right">
