@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = 1
     ENABLE_KEYBERT: bool = False
     ENABLE_SPACY: bool = False
-    AI_REQUEST_TIMEOUT: float = 60.0
+    AI_REQUEST_TIMEOUT: float = 120.0
     SCAN_MAX_SECONDS: int = 1800
     SCRAPE_CONCURRENCY: int = 1
     MAX_SCRAPED_TEXT_LENGTH: int = 8000

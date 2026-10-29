@@ -2107,24 +2107,28 @@ async def _build_chunked_architecture(
 
     all_classifications: list[dict[str, str]] = []
     semaphore = asyncio.Semaphore(2)
-    chunk_deadline = asyncio.get_running_loop().time() + 120
+    chunk_deadline = asyncio.get_running_loop().time() + 240
 
     async def classify_one(chunk_records):
         async with semaphore:
-            remaining = chunk_deadline - asyncio.get_running_loop().time()
-            if remaining <= 5:
-                raise ValueError("Classification phase ran out of time.")
-            try:
-                return await _classify_chunk(
-                    chunk_records, main, context, request_timeout=min(60, remaining),
-                )
-            except Exception as exc:
-                logger.warning("Chunk classification failed: %s", exc)
-                # Fallback: treat all as supporting with a generic cluster
-                return [
-                    {"keyword": item["phrase"], "cluster": "General", "role": "supporting", "intent": ""}
-                    for item in chunk_records
-                ]
+            for attempt in range(2):
+                remaining = chunk_deadline - asyncio.get_running_loop().time()
+                if remaining <= 10:
+                    break
+                try:
+                    return await _classify_chunk(
+                        chunk_records, main, context, request_timeout=min(75, remaining - 5),
+                    )
+                except Exception as exc:
+                    logger.warning("Chunk classification attempt %s failed: %s", attempt + 1, exc)
+                    if attempt == 0 and remaining > 30:
+                        await asyncio.sleep(1)
+                        continue
+            # Fallback only if both attempts failed
+            return [
+                {"keyword": item["phrase"], "cluster": "General", "role": "supporting", "intent": ""}
+                for item in chunk_records
+            ]
 
     tasks = []
     async with asyncio.TaskGroup() as group:
@@ -2200,19 +2204,19 @@ async def _build_chunked_architecture(
     )
 
     # --- Phase 4: Generate page briefs per pillar ---
-    brief_deadline = asyncio.get_running_loop().time() + 90
+    brief_deadline = asyncio.get_running_loop().time() + 180
     pillar_briefs: list[dict[str, Any]] = []
-    brief_semaphore = asyncio.Semaphore(3)
+    brief_semaphore = asyncio.Semaphore(2)
 
     async def generate_one_brief(cluster_name, pillar_kw, supporting_kws):
         async with brief_semaphore:
             remaining = brief_deadline - asyncio.get_running_loop().time()
-            if remaining <= 3:
+            if remaining <= 5:
                 return _deterministic_brief(pillar_kw, supporting_kws, cluster_name, metrics)
             try:
                 return await _generate_pillar_brief(
                     pillar_kw, supporting_kws, cluster_name, main, context, metrics,
-                    request_timeout=min(45, remaining),
+                    request_timeout=min(60, remaining - 5),
                 )
             except Exception as exc:
                 logger.warning("Brief generation for %r failed: %s", pillar_kw, exc)
@@ -2516,6 +2520,21 @@ async def _build_site_architecture(
         raise ArchitectureAgentError("The SEO architecture agent is unavailable because no AI provider is configured.")
 
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
+    if len(normalized) > 50:
+        logger.info(
+            "Large keyword inventory (%s keywords). Using chunked architecture directly to prevent timeouts and preserve all keywords.",
+            len(normalized),
+        )
+        try:
+            return await _build_chunked_architecture(
+                normalized,
+                context=context,
+                primary_keyword=primary_keyword,
+                discover_topics=discover_topics,
+            )
+        except Exception as chunk_exc:
+            logger.warning("Direct chunked architecture failed: %s; trying single-shot with recovery", chunk_exc)
+
     review_deadline = asyncio.get_running_loop().time() + 230
     discovery_status = "not_requested"
     discovery_diagnostics: list[str] = []
@@ -2656,6 +2675,15 @@ async def _build_site_architecture(
         except ArchitectureAgentError:
             raise
         except ProviderUnavailableError as exc:
+            if len(normalized) > 30:
+                logger.info("Provider error on single-shot architecture (%s); falling back to chunked architecture", exc)
+                try:
+                    return await _build_chunked_architecture(
+                        normalized, context=context, primary_keyword=primary_keyword,
+                        discover_topics=discover_topics,
+                    )
+                except Exception as chunk_exc:
+                    logger.warning("Chunked fallback after provider error failed: %s", chunk_exc)
             raise ArchitectureAgentError(
                 "The AI service could not finish building and reviewing your plan after automatic recovery. "
                 "Your previous saved map is unchanged. " + str(exc)
@@ -2742,13 +2770,13 @@ async def build_site_architecture(
     site_domain: str = "", discover_topics: bool = False,
 ) -> dict[str, Any]:
     try:
-        async with asyncio.timeout(240):
+        async with asyncio.timeout(360):
             return await _build_site_architecture(
                 records, context=context, primary_keyword=primary_keyword,
                 site_domain=site_domain, discover_topics=discover_topics,
             )
     except TimeoutError as exc:
         raise ArchitectureAgentError(
-            "Planning exceeded four minutes. Your previous saved map is unchanged. "
+            "Planning exceeded the time limit. Your previous saved map is unchanged. "
             "Try a smaller focused keyword list or check the AI connection in Settings."
         ) from exc

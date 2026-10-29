@@ -67,7 +67,7 @@ Return only {{"proposals": [{{"phrase": "...", "support_phrase": "exact inventor
 "rationale": "why this distinct task belongs in scope"}}]}}. An empty list is valid.
 """
     failure = 'Topic research returned no usable response.'
-    discovery_deadline = asyncio.get_running_loop().time() + 90
+    discovery_deadline = asyncio.get_running_loop().time() + 150
     for attempt in range(2):
         try:
             request_timeout = min(60, discovery_deadline - asyncio.get_running_loop().time())
