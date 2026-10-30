@@ -2075,6 +2075,60 @@ Return a page brief:
     return result
 
 
+async def _audit_chunked_intents(plan: dict[str, Any], context: str, *, request_timeout: float) -> list[dict[str, str]]:
+    """Find only true duplicate page tasks after independent bucket classification.
+
+    Buckets are intentionally independent so they fit provider limits. This
+    small, final audit restores the cross-bucket cannibalization check without
+    asking the model to regenerate the full architecture.
+    """
+    pages = [plan["master_hub"], *plan["spokes"]]
+    candidates = [{
+        "target_keyword": page["target_keyword"],
+        "intent": page.get("search_intent"),
+        "page_type": page.get("page_type"),
+        "parent_target": page.get("parent_target"),
+    } for page in pages]
+    result = await _achat_json(
+        system_prompt=(
+            "You are a conservative SEO cannibalization reviewer. Return only JSON. "
+            "Never merge a tool with its manual guide, explanation, comparison, accuracy, "
+            "troubleshooting, definition, or reference page unless they truly answer the same task."
+        ),
+        user_prompt=f"""Review this bucketed site architecture for pages that would compete for the same search intent.
+Website context: {(context or "No context.")[:2000]}
+Pages: {json.dumps(candidates, ensure_ascii=False)}
+
+Return only pages that should be one URL. Do not report related-but-distinct pages.
+For every conflict, choose the page to retain and give a specific reason.
+Return: {{"conflicts":[{{"page_a":"exact target keyword","page_b":"exact target keyword","preferred_target":"one of those exact keywords","reason":"same user task"}}]}}
+""",
+        temperature=0,
+        max_tokens=2500,
+        request_timeout=request_timeout,
+    )
+    payload = _coerce_object(result)
+    raw_conflicts = payload.get("conflicts") if payload else None
+    if not isinstance(raw_conflicts, list):
+        raise ValueError("Chunked intent review returned an invalid result.")
+    valid_targets = {page["target_keyword"] for page in pages}
+    conflicts = []
+    for item in raw_conflicts:
+        if not isinstance(item, dict):
+            continue
+        left = clean_phrase(str(item.get("page_a") or ""))
+        right = clean_phrase(str(item.get("page_b") or ""))
+        preferred = clean_phrase(str(item.get("preferred_target") or ""))
+        if left in valid_targets and right in valid_targets and left != right:
+            conflicts.append({
+                "page_a": left,
+                "page_b": right,
+                "preferred_target": preferred if preferred in {left, right} else "",
+                "reason": str(item.get("reason") or "Equivalent search intent.").strip(),
+            })
+    return conflicts
+
+
 async def _build_chunked_architecture(
     records: list[dict[str, Any]],
     *,
@@ -2449,8 +2503,29 @@ async def _build_chunked_architecture(
         ),
         "writing_standards": WRITING_STANDARDS,
         "_keyword_metrics": records,
-        "_semantic_audit_status": "passed",
+        "_semantic_audit_status": "pending",
     }
+
+    # Exact-variant conflicts can be resolved deterministically. Then use one
+    # bounded, cross-bucket review to catch paraphrases that the independent
+    # classifiers could not see together.
+    mechanical_conflicts = _mechanical_intent_conflicts(plan)
+    if mechanical_conflicts:
+        plan, merge_notes = _merge_intent_conflicts(plan, mechanical_conflicts)
+        if merge_notes:
+            logger.info("Chunked architecture mechanically consolidated %s overlapping page intents", len(merge_notes))
+    try:
+        async with asyncio.timeout(20):
+            semantic_conflicts = await _audit_chunked_intents(plan, context, request_timeout=18)
+        if semantic_conflicts:
+            plan, merge_notes = _merge_intent_conflicts(plan, semantic_conflicts)
+            logger.info("Chunked architecture semantically consolidated %s overlapping page intents", len(merge_notes))
+        plan["_semantic_audit_status"] = "passed"
+    except Exception as exc:
+        # The classified map remains usable if the compact audit is
+        # unavailable, but never claim it received semantic approval.
+        plan["_semantic_audit_status"] = "structural_only"
+        logger.warning("Chunked semantic intent audit failed; retaining structural safeguards: %s", exc)
 
     plan["site_domain"] = _domain_from_context(context)
     plan = _apply_tool_roi_rules(plan, records)

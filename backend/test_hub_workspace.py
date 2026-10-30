@@ -162,7 +162,7 @@ class HubWorkspaceTests(unittest.TestCase):
                 for index, item in enumerate(records[1:], start=1)
             ],
         }
-        chat = AsyncMock(return_value=classifier)
+        chat = AsyncMock(side_effect=[classifier, {'conflicts': []}])
         with (
             patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True),
             patch('nlp.hub_spoke_agent._achat_json', new=chat),
@@ -172,9 +172,48 @@ class HubWorkspaceTests(unittest.TestCase):
                 primary_keyword=records[0]['phrase'],
                 discover_topics=True,
             ))
-        self.assertEqual(chat.await_count, 1)
+        self.assertEqual(chat.await_count, 2)
         self.assertIn('Chunked bucket-sort', mapping['_planning_thought'])
         self.assertEqual(len(mapping['keyword_assignments']), len(records))
+        self.assertEqual(mapping['_semantic_audit_status'], 'passed')
+
+    def test_primary_bucket_path_consolidates_semantically_duplicate_pages(self):
+        records = [{'phrase': value} for value in [
+            'circuit diagram maker',
+            'create circuit diagram online',
+            'make circuit diagram online',
+            *[f'circuit design topic {index}' for index in range(28)],
+        ]]
+        classifier = {
+            'classifications': [
+                {
+                    'keyword': item['phrase'],
+                    'cluster': 'Circuit design',
+                    'role': 'pillar' if index == 1 else 'cluster_page',
+                    'page_type': 'article',
+                    'intent': 'Complete the requested circuit-design task.',
+                }
+                for index, item in enumerate(records[1:], start=1)
+            ],
+        }
+        audit = {'conflicts': [{
+            'page_a': 'create circuit diagram online',
+            'page_b': 'make circuit diagram online',
+            'preferred_target': 'create circuit diagram online',
+            'reason': 'Both queries ask the user to create a circuit diagram online.',
+        }]}
+        with (
+            patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True),
+            patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[classifier, audit])),
+        ):
+            mapping = asyncio.run(build_site_architecture(
+                records,
+                primary_keyword=records[0]['phrase'],
+            ))
+        decision = next(item for item in mapping['keyword_assignments'] if item['keyword'] == 'make circuit diagram online')
+        self.assertEqual(decision['disposition'], 'supporting')
+        self.assertEqual(decision['assigned_to'], 'create circuit diagram online')
+        self.assertTrue(mapping['intent_consolidations'])
 
     def test_product_review_emd_keeps_product_terms_without_admitting_broad_dental_noise(self):
         primary = "dental pro 7 reviews"
