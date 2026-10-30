@@ -352,6 +352,7 @@ export const api = {
 
     let response: Response
 
+    const startTime = Date.now()
     try {
       response = await fetch(`${API_URL}${endpoint}`, {
         ...requestOptions,
@@ -364,6 +365,14 @@ export const api = {
         (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError')
       if (isAbort) {
         throw new ApiError(apiConnectionMessage('timeout'), 0)
+      }
+
+      const elapsedMs = Date.now() - startTime
+      if (elapsedMs >= 80_000) {
+        throw new ApiError(
+          `The request took ${Math.round(elapsedMs / 1000)}s and was closed by the host proxy timeout (Render limit is 100s). Try using a more focused keyword list.`,
+          0,
+        )
       }
 
       throw new ApiError(apiConnectionMessage('network'), 0)

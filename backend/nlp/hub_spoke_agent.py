@@ -2521,7 +2521,7 @@ async def _build_site_architecture(
 
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
 
-    review_deadline = asyncio.get_running_loop().time() + 230
+    review_deadline = asyncio.get_running_loop().time() + 75
     discovery_status = "not_requested"
     discovery_diagnostics: list[str] = []
     if discover_topics:
@@ -2532,7 +2532,7 @@ async def _build_site_architecture(
     for attempt in range(2 if discover_topics else 3):
         try:
             remaining = review_deadline - asyncio.get_running_loop().time()
-            if remaining <= 45:
+            if remaining <= 12:
                 raise ArchitectureAgentError(
                     "The AI service did not leave enough time to build and review the plan. "
                     "Your previous saved map is unchanged. Please retry planning."
@@ -2547,7 +2547,7 @@ async def _build_site_architecture(
                 max_tokens=16000,
                 # Reserve placement and semantic review time; the provider
                 # layer divides this request budget between retries/fallbacks.
-                request_timeout=min(120, remaining - max(45, min(90, remaining / 2))),
+                request_timeout=min(40, remaining - 15),
             )
             payload = _coerce_object(payload)
             if payload is None or not (isinstance(payload.get('pages'), list) or isinstance(payload.get('master_hub'), dict)):
@@ -2563,7 +2563,7 @@ async def _build_site_architecture(
             ]
             _apply_relevance_rejections(plan, deterministic_rejections)
             coverage_deadline = min(
-                review_deadline - 45, asyncio.get_running_loop().time() + 90,
+                review_deadline - 15, asyncio.get_running_loop().time() + 25,
             )
             plan = await _review_keyword_coverage(plan, normalized, context, deadline=coverage_deadline)
             # Newly recovered pages still face the same source and quality
@@ -2589,7 +2589,7 @@ async def _build_site_architecture(
                         if remaining <= 5:
                             last_errors = ["The review time budget was exhausted."]
                             break
-                        review_timeout = min(65 if len(plan["spokes"]) > 12 else 45, remaining)
+                        review_timeout = min(25 if len(plan["spokes"]) > 12 else 15, remaining)
                         async with asyncio.timeout(review_timeout + 1):
                             conflicts, rejections, audit_errors = await _audit_intent_cannibalization(
                                 plan, context, last_errors, request_timeout=review_timeout,
@@ -2756,7 +2756,7 @@ async def build_site_architecture(
     site_domain: str = "", discover_topics: bool = False,
 ) -> dict[str, Any]:
     try:
-        async with asyncio.timeout(360):
+        async with asyncio.timeout(80):
             return await _build_site_architecture(
                 records, context=context, primary_keyword=primary_keyword,
                 site_domain=site_domain, discover_topics=discover_topics,
