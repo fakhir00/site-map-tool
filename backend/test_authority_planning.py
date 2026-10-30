@@ -293,3 +293,16 @@ class OwnedPageMatchingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'same existing URL'):
             reconcile_owned_pages(plan, json.dumps({'owned_pages': [
                 {'url': 'https://example.com/new-manual-guide/'}]}))
+
+    def test_non_strict_reconciliation_keeps_one_owned_url_per_page(self):
+        plan = self.plan()
+        duplicate = dict(plan['spokes'][0], target_keyword='other task')
+        plan['spokes'].append(duplicate)
+        reconcile_owned_pages(plan, json.dumps({'owned_pages': [
+            {'url': 'https://example.com/new-manual-guide/'},
+        ]}), strict=False)
+        first, second = plan['spokes']
+        self.assertEqual(first['action'], 'update')
+        self.assertEqual(first['existing_url'], 'https://example.com/new-manual-guide/')
+        self.assertEqual(second['action'], 'create')
+        self.assertNotIn('existing_url', second)

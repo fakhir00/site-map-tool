@@ -2455,7 +2455,16 @@ async def _build_chunked_architecture(
     plan["site_domain"] = _domain_from_context(context)
     plan = _apply_tool_roi_rules(plan, records)
     from nlp.authority import finish_authority_plan
-    plan = finish_authority_plan(plan, records, context, discovery_status)
+    plan = finish_authority_plan(
+        plan,
+        records,
+        context,
+        discovery_status,
+        # Bucket classification has no semantic-review pass to consolidate a
+        # coincidental owned-URL match. Keep the first reuse and create the
+        # later distinct task instead of failing the complete map.
+        strict_owned_urls=False,
+    )
     if discovery_status == "unavailable":
         reason = discovery_diagnostics[-1] if discovery_diagnostics else "Topic research was unavailable."
         if not plan["spokes"]:

@@ -145,7 +145,7 @@ def reconcile_owned_pages(plan, context, *, strict=True):
                 if isinstance(page.get('url'), str) and urlparse(page['url']).scheme in {'http', 'https'}}
     by_url = {_url_key(url): url for url in existing}
     existing = {url: existing[url] for url in by_url.values()}
-    used_urls = set()
+    used_urls = {}
     pages = [page for page in [plan.get('master_hub'), *plan.get('spokes', [])] if page]
     for page in pages:
         requested_url = page.get('existing_url')
@@ -166,13 +166,29 @@ def reconcile_owned_pages(plan, context, *, strict=True):
             if len(candidates) == 1:
                 requested_url = candidates[0]
         if requested_url:
-            if _url_key(requested_url) in used_urls and strict:
-                raise ValueError('Multiple page intents were assigned to the same existing URL; consolidate them')
-            used_urls.add(_url_key(requested_url))
+            requested_key = _url_key(requested_url)
+            if requested_key in used_urls:
+                if strict:
+                    raise ValueError('Multiple page intents were assigned to the same existing URL; consolidate them')
+                # The fast bucket planner has no semantic-review pass to
+                # merge a collision. Preserve the first verified URL match
+                # and leave the later, distinct task as a new page instead
+                # of publishing two page intents at one URL or crashing the
+                # entire request.
+                logger.warning(
+                    'Owned URL %s matched multiple planned pages; keeping %r as the update and creating %r',
+                    requested_url,
+                    used_urls[requested_key].get('target_keyword'),
+                    page.get('target_keyword'),
+                )
+                page.pop('existing_url', None)
+                page['action'] = 'create'
+                continue
+            used_urls[requested_key] = page
             page['existing_url'] = requested_url
             page['slug'] = urlparse(requested_url).path or '/'
             page['action'] = 'update'
-        elif strict:
+        else:
             page['action'] = 'create'
     by_target = {page.get('target_keyword'): page for page in pages}
     for link in plan.get('link_plan', []):
@@ -186,10 +202,10 @@ def reconcile_owned_pages(plan, context, *, strict=True):
     return plan
 
 
-def finish_authority_plan(plan, records, context, discovery_status):
+def finish_authority_plan(plan, records, context, discovery_status, *, strict_owned_urls=True):
     """Attach evidence, reuse URLs and report the resulting coverage without quotas."""
     inventory = {record['phrase']: record for record in records}
-    reconcile_owned_pages(plan, context)
+    reconcile_owned_pages(plan, context, strict=strict_owned_urls)
     for page in [plan['master_hub'], *plan['spokes']]:
         record = inventory[page['target_keyword']]
         page['evidence_type'] = record.get('evidence_type', 'supplied_keyword')
