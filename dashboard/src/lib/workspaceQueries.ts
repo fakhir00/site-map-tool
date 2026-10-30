@@ -11,11 +11,11 @@ const connectionOptions = {
 export const accountQuery = queryOptions({
   ...connectionOptions,
   queryKey: ['user'],
-  queryFn: ({ signal }) => api.fetch<User>('/auth/me', { method: 'GET', timeoutMs: 15_000, signal }),
+  queryFn: ({ signal }) => api.fetch<User>('/auth/me', { method: 'GET', timeoutMs: 60_000, signal }),
 })
 
 export const projectsQuery = queryOptions({
   ...connectionOptions,
   queryKey: ['projects'],
-  queryFn: ({ signal }) => api.fetch<Project[]>('/projects', { method: 'GET', timeoutMs: 15_000, signal }),
+  queryFn: ({ signal }) => api.fetch<Project[]>('/projects', { method: 'GET', timeoutMs: 60_000, signal }),
 })

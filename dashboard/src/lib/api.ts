@@ -359,7 +359,10 @@ export const api = {
         signal: controller.signal,
       })
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      const isAbort =
+        (err instanceof Error && err.name === 'AbortError') ||
+        (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError')
+      if (isAbort) {
         throw new ApiError(apiConnectionMessage('timeout'), 0)
       }
 
