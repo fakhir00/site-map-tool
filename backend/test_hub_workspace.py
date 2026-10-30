@@ -130,6 +130,52 @@ class HubWorkspaceTests(unittest.TestCase):
                 asyncio.run(build_site_architecture([{'phrase': 'circuit diagram maker'}]))
         chat.assert_awaited_once()
 
+    def test_large_inventory_uses_bucketed_planning_before_the_full_plan_prompt(self):
+        records = [{'phrase': f'circuit diagram topic {index}'} for index in range(31)]
+        chunked = AsyncMock(return_value={'path': 'chunked'})
+        with (
+            patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True),
+            patch('nlp.hub_spoke_agent._build_chunked_architecture', new=chunked),
+            patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock()) as chat,
+        ):
+            result = asyncio.run(build_site_architecture(
+                records,
+                primary_keyword=records[0]['phrase'],
+                discover_topics=True,
+            ))
+        self.assertEqual(result, {'path': 'chunked'})
+        chunked.assert_awaited_once()
+        self.assertEqual(chunked.await_args.kwargs['discover_topics'], True)
+        chat.assert_not_awaited()
+
+    def test_primary_bucket_path_returns_a_complete_map_without_pillar_brief_calls(self):
+        records = [{'phrase': f'circuit diagram topic {index}'} for index in range(31)]
+        classifier = {
+            'classifications': [
+                {
+                    'keyword': item['phrase'],
+                    'cluster': 'Circuit design',
+                    'role': 'pillar' if index == 1 else 'cluster_page',
+                    'page_type': 'article',
+                    'intent': 'Learn the circuit-design topic.',
+                }
+                for index, item in enumerate(records[1:], start=1)
+            ],
+        }
+        chat = AsyncMock(return_value=classifier)
+        with (
+            patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True),
+            patch('nlp.hub_spoke_agent._achat_json', new=chat),
+        ):
+            mapping = asyncio.run(build_site_architecture(
+                records,
+                primary_keyword=records[0]['phrase'],
+                discover_topics=True,
+            ))
+        self.assertEqual(chat.await_count, 1)
+        self.assertIn('Chunked bucket-sort', mapping['_planning_thought'])
+        self.assertEqual(len(mapping['keyword_assignments']), len(records))
+
     def test_product_review_emd_keeps_product_terms_without_admitting_broad_dental_noise(self):
         primary = "dental pro 7 reviews"
         self.assertTrue(_is_core_entity_relevant("dental pro ingredients", primary))

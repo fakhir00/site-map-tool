@@ -1980,7 +1980,18 @@ def _apply_assignments(plan: dict[str, Any]) -> dict[str, Any]:
 #  AI calls so any model's output budget is sufficient.
 # ---------------------------------------------------------------------------
 
-CHUNK_SIZE = 40  # keywords per classification call
+# A bucket holds enough keywords for the classifier to see meaningful topical
+# relationships without asking a provider to emit an unbounded site plan.
+CHUNK_SIZE = 40
+# Above this size, use buckets before attempting the old full-plan prompt.  A
+# single full-plan response for this many keywords is the failure mode that
+# originally exhausted DeepSeek's output budget.
+CHUNKED_PRIMARY_THRESHOLD = 31
+# Render closes web requests at roughly 100 seconds.  Keep the classifier
+# phase comfortably below the 80-second architecture guard so there is time
+# to assemble and save the map.
+CHUNK_CLASSIFICATION_BUDGET = 55
+CHUNK_CLASSIFICATION_REQUEST_TIMEOUT = 30
 
 
 async def _classify_chunk(
@@ -2088,16 +2099,14 @@ async def _build_chunked_architecture(
     main = clean_phrase(primary_keyword) or records[0]["phrase"]
     metrics = {item["phrase"]: item for item in records}
 
-    # --- Phase 1: Discovery (optional, same as original) ---
+    # The bucketed path deliberately plans from the supplied inventory. Extra
+    # topic discovery is another long AI request and would put this request
+    # back over Render's proxy limit before bucketing can start. Discovery is
+    # still available to the small-inventory specialist path below.
     discovery_status = "not_requested"
     discovery_diagnostics: list[str] = []
     if discover_topics:
-        from nlp.authority import expand_inventory
-        records, discovery_status = await expand_inventory(
-            records, context, main, _achat_json,
-            max_keywords=MAX_ARCHITECTURE_KEYWORDS, diagnostics=discovery_diagnostics,
-        )
-        metrics = {item["phrase"]: item for item in records}
+        logger.info("Chunked architecture skips expansion and uses the supplied keyword inventory")
 
     # --- Phase 2: Classify keywords in chunks ---
     logger.info("Chunked architecture: classifying %s keywords in chunks of %s", len(records), CHUNK_SIZE)
@@ -2106,27 +2115,31 @@ async def _build_chunked_architecture(
     chunks = [non_primary[i:i + CHUNK_SIZE] for i in range(0, len(non_primary), CHUNK_SIZE)]
 
     all_classifications: list[dict[str, str]] = []
-    semaphore = asyncio.Semaphore(2)
-    chunk_deadline = asyncio.get_running_loop().time() + 240
+    semaphore = asyncio.Semaphore(4)
+    chunk_deadline = asyncio.get_running_loop().time() + CHUNK_CLASSIFICATION_BUDGET
 
     async def classify_one(chunk_records):
         async with semaphore:
-            for attempt in range(2):
-                remaining = chunk_deadline - asyncio.get_running_loop().time()
-                if remaining <= 10:
-                    break
+            remaining = chunk_deadline - asyncio.get_running_loop().time()
+            if remaining > 5:
                 try:
                     return await _classify_chunk(
-                        chunk_records, main, context, request_timeout=min(75, remaining - 5),
+                        chunk_records,
+                        main,
+                        context,
+                        request_timeout=min(CHUNK_CLASSIFICATION_REQUEST_TIMEOUT, remaining - 5),
                     )
                 except Exception as exc:
-                    logger.warning("Chunk classification attempt %s failed: %s", attempt + 1, exc)
-                    if attempt == 0 and remaining > 30:
-                        await asyncio.sleep(1)
-                        continue
-            # Fallback only if both attempts failed
+                    logger.warning("Chunk classification failed; using deterministic grouping: %s", exc)
+            # A failed bucket must not hold the whole map hostage. The
+            # deterministic grouping below still preserves every keyword.
             return [
-                {"keyword": item["phrase"], "cluster": "General", "role": "supporting", "intent": ""}
+                {
+                    "keyword": item["phrase"],
+                    "cluster": _infer_category(item["phrase"]),
+                    "role": "cluster_page",
+                    "intent": "",
+                }
                 for item in chunk_records
             ]
 
@@ -2203,37 +2216,20 @@ async def _build_chunked_architecture(
         sum(len(c["cluster_pages"]) for c in clusters.values()),
     )
 
-    # --- Phase 4: Generate page briefs per pillar ---
-    brief_deadline = asyncio.get_running_loop().time() + 180
-    pillar_briefs: list[dict[str, Any]] = []
-    brief_semaphore = asyncio.Semaphore(2)
-
-    async def generate_one_brief(cluster_name, pillar_kw, supporting_kws):
-        async with brief_semaphore:
-            remaining = brief_deadline - asyncio.get_running_loop().time()
-            if remaining <= 5:
-                return _deterministic_brief(pillar_kw, supporting_kws, cluster_name, metrics)
-            try:
-                return await _generate_pillar_brief(
-                    pillar_kw, supporting_kws, cluster_name, main, context, metrics,
-                    request_timeout=min(60, remaining - 5),
-                )
-            except Exception as exc:
-                logger.warning("Brief generation for %r failed: %s", pillar_kw, exc)
-                return _deterministic_brief(pillar_kw, supporting_kws, cluster_name, metrics)
-
-    brief_tasks = []
-    async with asyncio.TaskGroup() as group:
-        for cluster_name, cluster_data in clusters.items():
-            for pillar_kw in cluster_data["pillars"]:
-                # Include cluster page keywords in the brief for context
-                all_supporting = cluster_data["cluster_pages"] + cluster_data["supporting"]
-                brief_tasks.append(group.create_task(
-                    generate_one_brief(cluster_name, pillar_kw, all_supporting)
-                ))
-
-    for task in brief_tasks:
-        pillar_briefs.append(task.result())
+    # --- Phase 4: Build deterministic pillar briefs ---
+    # Classification is the only provider work in the fast bucket path. A
+    # separate AI brief request per pillar was the second source of proxy
+    # timeouts; the map already has all required brief fields deterministically.
+    pillar_briefs = [
+        _deterministic_brief(
+            pillar_kw,
+            cluster_data["cluster_pages"] + cluster_data["supporting"],
+            cluster_name,
+            metrics,
+        )
+        for cluster_name, cluster_data in clusters.items()
+        for pillar_kw in cluster_data["pillars"]
+    ]
 
     # --- Phase 5: Assemble 3-tier architecture ---
     #
@@ -2520,6 +2516,21 @@ async def _build_site_architecture(
         raise ArchitectureAgentError("The SEO architecture agent is unavailable because no AI provider is configured.")
 
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
+
+    # Large inventories always start with bucket-sort.  Do not spend most of
+    # the Render request on a monolithic plan and only then try the strategy
+    # designed to avoid that exact provider/output-limit failure.
+    if len(normalized) >= CHUNKED_PRIMARY_THRESHOLD:
+        logger.info(
+            "Using chunked architecture as the primary path for %s keywords",
+            len(normalized),
+        )
+        return await _build_chunked_architecture(
+            normalized,
+            context=context,
+            primary_keyword=main,
+            discover_topics=discover_topics,
+        )
 
     review_deadline = asyncio.get_running_loop().time() + 75
     discovery_status = "not_requested"
