@@ -310,6 +310,52 @@ def _mechanical_intent_conflicts(plan: dict[str, Any]) -> list[dict[str, str]]:
     return conflicts
 
 
+def _primary_tool_variant_conflicts(plan: dict[str, Any]) -> list[dict[str, str]]:
+    """Fold shallow calculator-query variants into the primary tool page.
+
+    A year, "online", or "calculate your" does not create a new lunar-age
+    task. This is deliberately narrow: comparisons, explanations, manual
+    methods, accuracy/error queries, and any additional subject term remain
+    separate so a useful page is not collapsed merely for sharing a topic.
+    """
+    master = plan["master_hub"]
+    primary = master["target_keyword"]
+    if not _has_tool_intent(primary):
+        return []
+    core = set(_primary_core_terms(primary))
+    if not core:
+        return []
+    generic_variants = {
+        "calculate", "calculating", "calculation", "find", "get", "check",
+        "your", "my", "our", "the", "a", "an", "online", "free", "best",
+        "official", "website", "site", "app", "tool", "calculator", "calc",
+        "generator", "checker", "converter", "maker", "builder", "software",
+        "by", "birthday", "birth", "date", "of", "today", "current",
+    }
+    distinct_families = {"comparison", "accuracy", "troubleshooting", "causal", "definition", "manual", "reference"}
+    conflicts: list[dict[str, str]] = []
+    for page in plan["spokes"]:
+        keyword = page["target_keyword"]
+        terms = set(clean_phrase(keyword).split())
+        if not core <= terms or _is_direct_comparison(keyword):
+            continue
+        family, _ = _intent_signature(keyword)
+        if family in distinct_families:
+            continue
+        extras = terms - core
+        if extras and all(term in generic_variants or re.fullmatch(r"20\d{2}", term) for term in extras):
+            conflicts.append({
+                "page_a": primary,
+                "page_b": keyword,
+                "preferred_target": primary,
+                "reason": (
+                    "A year, generic tool modifier, or 'calculate your' phrasing does not change "
+                    "the primary calculator's user task."
+                ),
+            })
+    return conflicts
+
+
 PRIMARY_INTENT_TERMS = {
     "review", "reviews", "calculator", "checker", "generator", "tool", "software",
     "maker", "builder", "converter", "planner", "simulator", "estimator",
@@ -2509,7 +2555,10 @@ async def _build_chunked_architecture(
     # Exact-variant conflicts can be resolved deterministically. Then use one
     # bounded, cross-bucket review to catch paraphrases that the independent
     # classifiers could not see together.
-    mechanical_conflicts = _mechanical_intent_conflicts(plan)
+    mechanical_conflicts = [
+        *_mechanical_intent_conflicts(plan),
+        *_primary_tool_variant_conflicts(plan),
+    ]
     if mechanical_conflicts:
         plan, merge_notes = _merge_intent_conflicts(plan, mechanical_conflicts)
         if merge_notes:
@@ -2670,7 +2719,10 @@ async def _build_site_architecture(
             ])
             if not discover_topics:
                 plan = _apply_tool_roi_rules(plan, normalized)
-            mechanical_conflicts = _mechanical_intent_conflicts(plan)
+            mechanical_conflicts = [
+                *_mechanical_intent_conflicts(plan),
+                *_primary_tool_variant_conflicts(plan),
+            ]
             if mechanical_conflicts:
                 plan, _ = _merge_intent_conflicts(plan, mechanical_conflicts)
             last_errors = validate_architecture(plan, normalized, main)

@@ -215,6 +215,41 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(decision['assigned_to'], 'create circuit diagram online')
         self.assertTrue(mapping['intent_consolidations'])
 
+    def test_primary_calculator_variants_are_never_separate_urls(self):
+        records = [{'phrase': value} for value in [
+            'lunar age calculator',
+            'lunar age calculator 2026',
+            'calculate your lunar age',
+            'lunar age calculator accuracy',
+            *[f'lunar age topic {index}' for index in range(27)],
+        ]]
+        classifier = {
+            'classifications': [
+                {
+                    'keyword': item['phrase'],
+                    'cluster': 'Lunar age',
+                    'role': 'pillar' if index == 1 else 'cluster_page',
+                    'page_type': 'tool' if 'calculator' in item['phrase'] else 'article',
+                    'intent': 'Serve the lunar age reader task.',
+                }
+                for index, item in enumerate(records[1:], start=1)
+            ],
+        }
+        with (
+            patch('nlp.hub_spoke_agent.is_ai_configured', return_value=True),
+            patch('nlp.hub_spoke_agent._achat_json', new=AsyncMock(side_effect=[classifier, {'conflicts': []}])),
+        ):
+            mapping = asyncio.run(build_site_architecture(
+                records,
+                primary_keyword='lunar age calculator',
+            ))
+        decisions = {item['keyword']: item for item in mapping['keyword_assignments']}
+        for keyword in ('lunar age calculator 2026', 'calculate your lunar age'):
+            self.assertEqual(decisions[keyword]['disposition'], 'supporting')
+            self.assertEqual(decisions[keyword]['assigned_to'], 'lunar age calculator')
+        # Accuracy is a different reader question and remains eligible for its own page.
+        self.assertEqual(decisions['lunar age calculator accuracy']['disposition'], 'page_target')
+
     def test_product_review_emd_keeps_product_terms_without_admitting_broad_dental_noise(self):
         primary = "dental pro 7 reviews"
         self.assertTrue(_is_core_entity_relevant("dental pro ingredients", primary))
