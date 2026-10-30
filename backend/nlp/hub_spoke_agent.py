@@ -2520,20 +2520,6 @@ async def _build_site_architecture(
         raise ArchitectureAgentError("The SEO architecture agent is unavailable because no AI provider is configured.")
 
     main = clean_phrase(primary_keyword) or normalized[0]["phrase"]
-    if len(normalized) > 50:
-        logger.info(
-            "Large keyword inventory (%s keywords). Using chunked architecture directly to prevent timeouts and preserve all keywords.",
-            len(normalized),
-        )
-        try:
-            return await _build_chunked_architecture(
-                normalized,
-                context=context,
-                primary_keyword=primary_keyword,
-                discover_topics=discover_topics,
-            )
-        except Exception as chunk_exc:
-            logger.warning("Direct chunked architecture failed: %s; trying single-shot with recovery", chunk_exc)
 
     review_deadline = asyncio.get_running_loop().time() + 230
     discovery_status = "not_requested"
