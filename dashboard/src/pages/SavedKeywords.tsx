@@ -18,7 +18,7 @@ export default function SavedKeywords() {
           <Bookmark className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">All Saved Keywords</h2>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Keyword Bank</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">View and manage all keywords you've saved to your bank.</p>
         </div>
       </div>

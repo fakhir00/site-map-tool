@@ -62,7 +62,7 @@ export default function ScanInterface() {
     <div className="mx-auto max-w-3xl py-8 space-y-8">
       <Card className="p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-950 dark:text-slate-50">New Gap Hunter</h1>
+          <h1 className="text-2xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the keywords to compare against competitors.</p>
         </div>
 

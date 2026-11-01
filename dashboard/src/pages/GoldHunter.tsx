@@ -82,7 +82,7 @@ export function GoldHunter() {
   const createMutation = useMutation({
     mutationFn: (body: ProjectCreate) => api.post<Project>('/projects', body),
     onMutate: () => setError(null),
-    onError: (err: Error) => setError(err.message || 'Failed to create the Gap Hunter project'),
+    onError: (err: Error) => setError(err.message || 'Failed to create the Gap Scan project'),
     onSuccess: async (project: Project) => {
       try {
         await api.post(`/projects/${project.id}/scan/start`)
@@ -103,7 +103,7 @@ export function GoldHunter() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Gold Hunter Agent</h2>
+        <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Seed Finder Agent</h2>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Mine high-value seed keywords from any of your URLs.
         </p>
@@ -194,7 +194,7 @@ export function GoldHunter() {
                     ) : (
                       <Plus className="h-4 w-4 mr-2" />
                     )}
-                    Run Gap Hunter with {scan.seeds?.length || 0} seeds
+                    Run Gap Scan with {scan.seeds?.length || 0} seeds
                   </Button>
                 </div>
               </Card>

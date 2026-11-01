@@ -161,12 +161,12 @@ export function ProjectsList() {
     <div className="space-y-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Dashboard</h2>
+          <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Projects</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Track and manage your keyword gap analyses.</p>
         </div>
         <Button onClick={() => setShowNewModal(true)}>
           <Plus className="h-4 w-4" />
-          New Gap Hunter
+          New Gap Scan
         </Button>
       </section>
 
@@ -273,7 +273,7 @@ export function ProjectsList() {
           </p>
           <Button className="mt-4" onClick={() => setShowNewModal(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            New Gap Hunter
+            New Gap Scan
           </Button>
         </Card>
       ) : (
@@ -376,7 +376,7 @@ export function ProjectsList() {
           <Card className="w-full max-w-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">New Gap Hunter</h3>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the main keyword to compare against competitors.</p>
               </div>
               <button

@@ -28,7 +28,7 @@ export default function WriteBlogArticle() {
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Write Blog
+          Back to Blog Writer
         </Link>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Article Studio</h1>
       </div>

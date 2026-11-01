@@ -146,7 +146,7 @@ export function HubSpokeWorkspace() {
       <fieldset disabled={locked} className="space-y-5 disabled:opacity-70">
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-4">
-            <label className="block text-sm font-medium">Import from Gap Hunter<select aria-label="Import from Gap Hunter" value={importProjectId} onChange={event => { importedKeyRef.current = ''; if (event.target.value) setSearchParams({ project_id: event.target.value }); else detachImport() }} className={inputClass}><option value="">Choose a scan…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <label className="block text-sm font-medium">Import from Gap Scan<select aria-label="Import from Gap Scan" value={importProjectId} onChange={event => { importedKeyRef.current = ''; if (event.target.value) setSearchParams({ project_id: event.target.value }); else detachImport() }} className={inputClass}><option value="">Choose a scan…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
             <div className="flex items-center gap-3"><input ref={inputRef} className="hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={event => loadFile(event.target.files?.[0])} /><Button variant="secondary" onClick={() => inputRef.current?.click()}><FileUp className="h-4 w-4" />Upload CSV / TXT</Button><span className="text-xs text-slate-500">Up to 5 MB · 300 keywords per map</span></div>
             <label className="block text-sm font-medium">Keyword research<textarea aria-label="Keyword research" className={`${inputClass} min-h-44 font-mono text-xs`} value={keywordText} onChange={event => {
               const text = event.target.value; const parsed = parseFile(text)
@@ -155,7 +155,7 @@ export function HubSpokeWorkspace() {
               if (!primaryKeyword) setPrimaryKeyword(parsed.keywords[0] || '')
               setDirty(true)
             }} placeholder={'One keyword per line, or paste a CSV with metrics.\nlunar age calculator\nhow to calculate lunar age\nlunar age vs western age'} /></label>
-            <p className="text-xs text-slate-500">{keywords.length.toLocaleString()} keywords{sourceProjectId ? ' · Linked to a Gap Hunter project; crawled pages will be checked for reuse.' : ' · Add existing URLs alongside your context to plan improvements.'}</p>
+            <p className="text-xs text-slate-500">{keywords.length.toLocaleString()} keywords{sourceProjectId ? ' · Linked to a Gap Scan project; crawled pages will be checked for reuse.' : ' · Add existing URLs alongside your context to plan improvements.'}</p>
           </div>
           <div className="space-y-4">
             <label className="block text-sm font-medium">Main topic / homepage keyword<input aria-label="Main topic" list="map-keyword-options" maxLength={300} className={inputClass} value={primaryKeyword} onChange={event => { setPrimaryKeyword(event.target.value); setDirty(true) }} placeholder="e.g. lunar age calculator" /><datalist id="map-keyword-options">{keywords.slice(0, 300).map(keyword => <option key={keyword} value={keyword} />)}</datalist></label>

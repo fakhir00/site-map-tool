@@ -55,7 +55,7 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Saved Keywords</h3>
+        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Keyword Bank</h3>
         
         <div className="flex items-center gap-2">
           {selectedVisibleIds.length > 0 && (
@@ -136,14 +136,14 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
               <tr>
                 <td colSpan={onAction ? 5 : 4} className="px-5 py-8 text-center text-slate-500 dark:text-slate-400">
                   <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-slate-300 dark:text-slate-600" />
-                  Loading saved keywords...
+                  Loading keyword bank...
                 </td>
               </tr>
             ) : keywords.length === 0 ? (
               <tr>
                 <td colSpan={onAction ? 5 : 4} className="px-5 py-8 text-center text-slate-500 dark:text-slate-400">
                   <FileText className="mx-auto mb-3 h-8 w-8 text-slate-300 dark:text-slate-600" />
-                  <p>No keywords saved yet.</p>
+                  <p>No keywords in your bank yet.</p>
                   <p className="mt-1 text-xs">Go to a project's Keyword gaps and save keywords to your bank.</p>
                 </td>
               </tr>

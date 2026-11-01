@@ -193,7 +193,7 @@ export function ProjectDetail() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="font-semibold text-slate-950 dark:text-slate-50">{isPaused ? 'Gap Hunter paused' : 'Gap Hunter in progress'}</p>
+                <p className="font-semibold text-slate-950 dark:text-slate-50">{isPaused ? 'Gap Scan paused' : 'Gap Scan in progress'}</p>
                 <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">{percent}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -319,11 +319,11 @@ export function ProjectDetail() {
 
           <Card className="p-0">
             <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
-              <h3 className="font-semibold text-slate-950 dark:text-slate-50">Gap Hunter history</h3>
+              <h3 className="font-semibold text-slate-950 dark:text-slate-50">Gap Scan history</h3>
             </div>
             <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
               {jobs.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">No Gap Hunter jobs yet.</p>
+                <p className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">No Gap Scan jobs yet.</p>
               ) : (
                 jobs.slice(0, 6).map((job) => (
                   <div className="flex items-center justify-between gap-4 px-5 py-4" key={job.id}>

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { test, expect, type Page } from '@playwright/test'
 
 const id = '11111111-1111-4111-8111-111111111111'
@@ -205,7 +206,7 @@ test('Gold Hunter displays project creation failures', async ({ page }) => {
     ? route.fulfill({ status: 503, json: { detail: 'Project storage temporarily unavailable' } })
     : route.fulfill({ json: [] }))
   await page.goto('/gold-hunter')
-  await page.getByRole('button', { name: 'Run Gap Hunter with 1 seeds' }).click()
+  await page.getByRole('button', { name: 'Run Gap Scan with 1 seeds' }).click()
   await expect(page.getByText('Project storage temporarily unavailable', { exact: true })).toBeVisible()
 })
 

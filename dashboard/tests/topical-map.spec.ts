@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { test, expect, type Page } from '@playwright/test'
 
 const id = '11111111-1111-4111-8111-111111111111'

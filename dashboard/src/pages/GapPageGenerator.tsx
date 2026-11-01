@@ -90,7 +90,7 @@ export default function GapPageGenerator() {
           <Sparkles className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Build Tool</h2>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Build Page</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">Analyze competitors and generate a targeted prompt for a single gap page.</p>
         </div>
       </div>
@@ -217,7 +217,7 @@ export default function GapPageGenerator() {
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Build Tool Prompt</h3>
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Build Page Prompt</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Ready to be copied into Claude Opus or any capable AI builder.</p>
         </div>
         <button
@@ -289,7 +289,7 @@ export default function GapPageGenerator() {
         {step === 3 && renderStep3()}
       </div>
 
-      {/* Saved Keywords from Gap Hunter */}
+      {/* Keyword Bank from Gap Scan */}
       <SavedKeywordsTable
         keywords={keywords}
         isLoading={isLoading}

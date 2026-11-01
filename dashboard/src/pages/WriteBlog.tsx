@@ -86,7 +86,7 @@ export default function WriteBlog() {
             <FilePenLine className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Write Blog</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Blog Writer</h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
           </div>
         </div>
@@ -135,7 +135,7 @@ export default function WriteBlog() {
         </div>
       </Card>
 
-      {/* Saved Keywords from Gap Hunter */}
+      {/* Keyword Bank from Gap Scan */}
       <SavedKeywordsTable
         keywords={keywords}
         isLoading={isLoading}
