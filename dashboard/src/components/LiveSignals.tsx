@@ -1,5 +1,5 @@
 import type { ScanProgress } from '../lib/api'
-import { Terminal, Cpu } from 'lucide-react'
+import { Terminal, Radio } from 'lucide-react'
 import { Card } from './ui/Card'
 
 interface LiveSignalsProps {
@@ -19,33 +19,38 @@ export function LiveSignals({ isActive = false, progress, error }: LiveSignalsPr
   ]
 
   return (
-    <Card className="overflow-hidden p-0 h-[300px] flex flex-col bg-slate-950 dark:bg-black border-slate-800">
-      <div className="border-b border-slate-800 bg-slate-900 px-5 py-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 font-semibold text-slate-100 text-sm">
-          <Cpu className="h-4 w-4 text-emerald-400" />
-          Scan Progress
+    <Card className="flex h-[300px] flex-col overflow-hidden border-line bg-abyss p-0" lift={false}>
+      <div className="flex shrink-0 items-center justify-between border-b border-line bg-raised px-5 py-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <span className="relative flex h-2.5 w-2.5">
+            {isActive && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-alive-green opacity-60" />}
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isActive ? 'bg-alive-green shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-muted/40'}`} />
+          </span>
+          <Radio className="h-4 w-4 text-alive-green" />
+          Live scan feed
         </h3>
-        <span className="flex items-center gap-2 text-xs font-mono text-slate-400">
+        <span className="flex items-center gap-1.5 font-mono text-xs text-muted">
           <Terminal className="h-3 w-3" />
-          TTY-1
+          crawl-01
         </span>
       </div>
-      <div className="flex-1 p-4 font-mono text-xs overflow-hidden relative">
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,rgba(0,0,0,0.4)_100%)] pointer-events-none z-10" />
-        <div className="flex flex-col gap-2 relative z-0">
+      <div className="relative flex-1 overflow-hidden p-4 font-mono text-xs">
+        <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(to_bottom,transparent_0%,rgba(11,14,20,0.6)_100%)]" />
+        <div className="relative z-0 flex flex-col gap-2">
           {logs.map((log, idx) => (
-            <div 
-              key={idx} 
-              className={`animate-in fade-in slide-in-from-bottom-2 duration-300 ${
-                idx === logs.length - 1 ? 'text-emerald-400' : 'text-slate-500'
+            <div
+              key={idx}
+              className={`break-words leading-relaxed ${
+                idx === logs.length - 1 ? 'text-alive-green' : 'text-muted/80'
               }`}
             >
+              <span className="mr-2 text-muted/40">{String(idx).padStart(2, '0')}</span>
               {log}
             </div>
           ))}
           {isActive && (
-            <div className="text-emerald-400/70 animate-pulse mt-2">
-              _
+            <div className="mt-1 animate-pulse text-alive-green/70">
+              <span className="mr-2 text-muted/40">{String(logs.length).padStart(2, '0')}</span>▊
             </div>
           )}
         </div>

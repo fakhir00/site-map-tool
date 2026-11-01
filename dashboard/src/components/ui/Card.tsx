@@ -1,11 +1,16 @@
 import React from "react"
 import { cn } from "../../lib/utils"
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  lift?: boolean
+}
+
+export function Card({ className, lift = true, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50",
+        "rounded-2xl border border-white/8 bg-surface p-5 text-ink shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
+        lift && "card-lift",
         className
       )}
       {...props}

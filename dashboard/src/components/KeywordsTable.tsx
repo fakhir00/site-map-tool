@@ -9,8 +9,8 @@ import { Card } from './ui/Card'
 import { Input } from './ui/Input'
 
 function keywordBadge(type: Keyword['keyword_type']) {
-  if (type === 'top-pick') return <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-bold px-2 py-0.5" variant="amber"><Sparkles className="mr-1 inline-block h-3 w-3" /> Top Pick</Badge>
-  if (type === 'primary') return <Badge variant="teal">Primary</Badge>
+  if (type === 'top-pick') return <Badge variant="amber"><Sparkles className="mr-1 inline-block h-3 w-3" /> Top pick</Badge>
+  if (type === 'primary') return <Badge variant="green">Primary</Badge>
   if (type === 'lsi') return <Badge variant="indigo">LSI</Badge>
   if (type === 'entity') return <Badge variant="amber">Entity</Badge>
   if (type === 'long-tail') return <Badge variant="cyan">Long-tail</Badge>
@@ -49,7 +49,7 @@ function sourceDomains(keyword: Keyword) {
 
 function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
   const [intent, setIntent] = useState<string | null>(null)
-  
+
   const mutation = useMutation({
     mutationFn: () => api.postAI<{ intent: string, competitors: string[] }>('/website-prompts/analyze-intent', { keyword: keywordPhrase, short_mode: true }),
     onSuccess: (data: { intent: string, competitors: string[] }) => {
@@ -58,19 +58,34 @@ function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
   })
 
   if (intent) {
-    return <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-900/30 dark:text-purple-300 dark:ring-purple-500/30 truncate max-w-[150px]" title={intent}>{intent}</span>
+    return <span className="inline-flex max-w-[150px] truncate items-center rounded-md border border-soft-violet/30 bg-soft-violet/10 px-2 py-1 text-xs font-medium text-soft-violet" title={intent}>{intent}</span>
   }
 
   return (
     <div><Button
-      variant="secondary" 
-      size="sm" 
-      className="h-6 text-[10px] px-2 py-0"
+      variant="secondary"
+      size="sm"
+      className="h-6 px-2 py-0 text-[10px]"
       disabled={mutation.isPending}
       onClick={() => mutation.mutate()}
     >
       {mutation.isPending ? '...' : 'Intent'}
-    </Button>{mutation.isError && <p role="alert" className="mt-1 max-w-48 text-xs text-rose-600 dark:text-rose-300">{mutation.error.message}</p>}</div>
+    </Button>{mutation.isError && <p role="alert" className="mt-1 max-w-48 text-xs text-warm-red">{mutation.error.message}</p>}</div>
+  )
+}
+
+function TableSkeleton() {
+  return (
+    <div className="space-y-3 p-5">
+      {[0, 1, 2, 3, 4].map(i => (
+        <div key={i} className="flex items-center gap-4">
+          <div className="animate-shimmer h-5 w-1/3 rounded-lg" />
+          <div className="animate-shimmer h-5 w-16 rounded-lg" />
+          <div className="animate-shimmer h-5 w-24 rounded-lg" />
+          <div className="animate-shimmer ml-auto h-8 w-20 rounded-xl" />
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -132,10 +147,10 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   const selectedPageIds = Array.from(selectedIds).filter((id) => pageKeywordIds.has(id))
 
   const bulkSaveMutation = useMutation({
-    mutationFn: ({ tag }: { tag: string }) => 
+    mutationFn: ({ tag }: { tag: string }) =>
       api.post<{ message: string }>(`/projects/${projectId}/keywords/bulk-save`, {
         keyword_ids: selectedPageIds,
-        notes: tag 
+        notes: tag
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['keyword-bank'] })
@@ -146,7 +161,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   })
 
   const bulkDeleteMutation = useMutation({
-    mutationFn: () => 
+    mutationFn: () =>
       api.post<{ message: string }>(`/projects/${projectId}/keywords/bulk-delete`, {
         keyword_ids: selectedPageIds
       }),
@@ -195,17 +210,17 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   }
 
   if (isLoading && !data) {
-    return <div className="h-96 animate-pulse rounded-xl border border-slate-200 bg-white dark:bg-slate-900/50 dark:border-slate-800" />
+    return <Card className="p-0" lift={false}><TableSkeleton /></Card>
   }
 
   const keywords = data?.items || []
 
   return (
-    <Card className="p-0">
-      <div className="flex flex-col gap-3 border-b border-slate-200 dark:border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
+    <Card className="overflow-hidden p-0" lift={false}>
+      <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <Input
               className="pl-9"
               onChange={(event) => {
@@ -220,7 +235,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
 
           <select
             aria-label="Filter by keyword type"
-            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 dark:focus:ring-cyan-600"
+            className="h-10 cursor-pointer rounded-xl border border-line bg-raised px-3 text-sm text-ink outline-none transition-colors focus:border-glow-amber/60"
             onChange={(event) => {
               setType(event.target.value)
               setPage(1)
@@ -236,7 +251,6 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
             <option value="entity">Entity</option>
             <option value="heading">Heading</option>
           </select>
-
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -316,18 +330,18 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
             onClick={() => navigate(`/hub-spoke?project_id=${encodeURIComponent(projectId)}`)}
             size="sm"
             variant="secondary"
-            className="text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-950/30 dark:hover:bg-cyan-950/50 dark:border-cyan-800/50"
+            className="border-glow-amber/40 bg-glow-amber/10 text-glow-amber hover:bg-glow-amber/20 hover:border-glow-amber/60"
           >
             <Network className="h-4 w-4" />
             Hub Spoke
           </Button>
 
-          <Button 
-            disabled={topPicksMutation.isPending} 
-            onClick={() => topPicksMutation.mutate()} 
-            size="sm" 
+          <Button
+            disabled={topPicksMutation.isPending}
+            onClick={() => topPicksMutation.mutate()}
+            size="sm"
             variant="secondary"
-            className="text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 dark:text-amber-400 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:border-amber-800/50"
+            className="border-soft-violet/30 bg-soft-violet/10 text-soft-violet hover:bg-soft-violet/20 hover:border-soft-violet/50"
           >
             <Sparkles className="h-4 w-4" />
             {topPicksMutation.isPending ? 'Generating...' : 'Top Picks'}
@@ -340,158 +354,160 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
         </div>
       </div>
 
-      {exportError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{exportError}</div>}
-      {articleError && <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{articleError}</div>}
-      {(loadError || saveMutation.error || topPicksMutation.error || bulkSaveMutation.error || bulkDeleteMutation.error || copyError) && <div role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
+      {exportError && <div className="border-b border-warm-red/30 bg-warm-red/[0.07] px-4 py-2.5 text-sm text-warm-red">{exportError}</div>}
+      {articleError && <div className="border-b border-warm-red/30 bg-warm-red/[0.07] px-4 py-2.5 text-sm text-warm-red">{articleError}</div>}
+      {(loadError || saveMutation.error || topPicksMutation.error || bulkSaveMutation.error || bulkDeleteMutation.error || copyError) && <div role="alert" className="border-b border-warm-red/30 bg-warm-red/[0.07] px-4 py-2.5 text-sm text-warm-red">
         {loadError ? `Could not load keywords: ${loadError.message}` : saveMutation.error?.message || topPicksMutation.error?.message || bulkSaveMutation.error?.message || bulkDeleteMutation.error?.message || copyError}
         {loadError && <Button size="sm" variant="secondary" className="ml-3" onClick={() => void refetch()}>Retry keywords</Button>}
       </div>}
-      {copyMessage && <p role="status" className="px-4 py-2 text-sm text-teal-700 dark:text-teal-300">{copyMessage}</p>}
+      {copyMessage && <p role="status" className="px-4 py-2.5 text-sm text-alive-green">{copyMessage}</p>}
 
-      <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">Keyword gap</th>
-                  <th className="px-5 py-3 font-semibold">Intent</th>
-                  <th className="px-5 py-3 font-semibold">Type</th>
-                  <th className="px-5 py-3 text-right font-semibold">Competitor pages</th>
-                  <th className="px-5 py-3 font-semibold">Sources</th>
-                  <th className="px-5 py-3 text-right font-semibold">Write</th>
-                  <th className="px-5 py-3 text-right font-semibold">Gap Page</th>
-                  <th className="px-5 py-3 text-right font-semibold">Save</th>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <tr>
+              <th className="px-5 py-3.5">Keyword gap</th>
+              <th className="px-5 py-3.5">Intent</th>
+              <th className="px-5 py-3.5">Type</th>
+              <th className="px-5 py-3.5 text-right">Competitor pages</th>
+              <th className="px-5 py-3.5">Sources</th>
+              <th className="px-5 py-3.5 text-right">Write</th>
+              <th className="px-5 py-3.5 text-right">Gap Page</th>
+              <th className="px-5 py-3.5 text-right">Save</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {keywords.length === 0 ? (
+              <tr>
+                <td className="px-5 py-14 text-center" colSpan={8}>
+                  <div className="mx-auto max-w-sm">
+                    <Sparkles className="mx-auto h-8 w-8 text-glow-amber/50" />
+                    <p className="mt-3 font-semibold text-ink">{loadError ? 'Keyword results are temporarily unavailable.' : 'No keyword gaps found yet.'}</p>
+                    {!loadError && <p className="mt-1 text-sm text-muted">Run a Gap Scan on this project and the gaps will appear here.</p>}
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              keywords.map((keyword) => (
+                <tr className="transition-colors hover:bg-white/[0.03]" key={keyword.id}>
+                  <td className="max-w-[360px] px-5 py-4">
+                    <div className="flex items-center gap-2">
+                      {isSelectionMode && (
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 shrink-0 cursor-pointer rounded border-line bg-raised text-glow-amber focus:ring-glow-amber/50"
+                          checked={selectedIds.has(keyword.id)}
+                          onChange={(e) => {
+                            const newSet = new Set(selectedIds)
+                            if (e.target.checked) newSet.add(keyword.id)
+                            else newSet.delete(keyword.id)
+                            setSelectedIds(newSet)
+                          }}
+                        />
+                      )}
+                      <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-ink transition-colors hover:text-glow-amber hover:underline">
+                        {keyword.phrase}
+                      </a>
+                    </div>
+                    {keyword.seo_recommendation && <details className="mt-2 text-xs text-muted">
+                      <summary className="cursor-pointer text-soft-violet hover:text-ink">Why this keyword?</summary>
+                      <p className="mt-1 whitespace-pre-wrap leading-relaxed">{keyword.seo_recommendation}</p>
+                    </details>}
+                  </td>
+                  <td className="px-5 py-4">
+                    <KeywordIntentBadge keywordPhrase={keyword.phrase} />
+                  </td>
+                  <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
+                  <td className="px-5 py-4 text-right font-mono text-sm text-ink">{keyword.competitor_pages ?? keywordSources(keyword).filter(source => source.source_type === 'competitor').length}</td>
+                  <td className="px-5 py-4">
+                    <div className="flex max-w-[360px] flex-wrap gap-1.5">
+                      {sourceDomains(keyword).slice(0, 4).map((source) => (
+                        <a
+                          className={`inline-flex max-w-[160px] items-center truncate rounded-lg border px-2 py-1 text-xs font-medium transition-colors ${
+                            source.sourceType === 'own'
+                              ? 'border-line bg-white/5 text-muted hover:text-ink'
+                              : 'border-soft-violet/30 bg-soft-violet/10 text-soft-violet hover:text-ink'
+                          }`}
+                          href={source.href}
+                          key={source.label}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                          title={source.href}
+                        >
+                          {source.label}
+                        </a>
+                      ))}
+                      {sourceDomains(keyword).length > 4 && (
+                        <span className="inline-flex rounded-lg border border-line bg-white/5 px-2 py-1 text-xs font-medium text-muted">
+                          +{sourceDomains(keyword).length - 4}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex gap-1">
+                      {keywordSources(keyword).slice(0, 5).map((source) => (
+                        <a
+                          aria-label={source.url}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-raised text-muted transition-colors hover:border-glow-amber/50 hover:text-glow-amber"
+                          href={source.url}
+                          key={source.url}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                          title={source.url}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <Button
+                      disabled={articleMutation.isPending}
+                      onClick={() => articleMutation.mutate(keyword.id)}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      <FilePenLine className="h-4 w-4" />
+                      {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
+                    </Button>
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <Button
+                      onClick={() => navigate(`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`)}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(keyword.id)} size="sm" variant="ghost">
+                      <BookmarkPlus className="h-4 w-4" />
+                    </Button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                {keywords.length === 0 ? (
-                  <tr>
-                    <td className="px-5 py-10 text-center text-slate-500 dark:text-slate-400" colSpan={8}>
-                      {loadError ? 'Keyword results are temporarily unavailable.' : 'No keyword gaps found yet.'}
-                    </td>
-                  </tr>
-                ) : (
-                  keywords.map((keyword) => (
-                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50" key={keyword.id}>
-                      <td className="max-w-[360px] px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          {isSelectionMode && (
-                            <input 
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer flex-shrink-0 dark:border-slate-700 dark:bg-slate-900"
-                              checked={selectedIds.has(keyword.id)}
-                              onChange={(e) => {
-                                const newSet = new Set(selectedIds)
-                                if (e.target.checked) newSet.add(keyword.id)
-                                else newSet.delete(keyword.id)
-                                setSelectedIds(newSet)
-                              }}
-                            />
-                          )}
-                          <a href={`https://www.google.com/search?q=${encodeURIComponent(keyword.phrase)}`} target="_blank" rel="noopener noreferrer" className="truncate font-semibold text-slate-950 hover:text-cyan-700 hover:underline dark:text-slate-50 dark:hover:text-cyan-400">
-                            {keyword.phrase}
-                          </a>
-                        </div>
-                        {keyword.seo_recommendation && <details className="mt-2 text-xs text-slate-600 dark:text-slate-400">
-                          <summary className="cursor-pointer text-cyan-700 dark:text-cyan-300">Why this keyword?</summary>
-                          <p className="mt-1 whitespace-pre-wrap">{keyword.seo_recommendation}</p>
-                        </details>}
-                      </td>
-                      <td className="px-5 py-4">
-                        <KeywordIntentBadge keywordPhrase={keyword.phrase} />
-                      </td>
-                      <td className="px-5 py-4">{keywordBadge(keyword.keyword_type)}</td>
-                      <td className="px-5 py-4 text-right font-mono text-slate-700 dark:text-slate-300">{keyword.competitor_pages ?? keywordSources(keyword).filter(source => source.source_type === 'competitor').length}</td>
-                      <td className="px-5 py-4">
-                        <div className="flex max-w-[360px] flex-wrap gap-1.5">
-                          {sourceDomains(keyword).slice(0, 4).map((source) => (
-                            <a
-                              className={`inline-flex max-w-[160px] items-center truncate rounded-md border px-2 py-1 text-xs font-medium ${
-                                source.sourceType === 'own'
-                                  ? 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                  : 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/50 dark:bg-indigo-900/30 dark:text-indigo-300'
-                              }`}
-                              href={source.href}
-                              key={source.label}
-                              rel="noopener noreferrer"
-                              target="_blank"
-                              title={source.href}
-                            >
-                              {source.label}
-                            </a>
-                          ))}
-                          {sourceDomains(keyword).length > 4 && (
-                            <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                              +{sourceDomains(keyword).length - 4}
-                            </span>
-                          )}
-                        </div>
-                          <div className="mt-2 flex gap-1">
-                            {keywordSources(keyword).slice(0, 5).map((source) => (
-                            <a
-                              aria-label={source.url}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-cyan-700 dark:hover:text-cyan-400"
-                              href={source.url}
-                              key={source.url}
-                              rel="noopener noreferrer"
-                              target="_blank"
-                              title={source.url}
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                            ))}
-                          </div>
-                        </td>
-                      <td className="px-5 py-4 text-right">
-                        <Button
-                          disabled={articleMutation.isPending}
-                          onClick={() => articleMutation.mutate(keyword.id)}
-                          size="sm"
-                          variant="secondary"
-                        >
-                          <FilePenLine className="h-4 w-4" />
-                          {articleMutation.isPending && writingKeywordId === keyword.id ? 'Writing...' : 'Write'}
-                        </Button>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <Button
-                          onClick={() => navigate(`/gap-page-prompts?keyword=${encodeURIComponent(keyword.phrase)}`)}
-                          size="sm"
-                          variant="secondary"
-                        >
-                          <Sparkles className="h-4 w-4" />
-                        </Button>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(keyword.id)} size="sm" variant="ghost">
-                          <BookmarkPlus className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-          {data && data.pages > 1 && (
-            <div className="flex flex-col gap-3 border-t border-slate-200 dark:border-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Page {page} of {data.pages} · {data.total.toLocaleString()} keywords
-              </p>
-              <div className="flex gap-2">
-                <Button disabled={page === 1} onClick={() => { setSelectedIds(new Set()); setPage((current) => current - 1) }} size="sm" variant="secondary">
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <Button disabled={page === data.pages} onClick={() => { setSelectedIds(new Set()); setPage((current) => current + 1) }} size="sm" variant="secondary">
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-      </>
+      {data && data.pages > 1 && (
+        <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted">
+            Page {page} of {data.pages} · {data.total.toLocaleString()} keywords
+          </p>
+          <div className="flex gap-2">
+            <Button disabled={page === 1} onClick={() => { setSelectedIds(new Set()); setPage((current) => current - 1) }} size="sm" variant="secondary">
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <Button disabled={page === data.pages} onClick={() => { setSelectedIds(new Set()); setPage((current) => current + 1) }} size="sm" variant="secondary">
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

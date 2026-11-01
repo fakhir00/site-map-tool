@@ -1,17 +1,19 @@
-import { Activity } from 'lucide-react'
 import { Card } from './ui/Card'
 
 export function SemanticMetrics({ isActive = false }: { isActive?: boolean }) {
   return (
-    <Card className="p-5">
-      <h3 className="flex items-center gap-2 font-semibold text-slate-950 dark:text-slate-50">
-        <Activity className="h-4 w-4 text-cyan-600" />
+    <Card lift={false}>
+      <h3 className="flex items-center gap-2 font-display font-bold text-ink">
+        <span className={`relative flex h-2.5 w-2.5 ${isActive ? '' : 'opacity-40'}`}>
+          {isActive && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-alive-green opacity-60" />}
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-alive-green" />
+        </span>
         Scan activity
       </h3>
-      <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
-        {isActive ? 'Scan in progress. See Scan Progress for recorded results.' : 'No scan currently running.'}
+      <p className="mt-3 text-sm text-muted">
+        {isActive ? 'Scan in progress. See the live feed for recorded results.' : 'No scan currently running.'}
       </p>
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs leading-relaxed text-muted/80">
         Keyword quality confidence is not measured. Review each suggestion and its sources before planning content.
       </p>
     </Card>

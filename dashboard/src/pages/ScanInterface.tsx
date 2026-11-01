@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, ChevronDown, Radar, Sparkles } from 'lucide-react'
 import { api, type Project, type ProjectCreate } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
+import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
 
 function displayHost(value: string) {
@@ -18,7 +20,7 @@ function displayHost(value: string) {
 export default function ScanInterface() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  
+
   const [form, setForm] = useState({
     site_url: '',
     primary_keyword: '',
@@ -42,7 +44,7 @@ export default function ScanInterface() {
     event.preventDefault()
     const siteUrl = form.site_url.trim()
     const rawKeywords = form.primary_keyword.split(',').map(k => k.trim()).filter(k => k.length > 0)
-    
+
     if (rawKeywords.length === 0) {
       alert("Please enter at least one keyword")
       return
@@ -58,71 +60,129 @@ export default function ScanInterface() {
     })
   }
 
+  const keywordPreview = form.primary_keyword.split(',').map(k => k.trim()).filter(k => k.length > 0)
+  const isStarting = createMutation.isPending
+
   return (
-    <div className="mx-auto max-w-3xl py-8 space-y-8">
-      <Card className="p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the keywords to compare against competitors.</p>
+    <div className="page-shell warm-glow-bg">
+      <div className="mx-auto max-w-2xl space-y-10">
+        {/* Hero — one confident focal point */}
+        <div className="animate-fade-up pt-4 text-center">
+          <Badge variant="amber" className="mb-4">
+            <Radar className="mr-1.5 h-3.5 w-3.5" />
+            Gap Scan
+          </Badge>
+          <h1 className="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+            Find the gaps.
+            <span className="text-glow-amber"> Win the traffic.</span>
+          </h1>
+          <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-muted">
+            Drop in your site and the keywords you want to own. We'll stack your sitemap
+            against your competitors' and surface the pages you're missing.
+          </p>
         </div>
 
-        <form className="space-y-6" onSubmit={handleCreate}>
-          {createMutation.error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 text-sm">
-              {createMutation.error.message}
-            </div>
-          )}
+        {/* Form — the single thing to do */}
+        <Card className="animate-fade-up p-8 sm:p-10" style={{ animationDelay: '80ms' }}>
+          <form className="space-y-7" onSubmit={handleCreate}>
+            {createMutation.error && (
+              <div className="flex items-start gap-2.5 rounded-xl border border-warm-red/30 bg-warm-red/10 px-4 py-3 text-sm text-warm-red">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{createMutation.error.message}</span>
+              </div>
+            )}
 
-          <div className="grid gap-6 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Your website</span>
+              <span className="mb-2.5 block text-sm font-semibold text-ink">Your website</span>
               <Input
+                className="h-12 text-base"
                 onChange={(event) => setForm({ ...form, site_url: event.target.value })}
                 placeholder="https://yourcompany.com"
                 required
                 value={form.site_url}
               />
             </label>
+
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Keywords (comma-separated)</span>
+              <span className="mb-2.5 block text-sm font-semibold text-ink">
+                Keywords you want to rank for
+              </span>
               <Input
+                className="h-12 text-base"
                 onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
-                placeholder="sitemap generator, seo tool"
+                placeholder="sitemap generator, seo audit tool"
                 required
                 value={form.primary_keyword}
               />
+              {keywordPreview.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {keywordPreview.map((keyword) => (
+                    <Badge key={keyword} variant="slate">
+                      {keyword}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </label>
-          </div>
 
-          <div className="grid gap-6 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Competitor search region (Optional)</span>
-              <select
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
-                onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
-                value={form.search_locale}
-              >
-                <option value="us">United States (Default)</option>
-                <option value="gb">United Kingdom</option>
-                <option value="ca">Canada</option>
-                <option value="au">Australia</option>
-                <option value="in">India</option>
-                <option value="de">Germany</option>
-                <option value="fr">France</option>
-              </select>
-            </label>
-          </div>
+            {/* Progressive disclosure — options stay out of the way */}
+            <details className="rounded-xl border border-line bg-abyss/40 px-4 py-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+                <span>Scan options</span>
+                <ChevronDown className="disclosure-chevron h-4 w-4" />
+              </summary>
+              <div className="disclosure"><div>
+              <div className="pt-4">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-muted">Competitor search region</span>
+                  <select
+                    className="flex h-10 w-full rounded-xl border border-line bg-raised px-3 py-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glow-amber/40 focus-visible:border-glow-amber/60"
+                    onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
+                    value={form.search_locale}
+                  >
+                    <option value="us">United States (Default)</option>
+                    <option value="gb">United Kingdom</option>
+                    <option value="ca">Canada</option>
+                    <option value="au">Australia</option>
+                    <option value="in">India</option>
+                    <option value="de">Germany</option>
+                    <option value="fr">France</option>
+                  </select>
+                </label>
+              </div>
+              </div></div>
+            </details>
 
-          <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row sm:justify-end">
-            <Button disabled={createMutation.isPending} onClick={() => navigate(-1)} type="button" variant="secondary">
-              Cancel
-            </Button>
-            <Button disabled={createMutation.isPending} type="submit">
-              {createMutation.isPending ? 'Starting scan...' : 'Find gaps'}
-            </Button>
-          </div>
-        </form>
-      </Card>
+            {/* One primary action; everything else is quiet */}
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button disabled={isStarting} onClick={() => navigate(-1)} type="button" variant="ghost">
+                Cancel
+              </Button>
+              <Button disabled={isStarting} size="lg" type="submit" variant="glow" className="sm:min-w-44">
+                {isStarting ? 'Starting scan…' : 'Find gaps'}
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        {/* Warm scan-progress state while the scan spins up */}
+        {isStarting && (
+          <Card className="animate-fade-up space-y-4 p-6">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="h-5 w-5 text-glow-amber" />
+              <p className="text-sm font-medium text-ink">
+                Spinning up your scan — discovering competitors and reading their sitemaps.
+              </p>
+            </div>
+            <div className="space-y-2.5" aria-hidden="true">
+              <div className="animate-shimmer h-3.5 w-3/4 rounded-full" />
+              <div className="animate-shimmer h-3.5 w-1/2 rounded-full" />
+              <div className="animate-shimmer h-3.5 w-2/3 rounded-full" />
+            </div>
+            <p className="text-xs text-muted">This usually takes under a minute. Hang tight.</p>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }

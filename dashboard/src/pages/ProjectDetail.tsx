@@ -10,15 +10,16 @@ import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
 import { KeywordsTable } from '../components/KeywordsTable'
 import { SemanticMetrics } from '../components/SemanticMetrics'
 import { LiveSignals } from '../components/LiveSignals'
+import { CountUp } from '../components/CountUp'
 
 const CompetitorGraph = lazy(() => import('../components/CompetitorGraph').then((module) => ({ default: module.CompetitorGraph })))
 
 function statusBadge(status: Project['status'] | string) {
-  if (status === 'complete') return <Badge variant="teal">Complete</Badge>
+  if (status === 'complete') return <Badge variant="green">Complete</Badge>
   if (status === 'running') return <Badge variant="indigo">Running</Badge>
   if (status === 'paused') return <Badge variant="amber">Paused</Badge>
   if (status === 'error') return <Badge variant="red">Error</Badge>
-  if (status === 'scraped') return <Badge variant="teal">Analyzed</Badge>
+  if (status === 'scraped') return <Badge variant="green">Analyzed</Badge>
   if (status === 'discovered') return <Badge variant="slate">URL found</Badge>
   if (status === 'failed') return <Badge variant="red">Failed</Badge>
   return <Badge variant="slate">Pending</Badge>
@@ -89,8 +90,6 @@ export function ProjectDetail() {
     refetchInterval: projectIsActive ? 5000 : false,
   })
 
-
-
   const { data: sources = [] } = useQuery({
     queryKey: ['project-sources', projectId],
     queryFn: () => api.get<ProjectSource[]>(`/projects/${projectId}/sources`),
@@ -114,14 +113,23 @@ export function ProjectDetail() {
   })
 
   if (loadingProject && !project) {
-    return <div className="h-96 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
+    return (
+      <div className="space-y-6 animate-fade-up">
+        <div className="animate-shimmer h-28 rounded-2xl" />
+        <div className="grid gap-4 md:grid-cols-3">
+          {[0, 1, 2].map(i => <div key={i} className="animate-shimmer h-32 rounded-2xl" />)}
+        </div>
+        <div className="animate-shimmer h-96 rounded-2xl" />
+      </div>
+    )
   }
 
   if (!project) {
     return (
-      <Card>
-        <p className="font-semibold text-slate-950 dark:text-slate-50">Project not found</p>
-        <Link className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-cyan-800 dark:text-cyan-500" to="/">
+      <Card className="p-10 text-center">
+        <p className="font-display text-xl font-bold text-ink">Project not found</p>
+        <p className="mt-2 text-sm text-muted">This project may have been deleted.</p>
+        <Link className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-soft-violet hover:text-ink" to="/">
           <ArrowLeft className="h-4 w-4" />
           Back to projects
         </Link>
@@ -141,27 +149,31 @@ export function ProjectDetail() {
   const actionError = startScanMutation.error || pauseScanMutation.error || resumeScanMutation.error
 
   return (
-    <div className="space-y-6">
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="space-y-8 animate-fade-up">
+      <section className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <Link className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50" to="/">
+          <Link className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-muted transition-colors hover:text-ink" to="/">
             <ArrowLeft className="h-4 w-4" />
             Dashboard
           </Link>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">{project.name}</h2>
+            <h2 className="font-display text-3xl font-bold tracking-tight text-ink">{project.name}</h2>
             {statusBadge(status)}
           </div>
-          <a className="mt-2 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50" href={project.domain} rel="noopener noreferrer" target="_blank">
+          <a className="mt-2.5 inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-ink" href={project.domain} rel="noopener noreferrer" target="_blank">
             <Globe2 className="h-4 w-4" />
             {displayHost(project.domain)}
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
+          <p className="mt-2 flex items-center gap-2 text-xs text-muted">
+            <Timer className="h-3.5 w-3.5" />
+            Last scanned {shortDate(project.last_scanned_at)}
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {!isRunning && !isPaused && (
-            <Button disabled={startScanMutation.isPending} onClick={() => startScanMutation.mutate()}>
+            <Button variant="glow" size="lg" disabled={startScanMutation.isPending} onClick={() => startScanMutation.mutate()}>
               <Play className="h-4 w-4" />
               {project.total_keywords ? 'Run again' : 'Find gaps'}
             </Button>
@@ -173,7 +185,7 @@ export function ProjectDetail() {
             </Button>
           )}
           {isPaused && (
-            <Button disabled={resumeScanMutation.isPending} onClick={() => resumeScanMutation.mutate()}>
+            <Button variant="glow" size="lg" disabled={resumeScanMutation.isPending} onClick={() => resumeScanMutation.mutate()}>
               <Play className="h-4 w-4" />
               Resume
             </Button>
@@ -182,107 +194,103 @@ export function ProjectDetail() {
       </section>
 
       {actionError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">{actionError.message}</div>
+        <div className="rounded-2xl border border-warm-red/30 bg-warm-red/[0.07] px-5 py-4 text-sm text-warm-red">{actionError.message}</div>
       )}
 
       {(isRunning || isPaused) && (
-        <Card>
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+        <Card lift={false} className="border-glow-amber/25 bg-glow-amber/[0.03]">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-glow-amber/15 text-glow-amber">
               <RefreshCw className={`h-5 w-5 ${isRunning ? 'animate-spin' : ''}`} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="font-semibold text-slate-950 dark:text-slate-50">{isPaused ? 'Gap Scan paused' : 'Gap Scan in progress'}</p>
-                <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">{percent}%</span>
+              <div className="mb-2.5 flex items-center justify-between gap-3">
+                <p className="font-display font-bold text-ink">{isPaused ? 'Gap Scan paused' : 'Gap Scan in progress'}</p>
+                <span className="font-mono text-sm font-semibold text-glow-amber">{percent}%</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${Math.min(percent, 100)}%` }} />
+              <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
+                <div className="h-full rounded-full bg-glow-amber shadow-[0_0_16px_rgba(245,165,36,0.6)] transition-all duration-500" style={{ width: `${Math.min(percent, 100)}%` }} />
               </div>
-              <p className="mt-2 truncate text-sm text-slate-500 dark:text-slate-400">{scanStatus?.current_url || 'Finding top Google competitors and crawling sitemaps'}</p>
+              <p className="mt-2.5 truncate text-sm text-muted">{scanStatus?.current_url || 'Finding top Google competitors and crawling sitemaps'}</p>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-right text-sm">
-              <div>
-                <p className="font-semibold text-slate-950 dark:text-slate-50">{scanStatus?.urls_processed || 0}</p>
-                <p className="text-slate-500 dark:text-slate-400">Analyzed</p>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-950 dark:text-slate-50">{scanStatus?.urls_failed || 0}</p>
-                <p className="text-slate-500 dark:text-slate-400">Failed</p>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-950 dark:text-slate-50">{scanStatus?.urls_found || 0}</p>
-                <p className="text-slate-500 dark:text-slate-400">Found</p>
-              </div>
+            <div className="grid grid-cols-3 gap-6 text-right text-sm">
+              {[
+                ['Analyzed', scanStatus?.urls_processed || 0],
+                ['Failed', scanStatus?.urls_failed || 0],
+                ['Found', scanStatus?.urls_found || 0],
+              ].map(([name, value]) => (
+                <div key={name}>
+                  <p className="font-mono font-semibold text-ink">{Number(value).toLocaleString()}</p>
+                  <p className="text-xs text-muted">{name}</p>
+                </div>
+              ))}
             </div>
           </div>
         </Card>
       )}
 
       {latestJobError && (
-        <div className={`relative flex items-start gap-3 rounded-lg px-4 py-3 pr-10 text-sm ${isCompletionNote ? 'border border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300' : isCompletionWarning ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300' : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300'}`}>
+        <div className={`relative flex items-start gap-3 rounded-2xl border px-5 py-4 pr-12 text-sm ${isCompletionNote ? 'border-line bg-raised text-muted' : isCompletionWarning ? 'border-glow-amber/30 bg-glow-amber/[0.06] text-ink' : 'border-warm-red/30 bg-warm-red/[0.07] text-warm-red'}`}>
           {isCompletionNote ? <Info className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
           <p>{latestJobError}</p>
-          <button 
-            type="button" 
+          <button
+            type="button"
             aria-label="Dismiss scan message"
             onClick={() => setDismissedError(latestJobError)}
-            className="absolute right-3 top-3 text-current opacity-70 hover:opacity-100"
+            className="absolute right-4 top-4 text-current opacity-70 hover:opacity-100"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
+      {/* Stat strip — three calm focal points */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card className="animate-fade-up stagger-1">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">URLs found</p>
-            <FileText className="h-4 w-4 text-cyan-800 dark:text-cyan-500" />
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">Keyword gaps</p>
+            <Globe2 className="h-4 w-4 text-glow-amber" />
           </div>
-          <p className="mt-3 text-3xl font-bold">{stats?.total_urls.toLocaleString() || 0}</p>
+          <p className="mt-2 font-display text-4xl font-bold tracking-tight text-ink"><CountUp value={stats?.total_keywords || 0} /></p>
+          <p className="mt-1 text-xs text-muted">Opportunities competitors rank for</p>
         </Card>
-        <Card>
+        <Card className="animate-fade-up stagger-2">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Analyzed</p>
-            <RefreshCw className="h-4 w-4 text-indigo-700 dark:text-indigo-400" />
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">Pages analyzed</p>
+            <RefreshCw className="h-4 w-4 text-soft-violet" />
           </div>
-          <p className="mt-3 text-3xl font-bold">{stats?.scraped_urls.toLocaleString() || 0}</p>
+          <p className="mt-2 font-display text-4xl font-bold tracking-tight text-ink"><CountUp value={stats?.scraped_urls || 0} /></p>
+          <p className="mt-1 text-xs text-muted">Crawled competitor pages</p>
         </Card>
-        <Card>
+        <Card className="animate-fade-up stagger-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Keyword gaps</p>
-            <Globe2 className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">URLs discovered</p>
+            <FileText className="h-4 w-4 text-alive-green" />
           </div>
-          <p className="mt-3 text-3xl font-bold">{stats?.total_keywords.toLocaleString() || 0}</p>
-        </Card>
-        <Card>
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Last scanned</p>
-            <Timer className="h-4 w-4 text-amber-700 dark:text-amber-400" />
-          </div>
-          <p className="mt-3 text-xl font-bold">{shortDate(project.last_scanned_at)}</p>
+          <p className="mt-2 font-display text-4xl font-bold tracking-tight text-ink"><CountUp value={stats?.total_urls || 0} /></p>
+          <p className="mt-1 text-xs text-muted">Across all sources</p>
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="flex flex-col gap-4">
-          <Suspense fallback={<div className="h-80 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />}>
+      <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="flex min-w-0 flex-col gap-5">
+          <Suspense fallback={<div className="animate-shimmer h-96 rounded-2xl" />}>
             <CompetitorGraph sources={sources} isActive={isRunning} />
           </Suspense>
           <SemanticMetrics isActive={isRunning} />
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-5">
           <LiveSignals isActive={isRunning} progress={scanStatus} error={latestJobError} />
-          
-          <Card className="p-0 flex flex-col">
-            <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4 shrink-0">
-              <h3 className="font-semibold text-slate-950 dark:text-slate-50">Crawled sources</h3>
-            </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/50 max-h-[405px] overflow-y-auto">
+
+          <details className="rounded-2xl border border-line bg-surface p-5" open={sources.length > 0 && sources.length <= 8}>
+            <summary className="cursor-pointer list-none text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">
+              Crawled sources <span className="ml-2 font-mono text-xs font-normal text-muted">{sources.length}</span>
+            </summary>
+            <div className="disclosure"><div>
+            <div className="mt-3 max-h-72 divide-y divide-white/5 overflow-y-auto">
               {sources.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">No sources have been queued yet.</p>
+                <p className="py-6 text-center text-sm text-muted">No sources have been queued yet.</p>
               ) : (
                 sources.map((source) => {
                   const isAi = source.source_type === 'ai'
@@ -291,19 +299,17 @@ export function ProjectDetail() {
                   const label = isAi || isProvider ? (source.source_domain || (isProvider ? 'Keyword provider' : 'AI Recommendations')) : displayHost(href!)
                   const sourceLabel = source.source_type === 'own' ? 'Your site' : isAi ? 'AI' : isProvider ? 'Provider' : 'Competitor'
                   return (
-                    <div className="flex items-center justify-between gap-4 px-5 py-4" key={`${source.source_type}-${source.source_domain || 'unknown'}`}>
+                    <div className="flex items-center justify-between gap-4 py-3.5" key={`${source.source_type}-${source.source_domain || 'unknown'}`}>
                       <div className="min-w-0">
                         {href ? (
-                          <a className="flex items-center gap-2 truncate text-sm font-semibold text-slate-950 hover:text-cyan-800 dark:text-slate-50 dark:hover:text-cyan-400" href={href} rel="noopener noreferrer" target="_blank">
+                          <a className="flex items-center gap-2 truncate text-sm font-semibold text-ink transition-colors hover:text-glow-amber" href={href} rel="noopener noreferrer" target="_blank">
                             {label}
                             <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                           </a>
                         ) : (
-                          <span className="flex items-center gap-2 truncate text-sm font-semibold text-slate-950 dark:text-slate-50">
-                            {label}
-                          </span>
+                          <span className="flex items-center gap-2 truncate text-sm font-semibold text-ink">{label}</span>
                         )}
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p className="mt-1 font-mono text-xs text-muted">
                           {source.scraped_urls.toLocaleString()} analyzed / {source.urls_found.toLocaleString()} found
                         </p>
                       </div>
@@ -315,41 +321,44 @@ export function ProjectDetail() {
                 })
               )}
             </div>
-          </Card>
+            </div></div>
+          </details>
 
-          <Card className="p-0">
-            <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
-              <h3 className="font-semibold text-slate-950 dark:text-slate-50">Gap Scan history</h3>
-            </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+          <details className="rounded-2xl border border-line bg-surface p-5">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">
+              Gap Scan history <span className="ml-2 font-mono text-xs font-normal text-muted">{jobs.length}</span>
+            </summary>
+            <div className="disclosure"><div>
+            <div className="mt-3 divide-y divide-white/5">
               {jobs.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">No Gap Scan jobs yet.</p>
+                <p className="py-6 text-center text-sm text-muted">No Gap Scan jobs yet.</p>
               ) : (
                 jobs.slice(0, 6).map((job) => (
-                  <div className="flex items-center justify-between gap-4 px-5 py-4" key={job.id}>
+                  <div className="flex items-center justify-between gap-4 py-3.5" key={job.id}>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">{job.id}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{shortDate(job.created_at)}</p>
+                      <p className="truncate font-mono text-xs text-muted">{job.id}</p>
+                      <p className="mt-0.5 text-xs text-muted">{shortDate(job.created_at)}</p>
                     </div>
                     {statusBadge(job.status)}
                   </div>
                 ))
               )}
             </div>
-          </Card>
+            </div></div>
+          </details>
         </div>
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">Keyword gaps</h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-display text-xl font-bold tracking-tight text-ink">Keyword gaps</h3>
         </div>
         <KeywordsTable projectId={projectId} isActive={projectIsActive} />
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">Latest article</h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-display text-xl font-bold tracking-tight text-ink">Latest article</h3>
         </div>
         <GeneratedArticlePanel projectId={projectId} />
       </section>

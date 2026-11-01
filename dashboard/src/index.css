@@ -1,23 +1,41 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ============================================================
+   CrawlGap "Dark & Alive" theme tokens (Tailwind v4 @theme)
+   Dark is the default and only theme.
+   ============================================================ */
 @theme {
-  --font-sans: "Inter", "Aptos", system-ui, sans-serif;
+  /* Surfaces */
+  --color-abyss: #0b0e14; /* app background, warm near-black */
+  --color-surface: #12161f; /* cards / panels */
+  --color-raised: #161b26; /* inputs, raised elements */
+  --color-line: #1c2230; /* borders */
+
+  /* Text */
+  --color-ink: #f2f4f8; /* primary text */
+  --color-muted: #9aa3b2; /* secondary text */
+
+  /* Brand accents */
+  --color-glow-amber: #f5a524; /* primary CTAs, key highlights, active states */
+  --color-soft-violet: #a78bfa; /* AI features only, sparing */
+  --color-alive-green: #34d399; /* success */
+  --color-warm-red: #f87171; /* errors */
+
+  /* Type */
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", monospace;
 }
 
 :root {
-  color: #0f172a;
-  background: #f6f7fb;
+  color: #f2f4f8;
+  background: #0b0e14;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-:root.dark {
-  color: #f8fafc;
-  background: #0f172a;
 }
 
 html,
@@ -28,16 +46,9 @@ body,
 
 body {
   margin: 0;
-  background:
-    linear-gradient(180deg, rgba(232, 245, 247, 0.72), rgba(246, 247, 251, 0) 360px),
-    #f6f7fb;
-  color: #0f172a;
+  background: #0b0e14;
+  color: #f2f4f8;
   font-family: var(--font-sans);
-}
-
-.dark body {
-  background: #0f172a;
-  color: #f8fafc;
 }
 
 button,
@@ -47,6 +58,7 @@ textarea {
   font: inherit;
 }
 
+/* Scrollbars that match the dark theme */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -57,14 +69,282 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #2a3348;
   border: 2px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #3a4763;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+/* ============================================================
+   Signature utilities — "Dark & Alive"
+   ============================================================ */
+
+/* Primary amber CTA with a soft warm glow */
+.glow-cta {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-glow-amber);
+  color: #0b0e14;
+  font-weight: 700;
+  box-shadow: 0 0 24px rgba(245, 165, 36, 0.35);
+  transition:
+    box-shadow 200ms ease,
+    transform 200ms ease,
+    background-color 200ms ease;
+}
+/* Light shimmer sweep across the CTA on hover */
+.glow-cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+}
+.glow-cta:hover:not(:disabled)::after {
+  transform: translateX(120%);
+  transition: transform 650ms ease;
+}
+.glow-cta:hover:not(:disabled) {
+  box-shadow: 0 0 40px rgba(245, 165, 36, 0.55);
+  transform: translateY(-1px);
+  background-color: #ffb63d;
+}
+.glow-cta:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 0 18px rgba(245, 165, 36, 0.4);
+}
+
+/* Cards that feel tactile: gentle lift on hover */
+.card-lift {
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.45),
+    0 0 1px rgba(245, 165, 36, 0.12);
+}
+
+/* Warm amber radial glow behind hero areas */
+.warm-glow-bg {
+  position: relative;
+  isolation: isolate;
+}
+.warm-glow-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 60% 45% at 50% 0%,
+    rgba(245, 165, 36, 0.08),
+    transparent 70%
+  );
+}
+
+/* Ambient life — the hero glow drifts almost imperceptibly (14s loop) */
+@keyframes drift-glow {
+  from {
+    transform: translate3d(-4%, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 2%, 0) scale(1.06);
+  }
+}
+.glow-drift::before {
+  animation: drift-glow 14s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* Smooth disclosure — animates <details> open/close via grid rows.
+   Markup: <details><summary>…</summary><div class="disclosure"><div>…content…</div></div></details> */
+.disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+details[open] > .disclosure {
+  grid-template-rows: 1fr;
+}
+.disclosure > div {
+  overflow: hidden;
+  min-height: 0;
+}
+.disclosure-chevron {
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+details[open] .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+/* ---- Hub-and-spoke graph life (calm, premium) ---- */
+
+/* Gentle float on nodes — stagger delays in markup so they never move in sync */
+@keyframes node-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+.hsg-float {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: node-float 7s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Slow energy flow along spokes */
+@keyframes spoke-flow {
+  to {
+    stroke-dashoffset: -44;
+  }
+}
+.hsg-spoke-flow {
+  stroke-dasharray: 7 15;
+  animation: spoke-flow 6s linear infinite;
+}
+
+/* Soft pulsing glow ring on "missing page" nodes */
+@keyframes pulse-ring {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.12);
+  }
+}
+.hsg-pulse-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse-ring 3.2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Entrance motion */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Route transitions — wrapper is keyed off location.pathname so this replays
+   on every navigation */
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.route-enter {
+  animation: route-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Staggered entrances — pair with .animate-fade-up; each step adds ~60ms */
+.stagger-1 { animation-delay: 60ms; }
+.stagger-2 { animation-delay: 120ms; }
+.stagger-3 { animation-delay: 180ms; }
+.stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 300ms; }
+.stagger-6 { animation-delay: 360ms; }
+.stagger-7 { animation-delay: 420ms; }
+.stagger-8 { animation-delay: 480ms; }
+
+/* Skeleton loader shimmer */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.animate-shimmer {
+  background: linear-gradient(
+    100deg,
+    #161b26 40%,
+    #232c42 50%,
+    #161b26 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Consistent page container: breathing room, not a wall of widgets */
+.page-shell {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 2rem;
+}
+@media (min-width: 1024px) {
+  .page-shell {
+    padding: 3rem;
+  }
+}
+
+/* Soft tinted pill badge helper (pairs with Badge component variants) */
+.badge-soft {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-shimmer,
+  .route-enter,
+  .hsg-float,
+  .hsg-spoke-flow,
+  .hsg-pulse-ring,
+  .glow-drift::before {
+    animation: none;
+  }
+  .glow-cta::after {
+    display: none;
+  }
+  .glow-cta,
+  .card-lift,
+  .disclosure,
+  .disclosure-chevron {
+    transition: none;
+  }
 }

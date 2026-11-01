@@ -4,7 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { FilePenLine, Loader2 } from 'lucide-react'
+import { Input } from '../components/ui/Input'
+import { Badge } from '../components/ui/Badge'
+import { FilePenLine, Loader2, Sparkles, X } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
 
 export default function WriteBlog() {
@@ -70,84 +72,143 @@ export default function WriteBlog() {
     }
   }
 
+  const isGenerating = articleMutation.isPending || manualMutation.isPending
+
   return (
-    <div className="mx-auto max-w-3xl py-8 space-y-8">
-      
-      {articleError && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300">
-          {articleError}
-        </div>
-      )}
-
-      {/* Manual Blog Generator Box */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
-            <FilePenLine className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Blog Writer</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
-          </div>
+    <div className="page-shell warm-glow-bg">
+      <div className="mx-auto max-w-3xl space-y-10">
+        {/* Page header */}
+        <div className="animate-fade-up">
+          <p className="mb-2 font-mono text-xs uppercase tracking-widest text-glow-amber">Blog Writer</p>
+          <h1 className="font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+            Turn a keyword gap into a draft.
+          </h1>
+          <p className="mt-3 max-w-xl text-muted">
+            The writer drafts it, the auditor scores it, and you get an article that is
+            ready to ship — from one keyword.
+          </p>
         </div>
 
-        <div className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Main Keyword <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              placeholder="e.g. mortgage calculator"
-              value={mainKeyword}
-              onChange={(e) => setMainKeyword(e.target.value)}
-            />
+        {articleError && (
+          <div className="animate-fade-up rounded-2xl border border-warm-red/30 bg-warm-red/10 p-4 text-sm text-warm-red" role="alert">
+            {articleError}
+          </div>
+        )}
+
+        {/* Editor card */}
+        <Card className="animate-fade-up p-6 sm:p-8" lift={false}>
+          <div className="mb-8 flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-glow-amber/15 text-glow-amber">
+              <FilePenLine className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="font-display text-xl font-semibold text-ink">New article</h2>
+              <p className="text-sm text-muted">One keyword in, a full draft out.</p>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Keyword Cluster (Optional)
-            </label>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-              Enter related keywords to naturally include in the article.
-            </p>
-            <textarea
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              rows={4}
-              placeholder={`home loan rates\namortization schedule\ninterest rates`}
-              value={keywordCluster}
-              onChange={(e) => setKeywordCluster(e.target.value)}
-            />
+          <div className="space-y-6">
+            {selectedKeyword && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-glow-amber/25 bg-glow-amber/8 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Badge variant="amber">From your gap scan</Badge>
+                  <span className="truncate text-sm font-medium text-ink">{selectedKeyword.phrase}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedKeyword(null)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/5 hover:text-ink"
+                  aria-label="Clear selected keyword"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-ink">
+                Main Keyword <span className="text-warm-red">*</span>
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g. mortgage calculator"
+                value={mainKeyword}
+                onChange={(e) => setMainKeyword(e.target.value)}
+                className="h-12 text-base"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink">
+                Keyword Cluster <span className="font-normal text-muted">(optional)</span>
+              </label>
+              <p className="mb-2 text-xs text-muted">
+                Related keywords the writer will weave in naturally — one per line.
+              </p>
+              <textarea
+                className="w-full rounded-xl border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glow-amber/40 focus-visible:border-glow-amber/60 transition-colors"
+                rows={4}
+                placeholder={`home loan rates\namortization schedule\ninterest rates`}
+                value={keywordCluster}
+                onChange={(e) => setKeywordCluster(e.target.value)}
+              />
+            </div>
+
+            {architectureBrief && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-ink">
+                  Architecture Brief
+                </label>
+                <textarea
+                  aria-label="Architecture brief"
+                  value={architectureBrief}
+                  onChange={event => setArchitectureBrief(event.target.value)}
+                  maxLength={12000}
+                  rows={8}
+                  className="w-full rounded-xl border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glow-amber/40 focus-visible:border-glow-amber/60 transition-colors"
+                />
+              </div>
+            )}
+
+            <Button
+              variant="glow"
+              size="lg"
+              className="w-full"
+              disabled={isGenerating || !mainKeyword}
+              onClick={handleGenerateBlog}
+            >
+              {isGenerating ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Sparkles className="h-5 w-5" />
+              )}
+              {isGenerating ? 'Writing your draft...' : 'Generate Blog Post'}
+            </Button>
           </div>
+        </Card>
 
-          {architectureBrief && <label className="block text-sm font-medium">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm dark:border-slate-700" /></label>}
-
-          <Button 
-            className="w-full bg-cyan-500 hover:bg-cyan-600 text-white" 
-            size="lg"
-            disabled={articleMutation.isPending || manualMutation.isPending || !mainKeyword}
-            onClick={handleGenerateBlog}
-          >
-            {articleMutation.isPending || manualMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-            {articleMutation.isPending || manualMutation.isPending ? 'Generating...' : 'Generate Blog'}
-          </Button>
+        {/* Keyword Bank from Gap Scan */}
+        <div className="animate-fade-up">
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <h2 className="font-display text-xl font-semibold text-ink">From your keyword bank</h2>
+              <p className="mt-1 text-sm text-muted">Pick a saved gap keyword to pre-fill the writer.</p>
+            </div>
+          </div>
+          <SavedKeywordsTable
+            keywords={keywords}
+            isLoading={isLoading}
+            actionIcon="write"
+            onAction={(kw) => {
+              setMainKeyword(kw.phrase)
+              setArchitectureBrief('')
+              setKeywordCluster('')
+              setSelectedKeyword(kw)
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+          />
         </div>
-      </Card>
-
-      {/* Keyword Bank from Gap Scan */}
-      <SavedKeywordsTable
-        keywords={keywords}
-        isLoading={isLoading}
-        actionIcon="write"
-        onAction={(kw) => {
-          setMainKeyword(kw.phrase)
-          setArchitectureBrief('')
-          setKeywordCluster('')
-          setSelectedKeyword(kw)
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
-      />
+      </div>
     </div>
   )
 }

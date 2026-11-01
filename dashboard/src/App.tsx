@@ -40,7 +40,7 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="sitemap-theme">
       <BrowserRouter>
-        <Suspense fallback={<div className="mx-auto mt-24 h-32 max-w-5xl animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />}>
+        <Suspense fallback={<div className="mx-auto mt-24 h-32 max-w-5xl animate-pulse rounded-2xl bg-surface" />}>
           <Routes>
           <Route element={<PublicRoute />}>
             <Route path="/login" element={<Login />} />
