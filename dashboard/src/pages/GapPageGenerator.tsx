@@ -3,6 +3,8 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
+import { Badge } from '../components/ui/Badge'
 import { Check, Copy, Loader2, Sparkles } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
 
@@ -17,6 +19,9 @@ type PromptResponse = {
   audit_score: number | null
 }
 
+const textareaClassName =
+  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-site-sky dark:border-line dark:bg-raised dark:text-text dark:placeholder:text-muted/60'
+
 export default function GapPageGenerator() {
   const [searchParams] = useSearchParams()
   const initialKeyword = searchParams.get('keyword') || ''
@@ -27,9 +32,9 @@ export default function GapPageGenerator() {
   const [manualCompetitors, setManualCompetitors] = useState('')
   const [intent, setIntent] = useState('')
   const [analyzedCompetitors, setAnalyzedCompetitors] = useState<string[]>([])
-  
+
   const [generatedPrompt, setGeneratedPrompt] = useState<PromptResponse | null>(null)
-  
+
   const [copied, setCopied] = useState(false)
   const [step, setStep] = useState<1 | 2 | 3>(1)
 
@@ -83,39 +88,46 @@ export default function GapPageGenerator() {
     }
   }
 
+  const verdictBadge =
+    generatedPrompt?.audit_score == null
+      ? { label: 'Not audited', variant: 'slate' as const }
+      : generatedPrompt.audit_score >= 80
+        ? { label: 'Pass', variant: 'green' as const }
+        : { label: 'Review needed', variant: 'amber' as const }
+
   const renderStep1 = () => (
     <Card className="p-6">
       <div className="flex items-center gap-3 mb-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-site-sky/15 text-site-sky">
           <Sparkles className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Build Page</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Analyze competitors and generate a targeted prompt for a single gap page.</p>
+          <h2 className="font-display text-xl font-bold text-slate-950 dark:text-text">Build Page</h2>
+          <p className="text-sm text-slate-500 dark:text-muted">Analyze competitors and generate a targeted prompt for a single gap page.</p>
         </div>
       </div>
 
       <div className="space-y-5">
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-            Main Keyword <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium text-slate-700 dark:text-text mb-1">
+            Main Keyword <span className="text-signal-red">*</span>
           </label>
           <input
             type="text"
-            className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-site-sky dark:border-line dark:bg-raised dark:text-text dark:placeholder:text-muted/60"
             placeholder="e.g. mortgage calculator"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
           />
         </div>
-        
+
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+          <label className="block text-sm font-medium text-slate-700 dark:text-text mb-1">
             Manual Competitors (Optional)
           </label>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Leave blank to automatically scrape Google for the top 5 competitors.</p>
+          <p className="text-xs text-slate-500 dark:text-muted mb-2">Leave blank to automatically scrape Google for the top 5 competitors.</p>
           <textarea
-            className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 font-mono"
+            className={`${textareaClassName} font-mono`}
             placeholder="https://example.com&#10;https://example2.com"
             rows={4}
             value={manualCompetitors}
@@ -123,11 +135,12 @@ export default function GapPageGenerator() {
           />
         </div>
 
-        {architectureBrief && <label className="block text-sm font-medium">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm dark:border-slate-700" /></label>}
-        <button
+        {architectureBrief && <label className="block text-sm font-medium text-slate-700 dark:text-text">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className={`${textareaClassName} mt-2`} /></label>}
+        <Button
           onClick={() => analyzeIntentMutation.mutate()}
           disabled={analyzeIntentMutation.isPending || !keyword.trim()}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-cyan-700 disabled:opacity-50"
+          className="w-full"
+          size="lg"
         >
           {analyzeIntentMutation.isPending ? (
             <>
@@ -137,10 +150,10 @@ export default function GapPageGenerator() {
           ) : (
             'Analyze Intent'
           )}
-        </button>
-        
+        </Button>
+
         {analyzeIntentMutation.isError && (
-          <div className="p-3 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800/50 rounded-md text-sm border">
+          <div className="p-3 rounded-lg text-sm border border-rose-200 bg-rose-50 text-rose-700 dark:border-signal-red/30 dark:bg-signal-red/10 dark:text-signal-red">
             {String(analyzeIntentMutation.error)}
           </div>
         )}
@@ -151,29 +164,29 @@ export default function GapPageGenerator() {
   const renderStep2 = () => (
     <Card className="p-6">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-2">Verify Intent</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          We scraped the competitors. Here is the deduced intent of this keyword. 
+        <h2 className="font-display text-xl font-bold text-slate-950 dark:text-text mb-2">Verify Intent</h2>
+        <p className="text-sm text-slate-500 dark:text-muted">
+          We scraped the competitors. Here is the deduced intent of this keyword.
           Modify it if needed before generating the Master Prompt.
         </p>
       </div>
 
       <div className="mb-6">
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Scraped Competitors:</h3>
-        <ul className="list-disc pl-5 text-sm text-slate-600 dark:text-slate-400 space-y-1">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-text mb-2">Scraped Competitors:</h3>
+        <ul className="list-disc pl-5 text-sm text-slate-600 dark:text-muted space-y-1">
           {analyzedCompetitors.map(url => (
-            <li key={url}><a href={url} target="_blank" rel="noopener noreferrer" className="text-cyan-600 dark:text-cyan-400 hover:underline">{url}</a></li>
+            <li key={url}><a href={url} target="_blank" rel="noopener noreferrer" className="text-site-sky hover:underline">{url}</a></li>
           ))}
         </ul>
       </div>
 
       <div className="space-y-5">
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+          <label className="block text-sm font-medium text-slate-700 dark:text-text mb-1">
             Deduced Intent
           </label>
           <textarea
-            className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className={textareaClassName}
             rows={6}
             value={intent}
             onChange={(e) => setIntent(e.target.value)}
@@ -181,17 +194,20 @@ export default function GapPageGenerator() {
         </div>
 
         <div className="flex gap-3">
-          <button
+          <Button
+            variant="secondary"
             onClick={() => setStep(1)}
             disabled={generatePromptMutation.isPending}
-            className="flex-1 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="flex-1"
+            size="lg"
           >
             Back
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => generatePromptMutation.mutate()}
             disabled={generatePromptMutation.isPending || !intent.trim()}
-            className="flex flex-[2] items-center justify-center gap-2 rounded-md bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-cyan-700 disabled:opacity-50"
+            className="flex-[2]"
+            size="lg"
           >
             {generatePromptMutation.isPending ? (
               <>
@@ -201,11 +217,11 @@ export default function GapPageGenerator() {
             ) : (
               'Confirm Intent & Generate Prompt'
             )}
-          </button>
+          </Button>
         </div>
-        
+
         {generatePromptMutation.isError && (
-          <div className="p-3 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800/50 rounded-md text-sm border">
+          <div className="p-3 rounded-lg text-sm border border-rose-200 bg-rose-50 text-rose-700 dark:border-signal-red/30 dark:bg-signal-red/10 dark:text-signal-red">
             {String(generatePromptMutation.error)}
           </div>
         )}
@@ -217,52 +233,57 @@ export default function GapPageGenerator() {
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Build Page Prompt</h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Ready to be copied into Claude Opus or any capable AI builder.</p>
+          <h3 className="font-display text-lg font-bold text-slate-950 dark:text-text">Build Page Prompt</h3>
+          <p className="text-sm text-slate-500 dark:text-muted mt-1">Ready to be copied into Claude Opus or any capable AI builder.</p>
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => {
             setGeneratedPrompt(null)
             setStep(1)
           }}
-          className="text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300"
         >
           Start Over
-        </button>
+        </Button>
       </div>
-      
+
       <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4 mb-6">
-        <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 px-4 py-3 shadow-sm">
-          <p className="text-slate-500 dark:text-slate-400">Keyword</p>
-          <p className="text-base font-bold text-slate-950 dark:text-slate-50 truncate" title={keyword}>{keyword}</p>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-line dark:bg-raised">
+          <p className="text-slate-500 dark:text-muted">Keyword</p>
+          <p className="text-base font-bold text-slate-950 dark:text-text truncate font-mono" title={keyword}>{keyword}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 px-4 py-3 shadow-sm">
-          <p className="text-slate-500 dark:text-slate-400">Auditor Score</p>
-          <p className="text-base font-bold text-slate-950 dark:text-slate-50">{generatedPrompt?.audit_score ?? '-'}</p>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-line dark:bg-raised">
+          <p className="text-slate-500 dark:text-muted">Auditor Score</p>
+          <p className="text-base font-bold text-slate-950 dark:text-text font-mono">{generatedPrompt?.audit_score ?? '-'}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 px-4 py-3 shadow-sm">
-          <p className="text-slate-500 dark:text-slate-400">Attempts</p>
-          <p className="text-base font-bold text-slate-950 dark:text-slate-50">{generatedPrompt?.attempts}</p>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-line dark:bg-raised">
+          <p className="text-slate-500 dark:text-muted">Attempts</p>
+          <p className="text-base font-bold text-slate-950 dark:text-text font-mono">{generatedPrompt?.attempts}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 px-4 py-3 shadow-sm">
-          <p className="text-slate-500 dark:text-slate-400">Verdict</p>
-          <p className="text-base font-bold text-slate-950 dark:text-slate-50">
-            {generatedPrompt?.audit_score == null ? 'Not audited' : generatedPrompt.audit_score >= 80 ? 'Pass' : 'Review needed'}
-          </p>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-line dark:bg-raised">
+          <p className="text-slate-500 dark:text-muted mb-1">Verdict</p>
+          <Badge variant={verdictBadge.variant}>{verdictBadge.label}</Badge>
         </div>
       </div>
 
-      <Card className="relative p-6">
-        <div className="absolute right-4 top-4 flex items-center gap-3">
-          <div className="h-5 w-px bg-slate-300 dark:bg-slate-700" />
-
-          <button
+      <div className="rounded-2xl border border-slate-200 bg-white dark:border-line dark:bg-raised">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-line px-5 py-4">
+          <div className="flex items-center gap-3">
+            <h4 className="font-display text-sm font-bold text-slate-950 dark:text-text">Checked prompt</h4>
+            {generatedPrompt?.audit_score != null ? (
+              <Badge variant="green">Checked · {generatedPrompt.audit_score}/100</Badge>
+            ) : (
+              <Badge variant="slate">Not audited</Badge>
+            )}
+          </div>
+          <Button
+            size="sm"
             onClick={() => copyToClipboard(generatedPrompt?.prompt || '')}
-            className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1"
           >
             {copied ? (
               <>
-                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                <Check className="h-3.5 w-3.5" />
                 Copied!
               </>
             ) : (
@@ -271,13 +292,15 @@ export default function GapPageGenerator() {
                 Copy prompt
               </>
             )}
-          </button>
+          </Button>
         </div>
 
-        <div className="prose prose-slate mt-12 max-w-none whitespace-pre-wrap text-sm leading-7 text-slate-800 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-md border border-slate-100 dark:border-slate-800 font-mono">
-          {generatedPrompt?.prompt}
+        <div className="p-5">
+          <div className="whitespace-pre-wrap text-sm leading-7 text-slate-800 dark:text-text font-mono rounded-lg border border-slate-100 dark:border-line bg-slate-50 dark:bg-blueprint-deep p-4">
+            {generatedPrompt?.prompt}
+          </div>
         </div>
-      </Card>
+      </div>
     </Card>
   )
 

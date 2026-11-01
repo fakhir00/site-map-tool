@@ -62,20 +62,20 @@ export default function ScanInterface() {
     <div className="mx-auto max-w-3xl py-8 space-y-8">
       <Card className="p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the keywords to compare against competitors.</p>
+          <h1 className="font-display text-2xl font-bold text-text">New Gap Scan</h1>
+          <p className="mt-1 text-sm text-muted">Enter your website and the keywords to compare against competitors.</p>
         </div>
 
         <form className="space-y-6" onSubmit={handleCreate}>
           {createMutation.error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 text-sm">
+            <div className="rounded-lg border border-signal-red/30 bg-signal-red/10 px-3 py-2 text-sm text-signal-red">
               {createMutation.error.message}
             </div>
           )}
 
           <div className="grid gap-6 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Your website</span>
+              <span className="mb-2 block text-sm font-medium text-muted">Your website</span>
               <Input
                 onChange={(event) => setForm({ ...form, site_url: event.target.value })}
                 placeholder="https://yourcompany.com"
@@ -84,7 +84,7 @@ export default function ScanInterface() {
               />
             </label>
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Keywords (comma-separated)</span>
+              <span className="mb-2 block text-sm font-medium text-muted">Keywords (comma-separated)</span>
               <Input
                 onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
                 placeholder="sitemap generator, seo tool"
@@ -96,9 +96,9 @@ export default function ScanInterface() {
 
           <div className="grid gap-6 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Competitor search region (Optional)</span>
+              <span className="mb-2 block text-sm font-medium text-muted">Competitor search region (Optional)</span>
               <select
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-10 w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm text-text transition-colors focus:border-site-sky/60 focus:outline-none focus:ring-2 focus:ring-site-sky/40 disabled:cursor-not-allowed disabled:opacity-50"
                 onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
                 value={form.search_locale}
               >

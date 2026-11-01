@@ -9,7 +9,7 @@ export function ThemeToggle() {
     <Button
       variant="ghost"
       size="sm"
-      className="w-full justify-start text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-50"
+      className="w-full justify-start text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-muted dark:hover:bg-raised dark:hover:text-slate-50"
       onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
     >
       {theme === 'light' ? (

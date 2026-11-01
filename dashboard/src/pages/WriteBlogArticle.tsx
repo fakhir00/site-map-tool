@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Clock, FileText } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type ArticleListResponse } from '../lib/api'
-import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
+import { GeneratedArticlePanel, articleStatusBadge } from '../components/GeneratedArticlePanel'
 
 export default function WriteBlogArticle() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -25,39 +25,40 @@ export default function WriteBlogArticle() {
       <div className="mb-6">
         <Link 
           to="/write-blog" 
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 mb-4"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-muted hover:text-slate-900 dark:hover:text-text mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Blog Writer
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Article Studio</h1>
+        <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-text">Article Studio</h1>
       </div>
       
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
-          <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4">
-            <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-950 dark:text-slate-50">
+          <div className="rounded-2xl border border-slate-200 bg-white dark:border-line dark:bg-panel p-4">
+            <h3 className="mb-4 flex items-center gap-2 font-display font-semibold text-slate-950 dark:text-text">
               <Clock className="h-4 w-4" />
               History
             </h3>
             <div className="space-y-2">
               {data?.items?.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No articles generated yet.</p>
+                <p className="text-sm text-slate-500 dark:text-muted">No articles generated yet.</p>
               ) : (
                 data?.items?.map((article) => (
                   <button
                     key={article.id}
                     onClick={() => setSelectedArticleId(article.id)}
-                    className={`flex w-full items-start gap-3 rounded-md px-3 py-2 text-left transition-colors ${
+                    className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
                       (selectedArticleId ? selectedArticleId === article.id : data?.items?.[0]?.id === article.id)
-                        ? 'bg-cyan-50 text-cyan-900 dark:bg-cyan-900/30 dark:text-cyan-50'
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                        ? 'bg-site-sky/10 dark:bg-site-sky/10'
+                        : 'hover:bg-slate-50 dark:hover:bg-raised'
                     }`}
                   >
-                    <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${(selectedArticleId ? selectedArticleId === article.id : data?.items?.[0]?.id === article.id) ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{article.title || article.keyword_phrase}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{new Date(article.created_at).toLocaleDateString()}</p>
+                    <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${(selectedArticleId ? selectedArticleId === article.id : data?.items?.[0]?.id === article.id) ? 'text-site-sky' : 'text-slate-400 dark:text-muted'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900 dark:text-text">{article.title || article.keyword_phrase}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-muted">{new Date(article.created_at).toLocaleDateString()}</p>
+                      <div className="mt-1.5">{articleStatusBadge(article)}</div>
                     </div>
                   </button>
                 ))

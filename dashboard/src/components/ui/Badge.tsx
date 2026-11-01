@@ -9,15 +9,21 @@ export function Badge({ className, variant = 'slate', ...props }: BadgeProps) {
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-site-sky",
         {
-          'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-800/50 dark:bg-cyan-900/30 dark:text-cyan-300': variant === 'teal',
-          'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/50 dark:bg-indigo-900/30 dark:text-indigo-300': variant === 'indigo',
-          'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300': variant === 'slate',
-          'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300': variant === 'red',
-          'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-900/30 dark:text-emerald-300': variant === 'green',
-          'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/50 dark:bg-amber-900/30 dark:text-amber-300': variant === 'amber',
-          'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/50 dark:bg-sky-900/30 dark:text-sky-300': variant === 'cyan',
+          // Existing / yours data — Site Sky
+          'border-sky-200 bg-sky-50 text-sky-800 dark:border-site-sky/30 dark:bg-site-sky/10 dark:text-site-sky': variant === 'teal',
+          'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-line dark:bg-site-sky/10 dark:text-site-sky': variant === 'indigo',
+          // Neutral
+          'border-slate-200 bg-slate-100 text-slate-700 dark:border-line dark:bg-raised dark:text-muted': variant === 'slate',
+          // Errors only — Signal Red
+          'border-rose-200 bg-rose-50 text-rose-700 dark:border-signal-red/30 dark:bg-signal-red/10 dark:text-signal-red': variant === 'red',
+          // Success — Built Green
+          'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-built-green/30 dark:bg-built-green/10 dark:text-built-green': variant === 'green',
+          // Missing things — Signal Amber
+          'border-amber-200 bg-amber-50 text-amber-800 dark:border-signal-amber/30 dark:bg-signal-amber/10 dark:text-signal-amber': variant === 'amber',
+          // Existing / yours data — Site Sky
+          'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-site-sky/30 dark:bg-site-sky/10 dark:text-site-sky': variant === 'cyan',
         },
         className
       )}

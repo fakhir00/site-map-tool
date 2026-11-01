@@ -14,16 +14,16 @@ export default function SavedKeywords() {
   return (
     <div className="mx-auto max-w-5xl py-8">
       <div className="flex items-center gap-3 mb-6 px-1">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-site-sky/15 text-site-sky">
           <Bookmark className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Keyword Bank</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">View and manage all keywords you've saved to your bank.</p>
+          <h2 className="font-display text-xl font-bold text-text">Keyword Bank</h2>
+          <p className="text-sm text-muted">View and manage all keywords you've saved to your bank.</p>
         </div>
       </div>
 
-      {error ? <p role="alert" className="text-sm text-red-600">{error.message}</p> : <SavedKeywordsTable
+      {error ? <p role="alert" className="text-sm text-signal-red">{error.message}</p> : <SavedKeywordsTable
         keywords={keywordBank}
         isLoading={isLoading}
         actionIcon="both"

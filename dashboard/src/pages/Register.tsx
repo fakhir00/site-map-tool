@@ -46,45 +46,45 @@ export function Register() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-950 dark:text-slate-50">
+    <main className="min-h-screen bg-blueprint-deep px-4 py-10 font-sans text-text">
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl items-center">
-        <div className="grid w-full gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
+        <div className="grid w-full gap-10 lg:grid-cols-[1fr_420px] lg:items-center">
           <section className="max-w-2xl">
-            <a className="mb-8 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-700 dark:bg-cyan-600 text-white" href={websiteUrl} aria-label="SiteMapSEO homepage">
+            <a className="mb-8 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-raised text-site-sky" href={websiteUrl} aria-label="CrawlGap homepage">
               <Map className="h-6 w-6" />
             </a>
-            <p className="mb-3 text-sm font-semibold uppercase text-cyan-800 dark:text-cyan-400">SiteMapSEO</p>
-            <h1 className="max-w-xl text-4xl font-bold leading-tight text-slate-950 dark:text-slate-50 md:text-5xl">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-site-sky">CrawlGap</p>
+            <h1 className="max-w-xl font-display text-4xl font-bold leading-tight text-text md:text-5xl">
               Build your SEO discovery workspace.
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-400">
+            <p className="mt-5 max-w-xl text-base leading-7 text-muted">
               Start with your website and main keyword, then export competitor keyword gaps worth acting on.
             </p>
           </section>
 
           <Card className="p-6">
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-950 dark:text-slate-50">Create account</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Start with a working project dashboard.</p>
+              <h2 className="font-display text-xl font-bold text-text">Create account</h2>
+              <p className="mt-1 text-sm text-muted">Start with a working project dashboard.</p>
             </div>
 
             {DEMO_BACKEND_ENABLED && (
-              <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+              <div className="mb-4 rounded-lg border border-signal-amber/40 bg-signal-amber/10 px-3 py-2 text-sm text-signal-amber">
                 Demo mode is active. Accounts and projects stay in this browser.
               </div>
             )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               {error && (
-                <div className="rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-900/20 px-3 py-2 text-sm text-rose-700 dark:text-rose-200">
+                <div className="rounded-lg border border-signal-red/40 bg-signal-red/10 px-3 py-2 text-sm text-signal-red">
                   {error}
                 </div>
               )}
 
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Full name</span>
+                <span className="mb-1 block text-sm font-medium text-text">Full name</span>
                 <div className="relative">
-                  <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                   <Input
                     autoComplete="name"
                     className="pl-9"
@@ -97,9 +97,9 @@ export function Register() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</span>
+                <span className="mb-1 block text-sm font-medium text-text">Email</span>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                   <Input
                     autoComplete="email"
                     className="pl-9"
@@ -113,9 +113,9 @@ export function Register() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Password</span>
+                <span className="mb-1 block text-sm font-medium text-text">Password</span>
                 <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                   <Input
                     autoComplete="new-password"
                     className="pl-9"
@@ -135,9 +135,13 @@ export function Register() {
               </Button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-6 text-center text-xs text-muted">
+              No credit card to start · Your first scan is free
+            </p>
+
+            <p className="mt-4 text-center text-sm text-muted">
               Already registered?{' '}
-              <Link className="font-semibold text-cyan-800 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300" to="/login">
+              <Link className="font-semibold text-site-sky hover:text-site-sky/80" to="/login">
                 Sign in
               </Link>
             </p>

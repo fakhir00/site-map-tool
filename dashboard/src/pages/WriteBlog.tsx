@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type KeywordBankEntry } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
 import { FilePenLine, Loader2 } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
 
@@ -74,7 +75,7 @@ export default function WriteBlog() {
     <div className="mx-auto max-w-3xl py-8 space-y-8">
       
       {articleError && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300">
+        <div className="rounded-md bg-red-50 p-4 text-sm text-red-700 dark:bg-signal-red/10 dark:text-signal-red">
           {articleError}
         </div>
       )}
@@ -82,23 +83,22 @@ export default function WriteBlog() {
       {/* Manual Blog Generator Box */}
       <Card className="p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-site-sky/15 text-site-sky">
             <FilePenLine className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Blog Writer</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
+            <h2 className="font-display text-xl font-bold text-slate-900 dark:text-text">Blog Writer</h2>
+            <p className="text-sm text-slate-500 dark:text-muted">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
           </div>
         </div>
 
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Main Keyword <span className="text-red-500">*</span>
+            <label className="block text-sm font-medium text-slate-700 dark:text-text mb-1">
+              Main Keyword <span className="text-red-500 dark:text-signal-red">*</span>
             </label>
-            <input
+            <Input
               type="text"
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               placeholder="e.g. mortgage calculator"
               value={mainKeyword}
               onChange={(e) => setMainKeyword(e.target.value)}
@@ -106,14 +106,14 @@ export default function WriteBlog() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-sm font-medium text-slate-700 dark:text-text mb-1">
               Keyword Cluster (Optional)
             </label>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+            <p className="text-xs text-slate-500 dark:text-muted mb-2">
               Enter related keywords to naturally include in the article.
             </p>
             <textarea
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-site-sky dark:border-line dark:bg-raised dark:text-text dark:placeholder:text-muted/60 dark:focus-visible:border-site-sky/60"
               rows={4}
               placeholder={`home loan rates\namortization schedule\ninterest rates`}
               value={keywordCluster}
@@ -121,10 +121,10 @@ export default function WriteBlog() {
             />
           </div>
 
-          {architectureBrief && <label className="block text-sm font-medium">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm dark:border-slate-700" /></label>}
+          {architectureBrief && <label className="block text-sm font-medium text-slate-700 dark:text-text">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-950 placeholder:text-slate-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-site-sky dark:border-line dark:bg-raised dark:text-text dark:focus-visible:border-site-sky/60" /></label>}
 
           <Button 
-            className="w-full bg-cyan-500 hover:bg-cyan-600 text-white" 
+            className="w-full" 
             size="lg"
             disabled={articleMutation.isPending || manualMutation.isPending || !mainKeyword}
             onClick={handleGenerateBlog}

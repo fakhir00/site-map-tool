@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, FilePenLine, FileText, Loader2, Search, Trash2, XSquare } from 'lucide-react'
-import { api, type KeywordBankEntry } from '../lib/api'
+import { CheckSquare, FilePenLine, FileText, Loader2, Search, Sparkles, Trash2, XSquare } from 'lucide-react'
+import { api, type Keyword, type KeywordBankEntry } from '../lib/api'
+import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 
@@ -10,6 +11,15 @@ export type SavedKeywordsTableProps = {
   isLoading: boolean
   actionIcon?: 'write' | 'build' | 'both'
   onAction?: (keyword: KeywordBankEntry, actionType: 'write' | 'build') => void
+}
+
+function keywordBadge(type: Keyword['keyword_type']) {
+  if (type === 'top-pick') return <Badge variant="amber"><Sparkles className="mr-1 inline-block h-3 w-3" /> Top Pick</Badge>
+  if (type === 'primary') return <Badge variant="teal">Primary</Badge>
+  if (type === 'lsi') return <Badge variant="indigo">LSI</Badge>
+  if (type === 'entity') return <Badge variant="amber">Entity</Badge>
+  if (type === 'long-tail') return <Badge variant="cyan">Long-tail</Badge>
+  return <Badge variant="slate">Heading</Badge>
 }
 
 export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }: SavedKeywordsTableProps) {
@@ -55,12 +65,12 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">Keyword Bank</h3>
-        
+        <h3 className="font-display text-lg font-bold text-text">Keyword Bank</h3>
+
         <div className="flex items-center gap-2">
           {selectedVisibleIds.length > 0 && (
             <>
-              <span className="text-sm text-slate-500 dark:text-slate-400 mr-2">{selectedVisibleIds.length} selected</span>
+              <span className="text-sm text-muted mr-2">{selectedVisibleIds.length} selected</span>
               <Button
                 size="sm"
                 variant="secondary"
@@ -109,17 +119,17 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
           )}
         </div>
       </div>
-      
-      {bulkActionMutation.error && <p role="alert" className="mb-4 text-sm text-red-600">{bulkActionMutation.error.message}</p>}
-      {copyMessage && <p role="status" className="mb-4 text-sm">{copyMessage}</p>}
+
+      {bulkActionMutation.error && <p role="alert" className="mb-4 text-sm text-signal-red">{bulkActionMutation.error.message}</p>}
+      {copyMessage && <p role="status" className="mb-4 text-sm text-muted">{copyMessage}</p>}
       <Card className="overflow-hidden">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-slate-500 dark:bg-slate-900/50 dark:text-slate-400">
+          <thead className="bg-raised/60 text-muted">
             <tr>
               <th className="px-5 py-3 font-semibold w-12">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-cyan-600 focus:ring-cyan-600 cursor-pointer"
+                  className="h-4 w-4 rounded border-line bg-panel text-site-sky focus:ring-site-sky cursor-pointer"
                   checked={keywords.length > 0 && selectedVisibleIds.length === keywords.length}
                   onChange={toggleAll}
                   disabled={keywords.length === 0}
@@ -131,40 +141,40 @@ export function SavedKeywordsTable({ keywords, isLoading, actionIcon, onAction }
               {onAction && <th className="px-5 py-3 text-right font-semibold">Action</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody className="divide-y divide-line">
             {isLoading ? (
               <tr>
-                <td colSpan={onAction ? 5 : 4} className="px-5 py-8 text-center text-slate-500 dark:text-slate-400">
-                  <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-slate-300 dark:text-slate-600" />
+                <td colSpan={onAction ? 5 : 4} className="px-5 py-8 text-center text-muted">
+                  <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-muted" />
                   Loading keyword bank...
                 </td>
               </tr>
             ) : keywords.length === 0 ? (
               <tr>
-                <td colSpan={onAction ? 5 : 4} className="px-5 py-8 text-center text-slate-500 dark:text-slate-400">
-                  <FileText className="mx-auto mb-3 h-8 w-8 text-slate-300 dark:text-slate-600" />
+                <td colSpan={onAction ? 5 : 4} className="px-5 py-8 text-center text-muted">
+                  <FileText className="mx-auto mb-3 h-8 w-8 text-muted" />
                   <p>No keywords in your bank yet.</p>
                   <p className="mt-1 text-xs">Go to a project's Keyword gaps and save keywords to your bank.</p>
                 </td>
               </tr>
             ) : (
               keywords.map((kw) => (
-                <tr key={kw.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${kw.is_done ? 'opacity-50 line-through' : ''}`}>
+                <tr key={kw.id} className={`hover:bg-raised ${kw.is_done ? 'opacity-50 line-through' : ''}`}>
                   <td className="px-5 py-4">
                     <input
                       type="checkbox"
-                      className={`h-4 w-4 rounded border-slate-300 dark:border-slate-700 dark:bg-slate-900 cursor-pointer ${
-                        kw.is_done 
-                          ? 'text-emerald-600 focus:ring-emerald-600' 
-                          : 'text-cyan-600 focus:ring-cyan-600'
+                      className={`h-4 w-4 rounded border-line bg-panel cursor-pointer ${
+                        kw.is_done
+                          ? 'text-built-green focus:ring-built-green'
+                          : 'text-site-sky focus:ring-site-sky'
                       }`}
                       checked={selectedIds.has(kw.id)}
                       onChange={() => toggleOne(kw.id)}
                     />
                   </td>
-                  <td className="px-5 py-4 font-medium text-slate-900 dark:text-slate-50">{kw.phrase}</td>
-                  <td className="px-5 py-4 text-slate-500 dark:text-slate-400 capitalize">{kw.keyword_type}</td>
-                  <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
+                  <td className="px-5 py-4 font-mono font-medium text-text">{kw.phrase}</td>
+                  <td className="px-5 py-4">{keywordBadge(kw.keyword_type)}</td>
+                  <td className="px-5 py-4 text-muted">
                     {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(kw.saved_at))}
                   </td>
                   {onAction && (

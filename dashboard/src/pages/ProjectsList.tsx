@@ -44,11 +44,11 @@ function primaryKeyword(project: Project) {
 }
 
 function statusBadge(status: Project['status']) {
-  const variants: Record<Project['status'], { label: string; variant: 'teal' | 'indigo' | 'slate' | 'red' | 'amber' }> = {
+  const variants: Record<Project['status'], { label: string; variant: 'teal' | 'indigo' | 'slate' | 'red' | 'amber' | 'green' | 'cyan' }> = {
     pending: { label: 'Pending', variant: 'slate' },
-    running: { label: 'Running', variant: 'indigo' },
+    running: { label: 'Running', variant: 'cyan' },
     paused: { label: 'Paused', variant: 'amber' },
-    complete: { label: 'Complete', variant: 'teal' },
+    complete: { label: 'Complete', variant: 'green' },
     error: { label: 'Error', variant: 'red' },
   }
   const item = variants[status] || variants.pending
@@ -161,8 +161,8 @@ export function ProjectsList() {
     <div className="space-y-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Projects</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Track and manage your keyword gap analyses.</p>
+          <h2 className="font-display text-2xl font-bold text-text">Projects</h2>
+          <p className="mt-1 text-sm text-muted">Track and manage your keyword gap analyses.</p>
         </div>
         <Button onClick={() => setShowNewModal(true)}>
           <Plus className="h-4 w-4" />
@@ -171,14 +171,14 @@ export function ProjectsList() {
       </section>
 
       {projectsError && (
-        <Card className="border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
+        <Card className="border-signal-red/30 bg-signal-red/10 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-signal-red" />
               <div>
-                <h3 className="font-bold text-amber-950 dark:text-amber-100">Backend is reconnecting</h3>
-                <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">{projectsError instanceof Error ? projectsError.message : 'The API is temporarily unavailable.'}</p>
-                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">This page retries automatically every 15 seconds.</p>
+                <h3 className="font-display font-bold text-text">Backend is reconnecting</h3>
+                <p className="mt-1 text-sm text-muted">{projectsError instanceof Error ? projectsError.message : 'The API is temporarily unavailable.'}</p>
+                <p className="mt-1 text-xs text-muted/80">This page retries automatically every 15 seconds.</p>
               </div>
             </div>
             <Button variant="secondary" disabled={isFetching} onClick={() => refetchProjects()}>
@@ -190,32 +190,32 @@ export function ProjectsList() {
       )}
 
       {!projectsError && !isLoading && <section className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="border-line bg-panel">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard</p>
-            <Globe2 className="h-4 w-4 text-cyan-800 dark:text-cyan-400" />
+            <p className="text-sm font-medium text-muted">Dashboard</p>
+            <Globe2 className="h-4 w-4 text-site-sky" />
           </div>
-          <p className="mt-3 text-3xl font-bold">{projects.length}</p>
+          <p className="mt-3 font-mono text-3xl font-semibold text-text">{projects.length}</p>
         </Card>
-        <Card>
+        <Card className="border-line bg-panel">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">URLs discovered</p>
-            <FileText className="h-4 w-4 text-indigo-700 dark:text-indigo-400" />
+            <p className="text-sm font-medium text-muted">URLs discovered</p>
+            <FileText className="h-4 w-4 text-site-sky" />
           </div>
-          <p className="mt-3 text-3xl font-bold">{totals.urls.toLocaleString()}</p>
+          <p className="mt-3 font-mono text-3xl font-semibold text-text">{totals.urls.toLocaleString()}</p>
         </Card>
-        <Card>
+        <Card className="border-line bg-panel">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Keyword gaps</p>
-            <CalendarClock className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+            <p className="text-sm font-medium text-muted">Keyword gaps</p>
+            <CalendarClock className="h-4 w-4 text-built-green" />
           </div>
-          <p className="mt-3 text-3xl font-bold">{totals.keywords.toLocaleString()}</p>
+          <p className="mt-3 font-mono text-3xl font-semibold text-text">{totals.keywords.toLocaleString()}</p>
         </Card>
       </section>}
 
       {!projectsError && <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input className="pl-9" onChange={(event) => { setSearch(event.target.value); setSelectedIds(new Set()) }} placeholder="Search projects" value={search} />
         </div>
         
@@ -254,21 +254,30 @@ export function ProjectsList() {
               Select
             </Button>
           )}
-          {totals.running > 0 && <Badge variant="indigo">{totals.running} running</Badge>}
+          {totals.running > 0 && <Badge variant="cyan">{totals.running} running</Badge>}
         </div>
       </section>}
 
       {!projectsError && (isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((item) => (
-            <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" key={item} />
+            <div className="h-48 animate-pulse rounded-2xl border border-line bg-panel" key={item} />
           ))}
         </div>
       ) : filteredProjects.length === 0 ? (
-        <Card className="py-12 text-center">
-          <Globe2 className="mx-auto mb-4 h-10 w-10 text-slate-400 dark:text-slate-500" />
-          <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">No projects found</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+        <Card className="border-line bg-panel py-12 text-center">
+          <svg className="mx-auto mb-4 h-16 w-16" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <rect x="22" y="8" width="20" height="10" rx="3" className="fill-raised stroke-line" strokeWidth="1.5" />
+            <path d="M32 18v6M32 24L12 38M32 24l20 14" className="stroke-site-sky" strokeWidth="1.5" strokeLinecap="round" />
+            <rect x="4" y="38" width="16" height="10" rx="3" className="fill-raised stroke-line" strokeWidth="1.5" />
+            <rect x="24" y="38" width="16" height="10" rx="3" className="fill-raised stroke-line" strokeWidth="1.5" />
+            <rect x="44" y="38" width="16" height="10" rx="3" className="fill-signal-amber/20 stroke-signal-amber/50" strokeWidth="1.5" strokeDasharray="3 2" />
+            <circle cx="12" cy="43" r="1.5" className="fill-built-green" />
+            <circle cx="32" cy="43" r="1.5" className="fill-built-green" />
+            <circle cx="52" cy="43" r="1.5" className="fill-signal-amber" />
+          </svg>
+          <h3 className="font-display text-lg font-semibold text-text">No projects found</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted">
             Add your website and main keyword to find competitor content gaps.
           </p>
           <Button className="mt-4" onClick={() => setShowNewModal(true)}>
@@ -282,14 +291,14 @@ export function ProjectsList() {
             const completed = project.urls_found ? Math.round(((project.urls_processed + project.urls_failed) / project.urls_found) * 100) : 0
             return (
               <Card 
-                className={`flex min-h-56 flex-col relative ${isSelectionMode && selectedIds.has(project.id) ? 'ring-2 ring-cyan-500 border-cyan-500' : ''}`} 
+                className={`relative flex min-h-56 flex-col border-line bg-panel ${isSelectionMode && selectedIds.has(project.id) ? 'ring-2 ring-site-sky' : ''}`} 
                 key={project.id}
               >
                 {isSelectionMode && (
                   <div className="absolute top-6 left-6 z-10">
                     <input 
                       type="checkbox"
-                      className="h-5 w-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer dark:border-slate-700 dark:bg-slate-900"
+                      className="h-5 w-5 cursor-pointer rounded border-line bg-raised accent-site-sky focus:ring-site-sky"
                       checked={selectedIds.has(project.id)}
                       onChange={(e) => {
                         const newSet = new Set(selectedIds)
@@ -303,24 +312,24 @@ export function ProjectsList() {
                 
                 <div className={`flex items-start justify-between gap-3 ${isSelectionMode ? 'pl-8' : ''}`}>
                   <div className="min-w-0">
-                    <Link className="block truncate text-lg font-semibold text-slate-950 hover:text-cyan-800 dark:text-slate-50 dark:hover:text-cyan-400" to={`/projects/${project.id}`}>
-                      {project.name}
-                    </Link>
                     <a
-                      className="mt-1 flex items-center gap-1 truncate text-sm text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50"
+                      className="block truncate font-display text-lg font-semibold text-text hover:text-site-sky"
                       href={project.domain}
                       rel="noopener noreferrer"
                       target="_blank"
                     >
-                      <Globe2 className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{displayHost(project.domain)}</span>
+                      {displayHost(project.domain)}
                     </a>
-                    <p className="mt-2 truncate text-sm font-medium text-slate-700 dark:text-slate-300">{primaryKeyword(project)}</p>
+                    <Link className="mt-1 flex items-center gap-1 truncate text-sm text-muted hover:text-text" to={`/projects/${project.id}`}>
+                      <Globe2 className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{project.name}</span>
+                    </Link>
+                    <p className="mt-2 truncate text-sm font-medium text-muted">{primaryKeyword(project)}</p>
                   </div>
                   {!isSelectionMode && (
                     <button
                       aria-label={`Delete ${project.name}`}
-                      className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 dark:text-slate-500 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
+                      className="rounded-lg p-2 text-muted hover:bg-signal-red/10 hover:text-signal-red disabled:opacity-50"
                       disabled={deleteMutation.isPending}
                       onClick={(e) => {
                         e.preventDefault()
@@ -338,30 +347,30 @@ export function ProjectsList() {
 
                 <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400">URLs</p>
-                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.urls_found.toLocaleString()}</p>
+                    <p className="text-muted">URLs</p>
+                    <p className="mt-1 font-mono font-semibold text-text">{project.urls_found.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400">Scraped</p>
-                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.urls_processed.toLocaleString()}</p>
+                    <p className="text-muted">Scraped</p>
+                    <p className="mt-1 font-mono font-semibold text-text">{project.urls_processed.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400">Gaps</p>
-                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.total_keywords.toLocaleString()}</p>
+                    <p className="text-muted">Gaps</p>
+                    <p className="mt-1 font-mono font-semibold text-text">{project.total_keywords.toLocaleString()}</p>
                   </div>
                 </div>
 
                 <div className="mt-5">
                   <div className="mb-2 flex items-center justify-between">
                     {statusBadge(project.status)}
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{completed}%</span>
+                    <span className="font-mono text-xs font-medium text-muted">{completed}%</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div className="h-full rounded-full bg-cyan-700 transition-all" style={{ width: `${Math.min(completed, 100)}%` }} />
+                  <div className="h-2 overflow-hidden rounded-full bg-raised">
+                    <div className="h-full rounded-full bg-site-sky transition-all" style={{ width: `${Math.min(completed, 100)}%` }} />
                   </div>
                 </div>
 
-                <Link className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-semibold text-cyan-800 hover:text-cyan-900" to={`/projects/${project.id}`}>
+                <Link className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-semibold text-site-sky hover:text-text" to={`/projects/${project.id}`}>
                   Open project
                   <ArrowUpRight className="h-4 w-4" />
                 </Link>
@@ -372,16 +381,16 @@ export function ProjectsList() {
       ))}
 
       {showNewModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/40 dark:bg-slate-950/80 p-4">
-          <Card className="w-full max-w-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-blueprint-deep/80 p-4">
+          <Card className="w-full max-w-2xl border-line bg-panel">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the main keyword to compare against competitors.</p>
+                <h3 className="font-display text-xl font-bold text-text">New Gap Scan</h3>
+                <p className="mt-1 text-sm text-muted">Enter your website and the main keyword to compare against competitors.</p>
               </div>
               <button
                 aria-label="Close"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                className="rounded-lg p-2 text-muted hover:bg-raised hover:text-text"
                 onClick={() => setShowNewModal(false)}
                 type="button"
               >
@@ -391,14 +400,14 @@ export function ProjectsList() {
 
             <form className="space-y-4" onSubmit={handleCreate}>
               {createMutation.error && (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
+                <div className="rounded-lg border border-signal-red/30 bg-signal-red/10 px-3 py-2 text-sm text-signal-red">
                   {createMutation.error.message}
                 </div>
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Your website</span>
+                  <span className="mb-1 block text-sm font-medium text-text">Your website</span>
                   <Input
                     onChange={(event) => setForm({ ...form, site_url: event.target.value })}
                     placeholder="https://yourcompany.com"
@@ -407,7 +416,7 @@ export function ProjectsList() {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Primary keyword</span>
+                  <span className="mb-1 block text-sm font-medium text-text">Primary keyword</span>
                   <Input
                     onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
                     placeholder="sitemap generator"
@@ -419,9 +428,9 @@ export function ProjectsList() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Competitor search region (Optional)</span>
+                  <span className="mb-1 block text-sm font-medium text-text">Competitor search region (Optional)</span>
                   <select
-                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50"
+                    className="flex h-10 w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm text-text placeholder:text-muted focus:border-site-sky focus:outline-none focus:ring-1 focus:ring-site-sky disabled:cursor-not-allowed disabled:opacity-50"
                     onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
                     value={form.search_locale}
                   >

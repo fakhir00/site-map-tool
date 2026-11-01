@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Search, Loader2, Clock, Plus } from 'lucide-react'
 import { api, type Project, type ProjectCreate } from '../lib/api'
+import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -25,21 +26,21 @@ const renderAuditSummary = (summary: string) => {
     const parsed = JSON.parse(summary)
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return (
-        <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700 dark:text-slate-300">
+        <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-700 dark:text-muted">
           {Object.entries(parsed).filter(([key]) => key !== 'competitor_profile').map(([key, value]) => (
             <div key={key} className="flex flex-col">
-              <span className="font-semibold text-slate-900 dark:text-slate-50">{key}</span>
-              <span>{String(value)}</span>
+              <span className="font-semibold text-slate-900 dark:text-text">{key}</span>
+              <span className="font-mono text-xs leading-relaxed">{String(value)}</span>
             </div>
           ))}
         </div>
       )
     }
   } catch {
-    // Fall back to raw text if parsing fails
+    // Fall Back to raw text if parsing fails
   }
 
-  return <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{summary}</p>
+  return <p className="text-sm text-slate-700 dark:text-muted whitespace-pre-wrap">{summary}</p>
 }
 
 const withoutCompetitorProfile = (summary: string) => {
@@ -103,14 +104,14 @@ export function GoldHunter() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Seed Finder Agent</h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <h2 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-text">Seed Finder Agent</h2>
+        <p className="mt-1 text-sm leading-relaxed text-slate-500 dark:text-muted">
           Mine high-value seed keywords from any of your URLs.
         </p>
       </section>
 
       {error && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300">
+        <div className="rounded-lg bg-rose-50 p-4 text-sm text-rose-700 dark:bg-signal-red/10 dark:text-signal-red">
           {error}
         </div>
       )}
@@ -118,7 +119,7 @@ export function GoldHunter() {
       <Card className="p-6">
         <form onSubmit={handleScan} className="flex gap-4">
           <Input
-            className="flex-1"
+            className="flex-1 font-mono"
             placeholder="https://example.com/tool-page"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -137,36 +138,45 @@ export function GoldHunter() {
 
       {history.length > 0 && (
         <div className="space-y-6">
-          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-50">Scan History</h3>
-          
+          <h3 className="font-display text-xl font-bold tracking-tight text-slate-900 dark:text-text">Scan History</h3>
+
           <div className="grid gap-6">
             {history.map((scan) => (
               <Card key={scan.id} className="p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Clock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                  <span className="text-sm text-slate-500 dark:text-slate-400">
+                <div className="mb-4 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-slate-400 dark:text-muted" />
+                  <span className="font-mono text-xs text-slate-500 dark:text-muted">
                     {new Date(scan.created_at).toLocaleString()}
                   </span>
-                  <span className="text-slate-300 dark:text-slate-700">|</span>
-                  <a href={scan.input_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:underline">
+                  <span className="text-slate-300 dark:text-line">|</span>
+                  <a href={scan.input_url} target="_blank" rel="noreferrer" className="truncate font-mono text-sm text-cyan-700 hover:underline dark:text-site-sky">
                     {scan.input_url}
                   </a>
                 </div>
 
-                <div className="mb-6 rounded-lg bg-slate-50 dark:bg-slate-900/50 p-4 border border-slate-100 dark:border-slate-800">
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-2">Agent Audit Summary</h4>
+                <div className="mb-6 rounded-xl border border-slate-100 bg-slate-50 p-4 dark:border-line dark:bg-raised">
+                  <h4 className="font-display mb-2 text-sm font-semibold text-slate-900 dark:text-text">Agent Audit Summary</h4>
                   {renderAuditSummary(scan.audit_summary)}
                 </div>
 
                 <div className="mb-6">
-                  <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Seed keywords</h4><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{scan.seeds?.length || 0} seeds</span></div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="font-display text-sm font-semibold text-slate-900 dark:text-text">Seed keywords</h4>
+                    <Badge variant="green"><span className="font-mono">{scan.seeds?.length || 0}</span>&nbsp;seeds</Badge>
+                  </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    {(scan.seeds || []).map((seed, index) => <div key={seed.keyword} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="font-semibold text-slate-900 dark:text-slate-100">{index + 1}. {seed.keyword}</p><p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{seed.justification}</p></div>)}
+                    {(scan.seeds || []).map((seed, index) => (
+                      <div key={seed.keyword} className="rounded-xl border border-slate-200 p-3 dark:border-line dark:bg-raised">
+                        <p className="font-mono text-base font-semibold text-slate-900 dark:text-text">{index + 1}. {seed.keyword}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-muted">{seed.justification}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
                 <div className="mt-4 flex justify-end">
-                  <Button 
+                  <Button
+                    variant="secondary"
                     disabled={createMutation.isPending}
                     onClick={() => {
                       const allKeywords = (scan.seeds || [])
@@ -174,10 +184,10 @@ export function GoldHunter() {
                         .map(keyword => keyword.trim())
                         .filter((keyword, index, items) => Boolean(keyword) && items.indexOf(keyword) === index)
                       if (allKeywords.length === 0) return
-                      
+
                       const siteUrl = scan.input_url
                       const host = new URL(siteUrl).hostname.replace(/^www\./, '')
-                      
+
                       createMutation.mutate({
                         name: `Finding gaps for ${host}`,
                         domain: siteUrl,
@@ -194,7 +204,7 @@ export function GoldHunter() {
                     ) : (
                       <Plus className="h-4 w-4 mr-2" />
                     )}
-                    Run Gap Scan with {scan.seeds?.length || 0} seeds
+                    Run Gap Scan with&nbsp;<span className="font-mono">{scan.seeds?.length || 0}</span>&nbsp;seeds
                   </Button>
                 </div>
               </Card>
