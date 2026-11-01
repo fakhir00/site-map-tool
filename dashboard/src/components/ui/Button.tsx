@@ -2,7 +2,7 @@ import React from "react"
 import { cn } from "../../lib/utils"
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'draft'
   size?: 'sm' | 'md' | 'lg'
 }
 
@@ -12,16 +12,23 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex items-center justify-center gap-2 rounded-lg font-display font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber focus-visible:ring-offset-2 focus-visible:ring-offset-ink active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50",
           {
-            'bg-cyan-700 text-white hover:bg-cyan-800 dark:bg-cyan-600 dark:hover:bg-cyan-700': variant === 'primary',
-            'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800': variant === 'secondary',
-            'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-50': variant === 'ghost',
-            'bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-800': variant === 'danger',
+            // Solid amber — the hero CTA
+            'bg-amber text-ink shadow-[0_6px_20px_-8px_rgba(245,165,36,0.7)] hover:brightness-110 dark:bg-amber dark:text-ink': variant === 'primary',
+            // Transparent with hairline border
+            'border border-line bg-transparent text-text hover:border-amber/60 hover:bg-raised hover:text-text dark:border-line dark:bg-transparent dark:text-text': variant === 'secondary',
+            'text-muted hover:bg-raised hover:text-text dark:text-muted dark:hover:bg-raised dark:hover:text-text': variant === 'ghost',
+            // Danger keeps a drafting-red stamp feel
+            'bg-red/90 text-ink hover:bg-red dark:bg-red/90 dark:hover:bg-red': variant === 'danger',
+            // Drafting action — small mono uppercase markup button
+            'font-mono text-xs uppercase tracking-[0.14em] border border-dashed border-amber/60 bg-transparent text-amber hover:border-amber hover:bg-amber/10': variant === 'draft',
             'h-8 px-3 text-sm': size === 'sm',
             'h-10 px-4 text-sm': size === 'md',
             'h-12 px-5 text-base': size === 'lg',
           },
+          // draft variant forces a compact size
+          variant === 'draft' && 'h-8 px-3',
           className
         )}
         {...props}

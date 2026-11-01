@@ -46,17 +46,18 @@ function shouldBuildTool(keyword: string) {
 }
 
 function TreeDot({ tier }: { tier: string | null }) {
-  if (tier === 'merge') return <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-  if (tier === 'subheading_group') return <div className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
-  if (tier === 'related') return <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
-  return <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-200 shrink-0" />
+  if (tier === 'merge') return <div className="w-2.5 h-2.5 rounded-full bg-amber shrink-0" />
+  if (tier === 'subheading_group') return <div className="w-2.5 h-2.5 rounded-full bg-sky shrink-0" />
+  if (tier === 'related') return <div className="w-2.5 h-2.5 rounded-full bg-green shrink-0" />
+  if (tier === 'outlier') return <div className="w-2.5 h-2.5 rounded-full bg-red shrink-0" />
+  return <div className="w-2.5 h-2.5 rounded-full bg-line shrink-0" />
 }
 
 function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: TierMetadataEntry | null | undefined }) {
   if (tier === 'merge' && tierInfo?.merged_from) {
     return (
-      <span 
-        className="text-[12px] text-slate-500 cursor-help" 
+      <span
+        className="text-[12px] text-muted cursor-help font-mono"
         title={`Merged: ${tierInfo.merged_from.join(', ')}`}
       >
         [merged - {tierInfo.merged_from.length + 1} dupes combined]
@@ -64,13 +65,13 @@ function TreeAnnotation({ tier, tierInfo }: { tier: string | null, tierInfo: Tie
     )
   }
   if (tier === 'subheading_group') {
-    return <span className="text-[12px] text-slate-500">[{tierInfo?.h_tags?.length || 0} related keywords included ▾]</span>
+    return <span className="text-[12px] text-muted font-mono">[{tierInfo?.h_tags?.length || 0} related keywords included ▾]</span>
   }
   if (tier === 'related') {
-    return <span className="text-[12px] text-slate-500">↔ linked</span>
+    return <span className="text-[12px] text-muted font-mono">↔ linked</span>
   }
   if (tier === 'outlier') {
-    return <span className="text-[12px] text-slate-500">[outlier]</span>
+    return <span className="text-[12px] text-red font-mono">[outlier]</span>
   }
   return null
 }
@@ -116,38 +117,38 @@ function TreeHub({
   const hubSlug = `/${slugify(hubSlugSource)}`
 
   return (
-    <div className={`mb-12 font-mono text-sm max-w-[1000px] w-full ${isSubSilo ? 'ml-8 border-l-2 border-slate-200 dark:border-slate-700 pl-6 mt-8' : ''}`}>
+    <div className={`mb-12 font-mono text-sm max-w-[1000px] w-full ${isSubSilo ? 'ml-8 border-l-2 border-dashed border-amber/40 pl-6 mt-8' : ''}`}>
       <div className="flex items-start justify-between mb-2">
         <div className="flex flex-col gap-1">
-          <button type="button" onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "hub page", hub.h2_keywords)} className="text-left text-slate-900 hover:text-cyan-700 dark:text-slate-100 dark:hover:text-cyan-300 uppercase tracking-wide whitespace-pre-wrap">
+          <button type="button" onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "hub page", hub.h2_keywords)} className="text-left font-display text-text hover:text-amber uppercase tracking-wide whitespace-pre-wrap font-semibold">
             {displayHubTitle}
           </button>
-          <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono">
+          <span className="text-[10px] text-sky/80 font-mono">
             {hubSlug}/
           </span>
         </div>
-        <button 
+        <button
           onClick={() => onWrite(hubTargetKeyword || displayHubTitle, "hub page", hub.h2_keywords)}
-          className="text-xs text-cyan-600 hover:text-cyan-500 hover:underline font-mono ml-4 shrink-0 mt-0.5"
+          className="text-xs text-amber hover:text-amber hover:underline font-mono ml-4 shrink-0 mt-0.5"
         >
           [ write hub ]
         </button>
       </div>
-      <div className="border-b-[3px] border-double border-slate-300 dark:border-slate-600 mb-8 w-full"></div>
+      <div className="border-b-2 border-dashed border-line mb-8 w-full"></div>
 
       {hub.h2_keywords && hub.h2_keywords.length > 0 && (
-        <div className="mb-6 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-slate-700 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-slate-300">
-          <span className="font-bold text-cyan-800 dark:text-cyan-300">Includes:</span> {hub.h2_keywords.join(' • ')}
+        <div className="mb-6 rounded-lg border border-dashed border-amber/40 bg-amber/5 p-3 text-xs text-text">
+          <span className="font-mono font-bold uppercase tracking-[0.14em] text-amber">Includes:</span> {hub.h2_keywords.join(' • ')}
         </div>
       )}
 
       <div className="flex flex-col gap-8">
         {layerEntries.map(([layerName, spokes], idx) => (
           <div key={idx} className="flex flex-col gap-2">
-            <h4 className="text-slate-800 dark:text-slate-200 mb-2 whitespace-pre-wrap">{layerName}</h4>
-            
+            <h4 className="text-text mb-2 whitespace-pre-wrap font-mono text-xs uppercase tracking-[0.14em] text-muted">{layerName}</h4>
+
             {(!spokes || spokes.length === 0) ? (
-              <div className="text-slate-400 italic pl-4">No keywords in this layer.</div>
+              <div className="text-muted italic pl-4 font-mono text-xs">No keywords in this layer.</div>
             ) : (
               spokes.map((spoke, sIdx) => {
                 const match = spoke.match(/(.*?)\s*[([]?Target Keyword:\s*([^)\]]+)[)\]]?(?:\s*\[(.*?)\])?/i)
@@ -169,7 +170,7 @@ function TreeHub({
                   <div key={sIdx} className="flex flex-col">
                     <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between group py-1 gap-2 sm:gap-4">
                       <div className="flex items-start gap-3 w-full sm:items-center">
-                        <span className="text-slate-400 dark:text-slate-500 select-none shrink-0 mt-1 sm:mt-0">├──</span>
+                        <span className="text-amber/50 select-none shrink-0 mt-1 sm:mt-0">├──</span>
                         <div className="mt-1.5 sm:mt-0 shrink-0">
                           <TreeDot tier={tier} />
                         </div>
@@ -178,16 +179,16 @@ function TreeHub({
                             <button type="button" onClick={() => {
                               const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]') || shouldBuildTool(targetKeyword || finalTitle) || shouldBuildTool(displayTitle)
                               onWrite(targetKeyword || finalTitle, isTool ? 'tool/app' : 'article', included)
-                            }} className="text-left text-slate-700 dark:text-slate-300 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors break-words font-medium">
+                            }} className="text-left text-text group-hover:text-amber transition-colors break-words font-medium">
                               {isSubheading ? `"${finalTitle}"` : finalTitle}
                             </button>
                             {extraTags && extraTags.toLowerCase().startsWith('include') && (
-                              <span className="text-xs text-amber-600 dark:text-amber-500 font-medium ml-2">
+                              <span className="text-xs text-amber font-medium ml-2">
                                 ↳ Includes: {extraTags.replace(/^include(?: h2)?:\s*/i, '')}
                               </span>
                             )}
                           </div>
-                          <span className="text-[10px] text-emerald-600/80 dark:text-emerald-500/70 font-mono break-all">
+                          <span className="text-[10px] text-sky/80 font-mono break-all">
                             {spokeSlug}
                           </span>
                         </div>
@@ -202,7 +203,7 @@ function TreeHub({
                               : "INSTRUCTION: This is a Spoke article supporting a main hub. Provide enough content to completely satisfy its unique intent, with no fixed word count or padding."
                             onWrite(targetKeyword || finalTitle, instruction, included)
                           }} 
-                          className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-cyan-600 hover:text-cyan-500 hover:underline transition-opacity shrink-0"
+                          className="sm:opacity-0 group-hover:opacity-100 text-[11px] text-amber hover:underline transition-opacity shrink-0"
                         >
                           {(() => {
                             const isTool = displayTitle.toLowerCase().includes('[tool]') || spoke.toLowerCase().includes('[tool]') || shouldBuildTool(targetKeyword || finalTitle) || shouldBuildTool(displayTitle)
@@ -217,10 +218,10 @@ function TreeHub({
                     
                     {/* Subheading tags rendering */}
                     {isSubheading && tierInfo?.h_tags && tierInfo.h_tags.length > 0 && (
-                      <div className="flex flex-col ml-1.5 pl-9 border-l border-slate-300 dark:border-slate-700 py-1 mb-2 gap-1 text-[12px] text-slate-500 dark:text-slate-400">
+                      <div className="flex flex-col ml-1.5 pl-9 border-l border-dashed border-line py-1 mb-2 gap-1 text-[12px] text-muted">
                         {tierInfo.h_tags.map((htag, hIdx) => (
                           <div key={hIdx} className="flex items-center gap-2">
-                            <span className="select-none text-slate-400 dark:text-slate-600">↳ Include:</span>
+                            <span className="select-none text-amber/60">↳ Include:</span>
                             <span>{htag}</span>
                           </div>
                         ))}
@@ -250,14 +251,14 @@ function OldTreeHub({ hub, spokes }: { hub: string; spokes: string[] }) {
   return (
     <div className="mb-10 font-mono text-sm max-w-5xl">
       <div className="mb-2">
-        <h3 className="text-slate-900 dark:text-slate-100 uppercase tracking-wide">{hub}</h3>
+        <h3 className="text-text uppercase tracking-wide font-display font-semibold">{hub}</h3>
       </div>
-      <div className="border-b-[3px] border-double border-slate-300 dark:border-slate-600 mb-6 w-full"></div>
+      <div className="border-b-2 border-dashed border-line mb-6 w-full"></div>
       <div className="flex flex-col gap-1">
         {spokes.map((spoke, idx) => (
-          <div key={idx} className="flex items-center gap-3 py-1 text-slate-700 dark:text-slate-300">
-            <span className="text-slate-400 dark:text-slate-500 select-none">├──</span>
-            <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0" />
+          <div key={idx} className="flex items-center gap-3 py-1 text-text">
+            <span className="text-amber/50 select-none">├──</span>
+            <div className="w-2.5 h-2.5 rounded-full bg-line shrink-0" />
             <span>{spoke}</span>
           </div>
         ))}
@@ -292,9 +293,9 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400 font-sans">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-cyan-600 dark:border-slate-800 dark:border-t-cyan-400" />
-        <p className="mt-4 text-sm font-medium">Loading architecture...</p>
+      <div className="bg-blueprint flex flex-col items-center justify-center py-16 font-mono" role="status">
+        <div className="node-missing h-14 w-14 animate-pulse"><Network className="h-6 w-6" /></div>
+        <p className="annotation mt-4">Drafting architecture…</p>
       </div>
     )
   }
@@ -305,19 +306,14 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
 
   if (!clusters || Object.keys(clusters).length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center px-4 py-16 text-center font-sans">
-        {generationError && <p role="alert" className="mb-4 text-sm text-rose-600">{generationError.message}</p>}
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-          <Network className="h-6 w-6 text-slate-400 dark:text-slate-500" />
-        </div>
-        <h3 className="mb-1 text-lg font-bold text-slate-950 dark:text-slate-50">No Hubs & Spokes Generated</h3>
-        <p className="mb-6 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-          Group your keywords into a semantic Hub and Spoke architecture to maximize topical authority.
-        </p>
-        <Button 
-          onClick={() => clusterMutation.mutate()} 
+      <div className="bg-blueprint flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-4 py-16 text-center">
+        {generationError && <p role="alert" className="mb-4 font-mono text-sm text-red">{generationError.message}</p>}
+        <div className="node-missing h-16 w-16"><Network className="h-6 w-6" /></div>
+        <h3 className="mb-1 mt-4 font-display text-lg font-bold text-text">No Hubs &amp; Spokes Generated</h3>
+        <p className="annotation mx-auto mb-6 max-w-sm">Group your keywords into a semantic hub and spoke architecture to maximize topical authority.</p>
+        <Button
+          onClick={() => clusterMutation.mutate()}
           disabled={clusterMutation.isPending}
-          className="bg-cyan-600 hover:bg-cyan-700"
         >
           {clusterMutation.isPending ? 'Generating Architecture...' : 'Generate Hub & Spoke'}
         </Button>
@@ -401,14 +397,14 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
   }
 
   return (
-    <div className="p-4 md:p-8 bg-slate-50 dark:bg-slate-900/50 min-h-[500px] font-mono rounded-lg border border-slate-200 dark:border-slate-800/60 shadow-inner">
-      {generationError && <p role="alert" className="mb-4 text-sm text-rose-600">{generationError.message}</p>}
-      <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
+    <div className="bg-blueprint min-h-[500px] rounded-xl border border-line bg-ink p-4 font-mono shadow-inner md:p-8">
+      {generationError && <p role="alert" className="mb-4 font-mono text-sm text-red">{generationError.message}</p>}
+      <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-dashed border-line pb-6">
         <div>
-          <h4 className="text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight font-sans">Topical Map</h4>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-sans mt-1">Terminal view of your SEO architecture</p>
+          <p className="annotation">▸ TOPICAL MAP — LEGACY SHEET</p>
+          <h4 className="mt-2 font-display text-xl font-bold tracking-tight text-text">Topical Map</h4>
         </div>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-600 dark:text-slate-400 font-sans">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-xs text-muted">
           <div className="flex items-center gap-2"><TreeDot tier="merge" /> Merged</div>
           <div className="flex items-center gap-2"><TreeDot tier="subheading_group" /> Multi-intent</div>
           <div className="flex items-center gap-2"><TreeDot tier="related" /> Linked</div>

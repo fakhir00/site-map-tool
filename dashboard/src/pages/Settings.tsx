@@ -3,8 +3,8 @@ import { Bot, CreditCard, Database } from 'lucide-react'
 import { api, type ProviderStatus } from '../lib/api'
 import { accountQuery } from '../lib/workspaceQueries'
 import { Button } from '../components/ui/Button'
-import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
+import { ThemeToggle } from '../components/ThemeToggle'
 
 type AIStatus = { configured: boolean; message: string; providers: { name: string; model: string; available: boolean | null; message: string }[] }
 
@@ -34,103 +34,142 @@ export function Settings() {
   const apifyAvailable = apify?.available ?? apify?.authenticated
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Settings</h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Account details, plan status, and saved keyword inventory.</p>
+        <h2 className="font-display text-2xl font-bold text-text">Settings</h2>
+        <p className="annotation mt-2">Office filing — account record, plan permit, switchboard.</p>
       </div>
 
-      <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
+      {/* ▸ PROFILE drawer */}
+      <section className="space-y-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+          <span className="text-amber">▸</span> Profile
+        </p>
         <Card>
-          <div className="mb-5 flex items-center gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-50 text-xl font-bold text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
+          <div className="mb-5 flex items-center gap-4 border-b border-line pb-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full border border-line bg-raised font-mono text-xl font-semibold text-amber">
               {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{user?.full_name || 'User'}</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{user?.email}</p>
+              <h3 className="font-display text-lg font-semibold text-text">{user?.full_name || 'User'}</h3>
+              <p className="font-mono text-sm text-muted">{user?.email}</p>
             </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <p className="mb-1 text-sm font-medium text-slate-500 dark:text-slate-400">Full name</p>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-300">
+              <p className="mb-1.5 font-mono text-[0.6875rem] uppercase tracking-[0.18em] text-muted">Full name</p>
+              <div className="rounded-lg border border-line bg-ink px-3 py-2 text-sm text-text">
                 {user?.full_name || 'Not provided'}
               </div>
             </div>
             <div>
-              <p className="mb-1 text-sm font-medium text-slate-500 dark:text-slate-400">Email</p>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-300">{user?.email}</div>
+              <p className="mb-1.5 font-mono text-[0.6875rem] uppercase tracking-[0.18em] text-muted">Email</p>
+              <div className="rounded-lg border border-line bg-ink px-3 py-2 font-mono text-sm text-text">{user?.email}</div>
             </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="mb-5 flex items-center gap-3">
-            <CreditCard className="h-5 w-5 text-indigo-700 dark:text-indigo-400" />
-            <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Plan</h3>
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Current plan</p>
-          <div className="mt-2 flex items-center gap-3">
-            <span className="text-2xl font-bold capitalize text-slate-950 dark:text-slate-50">{user?.plan || 'free'}</span>
-            <Badge variant={user?.plan === 'free' ? 'slate' : 'teal'}>{user?.plan === 'free' ? 'Trial' : 'Active'}</Badge>
           </div>
         </Card>
       </section>
 
-      <Card>
-        <div className="flex items-center justify-between gap-4">
-          <h3 className="text-lg font-semibold">AI providers</h3>
-          <Button onClick={() => checkAI.mutate()} disabled={checkAI.isPending}>{checkAI.isPending ? 'Checking…' : 'Test AI connection'}</Button>
-        </div>
-        <p className="mt-2 text-sm text-slate-500">{aiError ? aiError.message : aiStatus?.message || 'Loading AI status…'}</p>
-        <p className="mt-1 text-xs text-slate-500">The connection test sends a small request to each configured provider and may use API credits.</p>
-        {checkAI.error && <p role="alert" className="mt-2 text-sm text-red-600">{checkAI.error.message}</p>}
-        {aiStatus?.providers.map((provider) => <div key={provider.name} className="mt-4 flex justify-between gap-4 border-t border-slate-200 pt-3 dark:border-slate-800">
-          <div><p className="font-semibold">{provider.name} · {provider.model}</p><p className="mt-1 text-sm text-slate-500">{provider.message}</p></div>
-          <Badge variant={provider.available === true ? 'teal' : 'amber'}>{provider.available === true ? 'Available' : provider.available === false ? 'Action required' : 'Not checked'}</Badge>
-        </div>)}
-        {health && <p className="mt-4 text-xs text-slate-500">Backend revision: {health.revision} · Database: {health.database}</p>}
-      </Card>
-
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <Database className="mt-0.5 h-5 w-5 text-cyan-700 dark:text-cyan-400" />
-            <div>
-              <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">DataForSEO</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {isLoadingDataForSeo ? 'Checking the Render credentials…' : dataForSeo?.message || 'Provider status unavailable.'}
-              </p>
-              {dataForSeo?.credential_source && (
-                <p className="mt-1 text-xs text-slate-400">Using {dataForSeo.credential_source} and its matching password.</p>
+      {/* ▸ PLAN drawer — stamped permit card */}
+      <section className="space-y-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+          <span className="text-amber">▸</span> Plan
+        </p>
+        <Card>
+          <div className="spec-plate">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="spec-label">Current permit</p>
+                <p className="spec-value mt-1 capitalize">{user?.plan || 'free'}</p>
+              </div>
+              {user?.plan === 'free' ? (
+                <span className="stamp stamp-amber">Free · Trial</span>
+              ) : (
+                <span className="stamp stamp-green capitalize">{user?.plan} · Active</span>
               )}
             </div>
           </div>
-          <Badge variant={dataForSeo?.authenticated ? 'teal' : 'amber'}>
-            {isLoadingDataForSeo ? 'Checking' : dataForSeo?.authenticated ? 'Connected' : dataForSeo?.configured ? 'Authentication failed' : 'Not configured'}
-          </Badge>
-        </div>
-      </Card>
-
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <Bot className="mt-0.5 h-5 w-5 text-indigo-700 dark:text-indigo-400" />
-            <div>
-              <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Apify</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {isLoadingApify ? 'Checking the Render token…' : apify?.message || 'Provider status unavailable.'}
-              </p>
-            </div>
+          <div className="mt-5 flex flex-wrap items-center gap-4">
+            <CreditCard className="h-4 w-4 text-muted" />
+            <p className="annotation">Permit covers this workspace. Higher tiers raise the scan and blueprint allowance.</p>
           </div>
-          <Badge variant={apifyAvailable ? 'teal' : 'amber'}>
-            {isLoadingApify ? 'Checking' : apifyAvailable ? 'Connected' : apify?.authenticated ? 'Action required' : apify?.configured ? 'Authentication failed' : 'Not configured'}
-          </Badge>
-        </div>
-      </Card>
+          <Button variant="primary" className="mt-4 w-full sm:w-auto">
+            Upgrade to Agency
+          </Button>
+        </Card>
+      </section>
 
+      {/* ▸ CONNECTIONS drawer — switchboard */}
+      <section className="space-y-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+          <span className="text-amber">▸</span> Connections
+        </p>
+        <Card className="divide-y divide-line py-0!">
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <Database className="h-4 w-4 text-sky" />
+              <p className="font-mono text-sm text-text">Keyword data</p>
+            </div>
+            <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-muted">
+              <span className={`h-2 w-2 rounded-full ${dataForSeo?.authenticated ? 'bg-green' : 'bg-amber'}`} />
+              {isLoadingDataForSeo ? 'Checking' : dataForSeo?.authenticated ? 'Connected' : dataForSeo?.configured ? 'Auth failed' : 'Not configured'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <Bot className="h-4 w-4 text-sky" />
+              <p className="font-mono text-sm text-text">Crawler access</p>
+            </div>
+            <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-muted">
+              <span className={`h-2 w-2 rounded-full ${apifyAvailable ? 'bg-green' : 'bg-amber'}`} />
+              {isLoadingApify ? 'Checking' : apifyAvailable ? 'Connected' : apify?.configured ? 'Auth failed' : 'Not configured'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className={`h-2 w-2 rounded-full ${aiError ? 'bg-red' : aiStatus ? 'bg-green' : 'bg-amber'}`} />
+              <div>
+                <p className="font-mono text-sm text-text">AI drafting pool</p>
+                <p className="mt-0.5 font-mono text-xs text-muted">
+                  {aiError ? 'Unavailable' : aiStatus ? `${aiStatus.providers.filter((p) => p.available === true).length}/${aiStatus.providers.length} ready` : 'Not checked'}
+                </p>
+              </div>
+            </div>
+            <Button variant="draft" onClick={() => checkAI.mutate()} disabled={checkAI.isPending}>
+              {checkAI.isPending ? 'Testing…' : 'Test connection'}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className={`h-2 w-2 rounded-full ${health ? 'bg-green' : 'bg-amber'}`} />
+              <p className="font-mono text-sm text-text">Office systems</p>
+            </div>
+            <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted">
+              {health ? 'Nominal' : 'Unknown'}
+            </span>
+          </div>
+        </Card>
+        {(checkAI.error || aiError) && (
+          <p role="alert" className="font-mono text-xs text-red">▸ The AI connection test failed. Try again shortly.</p>
+        )}
+      </section>
+
+      {/* ▸ CONTROLS drawer */}
+      <section className="space-y-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+          <span className="text-amber">▸</span> Controls
+        </p>
+        <Card>
+          <div className="max-w-xs">
+            <ThemeToggle />
+          </div>
+          <p className="annotation mt-3">Appearance is saved to this workstation only.</p>
+        </Card>
+      </section>
     </div>
   )
 }

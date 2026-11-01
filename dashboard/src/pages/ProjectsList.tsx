@@ -1,10 +1,9 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowUpRight, CalendarClock, FileText, Globe2, Loader2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Check, Globe2, Loader2, Network, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { api, type Project } from '../lib/api'
 import { projectsQuery } from '../lib/workspaceQueries'
-import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -43,18 +42,20 @@ function primaryKeyword(project: Project) {
   return project.target_keywords?.[0] || 'No keyword'
 }
 
-function statusBadge(status: Project['status']) {
-  const variants: Record<Project['status'], { label: string; variant: 'teal' | 'indigo' | 'slate' | 'red' | 'amber' }> = {
-    pending: { label: 'Pending', variant: 'slate' },
-    running: { label: 'Running', variant: 'indigo' },
-    paused: { label: 'Paused', variant: 'amber' },
-    complete: { label: 'Complete', variant: 'teal' },
-    error: { label: 'Error', variant: 'red' },
+function statusStamp(status: Project['status']) {
+  const variants: Record<Project['status'], { label: string; className: string }> = {
+    pending: { label: 'Pending', className: 'stamp-muted' },
+    running: { label: 'Scanning', className: 'stamp-amber' },
+    paused: { label: 'Paused', className: 'stamp-muted' },
+    complete: { label: 'Complete', className: 'stamp-green' },
+    error: { label: 'Failed', className: 'stamp-red' },
   }
   const item = variants[status] || variants.pending
 
-  return <Badge variant={item.variant}>{item.label}</Badge>
+  return <span className={`stamp ${item.className}`}>{item.label}</span>
 }
+
+const fieldLabel = 'mb-1.5 block font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted'
 
 export function ProjectsList() {
   const navigate = useNavigate()
@@ -90,6 +91,23 @@ export function ProjectsList() {
     )
   }, [projects])
 
+  const checklist = useMemo(() => {
+    const hasProject = projects.length > 0
+    const hasScan = projects.some((project) => project.urls_found > 0 || Boolean(project.last_scanned_at))
+    const hasGaps = projects.some((project) => project.total_keywords > 0)
+    return [
+      { label: 'Pin your first site', detail: 'Add a website to the board', done: hasProject },
+      { label: 'Run a gap scan', detail: 'Crawl the site and its competitors', done: hasScan },
+      { label: 'Review keyword gaps', detail: 'Open a sheet to read the findings', done: hasGaps },
+    ]
+  }, [projects])
+  const checklistComplete = checklist.every((item) => item.done)
+
+  const sheetDate = useMemo(
+    () => new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase(),
+    [],
+  )
+
   const createMutation = useMutation({
     mutationFn: (payload: ProjectCreate) => api.post<Project>('/projects', payload),
     onSuccess: async (project: Project) => {
@@ -124,7 +142,7 @@ export function ProjectsList() {
   const handleBulkDelete = async () => {
     if (selectedVisibleIds.length === 0) return
     if (!window.confirm(`Permanently delete ${selectedVisibleIds.length} project${selectedVisibleIds.length === 1 ? '' : 's'}?`)) return
-    
+
     setIsDeletingBulk(true)
     try {
       const ids = selectedVisibleIds
@@ -159,26 +177,45 @@ export function ProjectsList() {
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Projects</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Track and manage your keyword gap analyses.</p>
+      {/* Title block header */}
+      <header className="border-b border-line pb-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="annotation">Drawing index — every site pinned to the board</p>
+            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-text">Projects</h2>
+          </div>
+          <div className="flex items-stretch gap-3">
+            <dl className="hidden grid-cols-3 divide-x divide-line border border-line bg-panel sm:grid">
+              <div className="px-4 py-2">
+                <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Sheet</dt>
+                <dd className="mt-1 font-mono text-xs font-semibold text-text">A-101</dd>
+              </div>
+              <div className="px-4 py-2">
+                <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Rev</dt>
+                <dd className="mt-1 font-mono text-xs font-semibold text-text">P1</dd>
+              </div>
+              <div className="px-4 py-2">
+                <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Date</dt>
+                <dd className="mt-1 font-mono text-xs font-semibold text-text">{sheetDate}</dd>
+              </div>
+            </dl>
+            <Button className="self-center" onClick={() => setShowNewModal(true)} variant="draft">
+              <Plus className="h-4 w-4" />
+              New Project
+            </Button>
+          </div>
         </div>
-        <Button onClick={() => setShowNewModal(true)}>
-          <Plus className="h-4 w-4" />
-          New Gap Scan
-        </Button>
-      </section>
+      </header>
 
       {projectsError && (
-        <Card className="border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
+        <Card className="border-amber/60 bg-amber/5 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber" />
               <div>
-                <h3 className="font-bold text-amber-950 dark:text-amber-100">Backend is reconnecting</h3>
-                <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">{projectsError instanceof Error ? projectsError.message : 'The API is temporarily unavailable.'}</p>
-                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">This page retries automatically every 15 seconds.</p>
+                <span className="stamp stamp-amber">Signal lost</span>
+                <p className="mt-2 text-sm text-text">{projectsError instanceof Error ? projectsError.message : 'The API is temporarily unavailable.'}</p>
+                <p className="mt-1 font-mono text-[11px] text-muted">This page retries automatically every 15 seconds.</p>
               </div>
             </div>
             <Button variant="secondary" disabled={isFetching} onClick={() => refetchProjects()}>
@@ -189,107 +226,143 @@ export function ProjectsList() {
         </Card>
       )}
 
-      {!projectsError && !isLoading && <section className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Dashboard</p>
-            <Globe2 className="h-4 w-4 text-cyan-800 dark:text-cyan-400" />
-          </div>
-          <p className="mt-3 text-3xl font-bold">{projects.length}</p>
-        </Card>
-        <Card>
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">URLs discovered</p>
-            <FileText className="h-4 w-4 text-indigo-700 dark:text-indigo-400" />
-          </div>
-          <p className="mt-3 text-3xl font-bold">{totals.urls.toLocaleString()}</p>
-        </Card>
-        <Card>
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Keyword gaps</p>
-            <CalendarClock className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
-          </div>
-          <p className="mt-3 text-3xl font-bold">{totals.keywords.toLocaleString()}</p>
-        </Card>
-      </section>}
-
-      {!projectsError && <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-          <Input className="pl-9" onChange={(event) => { setSearch(event.target.value); setSelectedIds(new Set()) }} placeholder="Search projects" value={search} />
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-3">
-          {isSelectionMode ? (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={filteredProjects.length === 0}
-                onClick={() => {
-                  if (selectedVisibleIds.length === filteredProjects.length) {
-                    setSelectedIds(new Set())
-                  } else {
-                    setSelectedIds(new Set(filteredProjects.map(p => p.id)))
-                  }
-                }}
-              >
-                {selectedVisibleIds.length === filteredProjects.length ? 'Deselect All' : 'Select All'}
-              </Button>
-              <Button 
-                variant="danger"
-                size="sm"
-                disabled={selectedVisibleIds.length === 0 || isDeletingBulk}
-                onClick={handleBulkDelete}
-              >
-                {isDeletingBulk ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
-                Delete ({selectedVisibleIds.length})
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button variant="secondary" size="sm" disabled={filteredProjects.length === 0} onClick={() => setIsSelectionMode(true)}>
-              Select
-            </Button>
+      {!projectsError && !isLoading && (
+        <div>
+          <section className="spec-plate" aria-label="Aggregate scan totals">
+            <div className="grid grid-cols-3 gap-4 px-5 py-4 sm:px-8">
+              <div>
+                <p className="spec-label">Projects</p>
+                <p className="spec-value">{projects.length}</p>
+              </div>
+              <div>
+                <p className="spec-label">URLs</p>
+                <p className="spec-value">{totals.urls.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="spec-label">Gaps</p>
+                <p className="spec-value">{totals.keywords.toLocaleString()}</p>
+              </div>
+            </div>
+          </section>
+          {totals.running > 0 && (
+            <p className="annotation mt-2">{totals.running} sheet{totals.running === 1 ? '' : 's'} currently in scan</p>
           )}
-          {totals.running > 0 && <Badge variant="indigo">{totals.running} running</Badge>}
         </div>
-      </section>}
+      )}
+
+      {!projectsError && !isLoading && !checklistComplete && (
+        <Card className="p-5">
+          <div className="flex items-center gap-4">
+            <span className="stamp stamp-amber">Setup</span>
+            <h3 className="font-display text-base font-bold text-text">First-run checklist</h3>
+          </div>
+          <ul className="mt-4 space-y-2">
+            {checklist.map((item) => (
+              <li className="flex items-start gap-3 rounded-lg border border-line bg-ink/60 px-3 py-2.5" key={item.label}>
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                    item.done ? 'border-amber bg-amber text-ink' : 'border-dashed border-line text-muted'
+                  }`}
+                >
+                  {item.done && <Check className="h-3 w-3" />}
+                </span>
+                <div className="min-w-0">
+                  <p className={`text-sm font-medium ${item.done ? 'text-muted line-through' : 'text-text'}`}>{item.label}</p>
+                  <p className="font-mono text-[11px] text-muted">{item.detail}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {!projectsError && (
+        <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="w-full sm:max-w-sm">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">▸ Find a sheet</span>
+            <div className="relative mt-1.5">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input className="pl-9" onChange={(event) => { setSearch(event.target.value); setSelectedIds(new Set()) }} placeholder="Search domain, name or keyword" value={search} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {isSelectionMode ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={filteredProjects.length === 0}
+                  onClick={() => {
+                    if (selectedVisibleIds.length === filteredProjects.length) {
+                      setSelectedIds(new Set())
+                    } else {
+                      setSelectedIds(new Set(filteredProjects.map(p => p.id)))
+                    }
+                  }}
+                >
+                  {selectedVisibleIds.length === filteredProjects.length ? 'Deselect All' : 'Select All'}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={selectedVisibleIds.length === 0 || isDeletingBulk}
+                  onClick={handleBulkDelete}
+                >
+                  {isDeletingBulk ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  Delete ({selectedVisibleIds.length})
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()) }}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" size="sm" disabled={filteredProjects.length === 0} onClick={() => setIsSelectionMode(true)}>
+                Select
+              </Button>
+            )}
+            {totals.running > 0 && <span className="stamp stamp-amber">{totals.running} scanning</span>}
+          </div>
+        </section>
+      )}
 
       {!projectsError && (isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((item) => (
-            <div className="h-48 animate-pulse rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" key={item} />
+            <div className="h-56 animate-pulse rounded-xl border border-line bg-panel" key={item} />
           ))}
         </div>
+      ) : projects.length === 0 ? (
+        <div className="bg-blueprint rounded-xl border border-line p-6 sm:p-12">
+          <div className="dashed-amber mx-auto max-w-md rounded-lg bg-ink/80 px-8 py-12 text-center">
+            <Network className="mx-auto h-10 w-10 text-amber" />
+            <h3 className="mt-4 font-display text-lg font-bold text-text">The board is empty</h3>
+            <p className="annotation mx-auto mt-3 max-w-xs">No sheets on the board yet — pin your first site.</p>
+            <Button className="mt-5" onClick={() => setShowNewModal(true)} variant="draft">
+              <Plus className="h-4 w-4" />
+              New Project
+            </Button>
+          </div>
+        </div>
       ) : filteredProjects.length === 0 ? (
-        <Card className="py-12 text-center">
-          <Globe2 className="mx-auto mb-4 h-10 w-10 text-slate-400 dark:text-slate-500" />
-          <h3 className="text-lg font-semibold text-slate-950 dark:text-slate-50">No projects found</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
-            Add your website and main keyword to find competitor content gaps.
-          </p>
-          <Button className="mt-4" onClick={() => setShowNewModal(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Gap Scan
-          </Button>
-        </Card>
+        <p className="annotation">No sheets match this search.</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredProjects.map((project) => {
+          {filteredProjects.map((project, index) => {
             const completed = project.urls_found ? Math.round(((project.urls_processed + project.urls_failed) / project.urls_found) * 100) : 0
+            const selected = isSelectionMode && selectedIds.has(project.id)
             return (
-              <Card 
-                className={`flex min-h-56 flex-col relative ${isSelectionMode && selectedIds.has(project.id) ? 'ring-2 ring-cyan-500 border-cyan-500' : ''}`} 
+              <Card
+                className={`group relative flex min-h-60 flex-col p-5 pt-6 ${selected ? 'ring-2 ring-amber border-amber' : ''}`}
                 key={project.id}
               >
+                <span aria-hidden className="absolute left-1/2 top-2.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-amber shadow-[0_2px_5px_rgba(0,0,0,0.55)] ring-2 ring-ink" />
+
                 {isSelectionMode && (
-                  <div className="absolute top-6 left-6 z-10">
-                    <input 
+                  <div className="absolute left-5 top-5 z-10">
+                    <input
                       type="checkbox"
-                      className="h-5 w-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-600 cursor-pointer dark:border-slate-700 dark:bg-slate-900"
+                      className="h-5 w-5 cursor-pointer rounded border-line bg-ink text-amber focus:ring-amber"
                       checked={selectedIds.has(project.id)}
                       onChange={(e) => {
                         const newSet = new Set(selectedIds)
@@ -300,27 +373,30 @@ export function ProjectsList() {
                     />
                   </div>
                 )}
-                
+
                 <div className={`flex items-start justify-between gap-3 ${isSelectionMode ? 'pl-8' : ''}`}>
                   <div className="min-w-0">
-                    <Link className="block truncate text-lg font-semibold text-slate-950 hover:text-cyan-800 dark:text-slate-50 dark:hover:text-cyan-400" to={`/projects/${project.id}`}>
-                      {project.name}
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+                      Sheet {String(index + 1).padStart(2, '0')} · {project.created_at ? new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase() : '—'}
+                    </p>
+                    <Link className="mt-1.5 block truncate font-display text-xl font-bold text-text hover:text-amber" to={`/projects/${project.id}`}>
+                      {displayHost(project.domain)}
                     </Link>
                     <a
-                      className="mt-1 flex items-center gap-1 truncate text-sm text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50"
+                      className="mt-1 flex items-center gap-1.5 truncate font-mono text-[11px] text-muted hover:text-text"
                       href={project.domain}
                       rel="noopener noreferrer"
                       target="_blank"
                     >
-                      <Globe2 className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{displayHost(project.domain)}</span>
+                      <Globe2 className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{project.name}</span>
                     </a>
-                    <p className="mt-2 truncate text-sm font-medium text-slate-700 dark:text-slate-300">{primaryKeyword(project)}</p>
+                    <p className="mt-2 truncate font-mono text-xs text-amber">{primaryKeyword(project)}</p>
                   </div>
                   {!isSelectionMode && (
                     <button
                       aria-label={`Delete ${project.name}`}
-                      className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 dark:text-slate-500 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
+                      className="rounded-lg p-2 text-muted opacity-100 hover:bg-red/10 hover:text-red disabled:opacity-50 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                       disabled={deleteMutation.isPending}
                       onClick={(e) => {
                         e.preventDefault()
@@ -336,33 +412,35 @@ export function ProjectsList() {
                   )}
                 </div>
 
-                <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+                <div className="mt-4 grid grid-cols-3 gap-3 border-y border-line py-3 font-mono">
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400">URLs</p>
-                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.urls_found.toLocaleString()}</p>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted">URLs</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{project.urls_found.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400">Scraped</p>
-                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.urls_processed.toLocaleString()}</p>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Scraped</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{project.urls_processed.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400">Gaps</p>
-                    <p className="mt-1 font-semibold text-slate-950 dark:text-slate-50">{project.total_keywords.toLocaleString()}</p>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Gaps</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{project.total_keywords.toLocaleString()}</p>
                   </div>
                 </div>
 
-                <div className="mt-5">
-                  <div className="mb-2 flex items-center justify-between">
-                    {statusBadge(project.status)}
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{completed}%</span>
+                <div className="mt-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    {statusStamp(project.status)}
+                    <span className="font-mono text-xs text-muted">{completed}%</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div className="h-full rounded-full bg-cyan-700 transition-all" style={{ width: `${Math.min(completed, 100)}%` }} />
+                  <div className="rounded border border-dashed border-amber/40 p-1">
+                    <div className="h-1.5 overflow-hidden rounded-sm bg-ink">
+                      <div className="h-full rounded-sm bg-amber transition-all" style={{ width: `${Math.min(completed, 100)}%` }} />
+                    </div>
                   </div>
                 </div>
 
-                <Link className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-semibold text-cyan-800 hover:text-cyan-900" to={`/projects/${project.id}`}>
-                  Open project
+                <Link className="mt-auto inline-flex items-center gap-2 pt-5 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-amber hover:brightness-125" to={`/projects/${project.id}`}>
+                  Open sheet
                   <ArrowUpRight className="h-4 w-4" />
                 </Link>
               </Card>
@@ -372,16 +450,16 @@ export function ProjectsList() {
       ))}
 
       {showNewModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/40 dark:bg-slate-950/80 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-ink/70 p-4">
           <Card className="w-full max-w-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the main keyword to compare against competitors.</p>
+                <p className="annotation">New sheet — pin a site to the board</p>
+                <h3 className="mt-2 font-display text-xl font-bold text-text">New Gap Scan</h3>
               </div>
               <button
                 aria-label="Close"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                className="rounded-lg p-2 text-muted hover:bg-raised hover:text-text"
                 onClick={() => setShowNewModal(false)}
                 type="button"
               >
@@ -391,14 +469,14 @@ export function ProjectsList() {
 
             <form className="space-y-4" onSubmit={handleCreate}>
               {createMutation.error && (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300">
+                <div className="rounded-lg border border-red/50 bg-red/10 px-3 py-2 text-sm text-red">
                   {createMutation.error.message}
                 </div>
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Your website</span>
+                  <span className={fieldLabel}>Your website</span>
                   <Input
                     onChange={(event) => setForm({ ...form, site_url: event.target.value })}
                     placeholder="https://yourcompany.com"
@@ -407,7 +485,7 @@ export function ProjectsList() {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Primary keyword</span>
+                  <span className={fieldLabel}>Primary keyword</span>
                   <Input
                     onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
                     placeholder="sitemap generator"
@@ -419,9 +497,9 @@ export function ProjectsList() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Competitor search region (Optional)</span>
+                  <span className={fieldLabel}>Competitor search region <span className="font-normal text-muted/70">(optional)</span></span>
                   <select
-                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50"
+                    className="flex h-10 w-full rounded-md border border-line bg-ink px-3 py-2 font-mono text-sm text-text placeholder:text-muted/60 focus:border-amber/70 focus:outline-none focus:ring-2 focus:ring-amber/40 disabled:cursor-not-allowed disabled:opacity-50"
                     onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
                     value={form.search_locale}
                   >
@@ -440,8 +518,8 @@ export function ProjectsList() {
                 <Button disabled={createMutation.isPending} onClick={() => setShowNewModal(false)} type="button" variant="secondary">
                   Cancel
                 </Button>
-                <Button disabled={createMutation.isPending} type="submit">
-                  {createMutation.isPending ? 'Creating...' : 'Find gaps'}
+                <Button disabled={createMutation.isPending} type="submit" variant="draft">
+                  {createMutation.isPending ? 'Pinning...' : 'Pin & scan'}
                 </Button>
               </div>
             </form>

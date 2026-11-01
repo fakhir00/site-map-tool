@@ -1,14 +1,33 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ============================================================
+   CrawlGap — Drafting Table design system
+   An architect's drafting table: deep ink navy paper, hairline
+   grids, amber markup, stamped-metal spec plates, rubber stamps.
+   ============================================================ */
 @theme {
   --font-sans: "Inter", "Aptos", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", monospace;
+
+  /* Drafting Table palette (dark mode default) */
+  --color-ink: #0a1628;      /* app background — deep ink navy paper */
+  --color-panel: #0b1f3a;    /* card / panel surface */
+  --color-raised: #12294a;   /* raised / hover surface */
+  --color-line: #1e3a5f;     /* hairlines, borders */
+  --color-text: #eaf2fb;     /* primary text */
+  --color-muted: #93a8c4;    /* secondary text */
+  --color-amber: #f5a524;    /* HERO — missing things, markup, primary CTAs */
+  --color-sky: #38bdf8;      /* existing / your data, sparing */
+  --color-green: #34d399;    /* done / pass */
+  --color-red: #f87171;      /* errors / fail */
 }
 
 :root {
   color: #0f172a;
-  background: #f6f7fb;
+  background: #eef1f6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,8 +35,8 @@
 }
 
 :root.dark {
-  color: #f8fafc;
-  background: #0f172a;
+  color: #eaf2fb;
+  background: #0a1628;
 }
 
 html,
@@ -28,16 +47,28 @@ body,
 
 body {
   margin: 0;
-  background:
-    linear-gradient(180deg, rgba(232, 245, 247, 0.72), rgba(246, 247, 251, 0) 360px),
-    #f6f7fb;
+  background: #eef1f6;
   color: #0f172a;
   font-family: var(--font-sans);
 }
 
+/* Dark body: blueprint grid over deep ink navy paper */
 .dark body {
-  background: #0f172a;
-  color: #f8fafc;
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.05), rgba(10, 22, 40, 0) 480px),
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.09) 1px, transparent 1px),
+    #0a1628;
+  background-size:
+    auto,
+    28px 28px,
+    28px 28px,
+    140px 140px,
+    140px 140px,
+    auto;
+  color: #eaf2fb;
 }
 
 button,
@@ -47,24 +78,223 @@ textarea {
   font: inherit;
 }
 
+::selection {
+  background: #f5a524;
+  color: #0a1628;
+}
+
+/* ---- Ink scrollbars ---- */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #1e3a5f;
   border: 2px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #2b4c78;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #1e3a5f;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #2b4c78;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1e3a5f transparent;
+}
+
+/* ============================================================
+   Blueprint grid utility — reusable on empty states, panels, etc.
+   Fine 28px grid at 6% white + coarse 140px grid at 9% white.
+   ============================================================ */
+.bg-blueprint {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+  background-size:
+    28px 28px,
+    28px 28px,
+    140px 140px,
+    140px 140px;
+}
+
+/* ============================================================
+   .spec-plate — stamped spec plate for stat strips.
+   Raised panel, 2px border, corner rivets, inset top highlight.
+   ============================================================ */
+.spec-plate {
+  position: relative;
+  background: linear-gradient(180deg, #12294a, #0b1f3a);
+  border: 2px solid #1e3a5f;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 10px 28px -14px rgba(0, 0, 0, 0.6);
+  padding: 1rem 1.25rem;
+}
+.spec-plate::before,
+.spec-plate::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #93a8c4, #3a5479 70%);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.6);
+}
+.spec-plate::before { left: 10px; }
+.spec-plate::after { right: 10px; }
+.spec-plate .spec-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #93a8c4;
+}
+.spec-plate .spec-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.625rem;
+  line-height: 1.2;
+  color: #eaf2fb;
+}
+
+/* ============================================================
+   .annotation — JetBrains Mono callout with a dashed amber
+   leader line ("▸" tick), like a hand-drafted note on the sheet.
+   ============================================================ */
+.annotation {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #93a8c4;
+  padding-left: 1.125rem;
+}
+.annotation::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #f5a524;
+  font-weight: 600;
+}
+.annotation--leading {
+  border-left: 1px dashed rgba(245, 165, 36, 0.55);
+  padding-left: 0.875rem;
+}
+.annotation--leading::before {
+  display: none;
+}
+
+/* ============================================================
+   .stamp — rubber-stamp badge: uppercase mono, 2px border,
+   rotated -3deg, slight distressed opacity.
+   ============================================================ */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  padding: 0.375rem 0.75rem;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  transform: rotate(-3deg);
+  opacity: 0.92;
+  user-select: none;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23n)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.stamp-amber { color: #f5a524; }
+.stamp-green { color: #34d399; }
+.stamp-red { color: #f87171; }
+.stamp-muted { color: #93a8c4; }
+.stamp-sky { color: #38bdf8; }
+
+/* ============================================================
+   .dashed-amber — 2px dashed amber border utility.
+   .node-missing — dashed amber circle with a "+" flag for
+   things that don't exist yet (hub/spoke placeholders).
+   ============================================================ */
+.dashed-amber {
+  border: 2px dashed rgba(245, 165, 36, 0.7) !important;
+}
+.node-missing {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(245, 165, 36, 0.7);
+  border-radius: 999px;
+  color: #f5a524;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.node-missing:hover {
+  border-color: #f5a524;
+  background: rgba(245, 165, 36, 0.08);
+}
+.node-missing .node-flag {
+  position: absolute;
+  top: -0.625rem;
+  right: -0.625rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #f5a524;
+  color: #0a1628;
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+/* ============================================================
+   .construction-line — absolutely-positionable hairline with an
+   optional .dimension mono label, like a measured drawing line.
+   ============================================================ */
+.construction-line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+.construction-line.is-horizontal { height: 1px; left: 0; right: 0; }
+.construction-line.is-vertical { width: 1px; top: 0; bottom: 0; }
+.construction-line .dimension {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  color: #93a8c4;
+  background: #0a1628;
+  padding: 0.125rem 0.375rem;
+  white-space: nowrap;
 }

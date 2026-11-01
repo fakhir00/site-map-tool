@@ -59,23 +59,24 @@ export default function ScanInterface() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl py-8 space-y-8">
-      <Card className="p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-950 dark:text-slate-50">New Gap Scan</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your website and the keywords to compare against competitors.</p>
-        </div>
+    <div className="mx-auto max-w-3xl py-8 space-y-6">
+      <div>
+        <p className="font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted">New survey order</p>
+        <h1 className="mt-1 font-display text-2xl font-bold text-text">New Gap Scan</h1>
+        <p className="annotation mt-2">Enter your website and the keywords to compare against competitors.</p>
+      </div>
 
+      <Card className="p-6">
         <form className="space-y-6" onSubmit={handleCreate}>
           {createMutation.error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/50 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 text-sm">
+            <div className="rounded-lg border border-red/50 bg-red/10 px-3 py-2 font-mono text-xs text-red">
               {createMutation.error.message}
             </div>
           )}
 
           <div className="grid gap-6 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Your website</span>
+              <span className="mb-2 block font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted">Your website</span>
               <Input
                 onChange={(event) => setForm({ ...form, site_url: event.target.value })}
                 placeholder="https://yourcompany.com"
@@ -84,7 +85,7 @@ export default function ScanInterface() {
               />
             </label>
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Keywords (comma-separated)</span>
+              <span className="mb-2 block font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted">Keywords (comma-separated)</span>
               <Input
                 onChange={(event) => setForm({ ...form, primary_keyword: event.target.value })}
                 placeholder="sitemap generator, seo tool"
@@ -94,11 +95,13 @@ export default function ScanInterface() {
             </label>
           </div>
 
+          <div className="border-t border-dashed border-line" />
+
           <div className="grid gap-6 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Competitor search region (Optional)</span>
+              <span className="mb-2 block font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted">Competitor search region (Optional)</span>
               <select
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-10 w-full rounded-lg border border-line bg-ink px-3 py-2 font-mono text-sm text-text placeholder:text-muted/60 focus:border-amber/70 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 onChange={(event) => setForm({ ...form, search_locale: event.target.value })}
                 value={form.search_locale}
               >
@@ -113,7 +116,7 @@ export default function ScanInterface() {
             </label>
           </div>
 
-          <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row sm:justify-end">
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
             <Button disabled={createMutation.isPending} onClick={() => navigate(-1)} type="button" variant="secondary">
               Cancel
             </Button>
@@ -123,6 +126,11 @@ export default function ScanInterface() {
           </div>
         </form>
       </Card>
+
+      <p className="annotation annotation--leading">
+        The survey crawls competitor sitemaps, collects AI recommendations and autocomplete suggestions,
+        then diffs them against your site to mark the missing pages.
+      </p>
     </div>
   )
 }

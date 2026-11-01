@@ -135,53 +135,99 @@ export function HubSpokeWorkspace() {
     if (page.targeted_keywords?.length) params.set('cluster', page.targeted_keywords.join('\n'))
     navigate(`${pageEditor(page) === 'page' ? '/gap-page-prompts' : '/write-blog'}?${params.toString()}`, { state: { architectureBrief: mapping ? pageArchitectureBrief(page, mapping) : '' } })
   }
-  const inputClass = 'mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900'
+  const inputClass = 'mt-2 block w-full rounded-lg border border-line bg-ink px-3 py-2.5 text-sm text-text font-mono placeholder:text-muted/60 focus:border-amber/70 focus:outline-none focus:ring-2 focus:ring-amber/40 disabled:opacity-60'
+  const fieldLabel = 'mb-2 block font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted'
 
   return <div className="space-y-6">
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-400">Hub & spoke workspace</p><h2 className="text-3xl font-bold tracking-tight">Build your topical authority map</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">Turn keyword research into a connected content plan. Define the main topic, organize distinct reader tasks, and see what to create, improve and link.</p></div><Button variant="secondary" disabled={locked} onClick={reset}><Plus className="h-4 w-4" />Start fresh</Button></header>
-    {historyError && <p role="alert" className="text-sm text-amber-700">Saved maps could not be loaded. Refresh to try again.</p>}
-    {history.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><summary className="cursor-pointer text-sm font-semibold">Saved maps <span className="ml-2 text-slate-400">{history.length}</span></summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{history.map(item => <div key={item.id} className={`relative rounded-lg border ${activeHistoryId === item.id ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30' : 'border-slate-200 dark:border-slate-700'}`}><button type="button" disabled={locked || deleteHistoryMutation.isPending} onClick={() => loadHistory(item.id)} className="block w-full p-3 pr-10 text-left disabled:opacity-50"><span className="block truncate text-sm font-semibold">{item.title}</span><span className="mt-1 flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3 w-3" />{new Date(item.created_at).toLocaleDateString()} · {item.keyword_count} keywords</span></button><button type="button" aria-label={`Permanently delete ${item.title}`} disabled={locked || deleteHistoryMutation.isPending} onClick={() => { if (window.confirm(`Permanently delete “${item.title}”? This cannot be undone.`)) deleteHistoryMutation.mutate(item.id) }} className="absolute right-2 top-2 rounded p-1 text-slate-400 hover:text-rose-600"><X className="h-4 w-4" /></button></div>)}</div></details>}
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p className="annotation">▸ HUB &amp; SPOKE WORKSPACE — SHEET 00</p>
+        <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-text">Build your topical authority map</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">Turn keyword research into a connected content plan. Define the main topic, organize distinct reader tasks, and see what to create, improve and link.</p>
+      </div>
+      <Button variant="secondary" disabled={locked} onClick={reset}><Plus className="h-4 w-4" />Start fresh</Button>
+    </header>
+
+    {historyError && <p role="alert" className="annotation !text-amber">Saved maps could not be loaded. Refresh to try again.</p>}
+
+    {history.length > 0 && <details className="rounded-xl border border-line bg-panel p-4">
+      <summary className="cursor-pointer font-mono text-xs font-semibold uppercase tracking-[0.14em] text-text">Saved maps <span className="ml-2 rounded border border-line bg-raised px-2 py-0.5 text-muted">{history.length}</span></summary>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{history.map(item => <div key={item.id} className={`relative rounded-lg border p-3 pr-10 ${activeHistoryId === item.id ? 'border-amber bg-amber/5' : 'border-line bg-ink/60 hover:border-amber/40'}`}>
+        <button type="button" disabled={locked || deleteHistoryMutation.isPending} onClick={() => loadHistory(item.id)} className="block w-full text-left disabled:opacity-50">
+          <span className="block truncate font-display text-sm font-semibold text-text">{item.title}</span>
+          <span className="mt-1 flex items-center gap-2 font-mono text-[11px] text-muted"><Clock3 className="h-3 w-3" />{new Date(item.created_at).toLocaleDateString()} · {item.keyword_count} keywords</span>
+        </button>
+        <button type="button" aria-label={`Permanently delete ${item.title}`} disabled={locked || deleteHistoryMutation.isPending} onClick={() => { if (window.confirm(`Permanently delete “${item.title}”? This cannot be undone.`)) deleteHistoryMutation.mutate(item.id) }} className="absolute right-2 top-2 rounded p-1 text-muted hover:text-red"><X className="h-4 w-4" /></button>
+      </div>)}</div>
+    </details>}
+
     <Card className="p-5 sm:p-6">
-      <div className="mb-5 flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-100 text-sm font-bold text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">1</span><div><h3 className="font-bold">Define your starting point</h3><p className="text-xs text-slate-500">Use a saved scan, upload research, or paste your keywords.</p></div></div>
+      <div className="mb-5 flex items-center gap-3">
+        <span className="stamp stamp-amber">Step 01</span>
+        <div><h3 className="font-display font-bold text-text">Define your starting point</h3><p className="font-mono text-xs text-muted">Use a saved scan, upload research, or paste your keywords.</p></div>
+      </div>
       <fieldset disabled={locked} className="space-y-5 disabled:opacity-70">
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-4">
-            <label className="block text-sm font-medium">Import from Gap Scan<select aria-label="Import from Gap Scan" value={importProjectId} onChange={event => { importedKeyRef.current = ''; if (event.target.value) setSearchParams({ project_id: event.target.value }); else detachImport() }} className={inputClass}><option value="">Choose a scan…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-            <div className="flex items-center gap-3"><input ref={inputRef} className="hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={event => loadFile(event.target.files?.[0])} /><Button variant="secondary" onClick={() => inputRef.current?.click()}><FileUp className="h-4 w-4" />Upload CSV / TXT</Button><span className="text-xs text-slate-500">Up to 5 MB · 300 keywords per map</span></div>
-            <label className="block text-sm font-medium">Keyword research<textarea aria-label="Keyword research" className={`${inputClass} min-h-44 font-mono text-xs`} value={keywordText} onChange={event => {
+            <label className="block"><span className={fieldLabel}>▸ Import from Gap Scan</span><select aria-label="Import from Gap Scan" value={importProjectId} onChange={event => { importedKeyRef.current = ''; if (event.target.value) setSearchParams({ project_id: event.target.value }); else detachImport() }} className={inputClass}><option value="">Choose a scan…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <div className="flex items-center gap-3">
+              <input ref={inputRef} className="hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={event => loadFile(event.target.files?.[0])} />
+              <Button variant="draft" onClick={() => inputRef.current?.click()}><FileUp className="h-4 w-4" />Upload CSV / TXT</Button>
+              <span className="font-mono text-[11px] text-muted">Up to 5 MB · 300 keywords per map</span>
+            </div>
+            <label className="block"><span className={fieldLabel}>▸ Keyword research</span><textarea aria-label="Keyword research" className={`${inputClass} min-h-44 text-xs`} value={keywordText} onChange={event => {
               const text = event.target.value; const parsed = parseFile(text)
               const metrics = new Map(keywordData.map(item => [item.phrase, item]))
               setKeywordText(text); setKeywords(parsed.keywords); setKeywordData(parsed.keywordData.map(item => metrics.get(item.phrase) || item))
               if (!primaryKeyword) setPrimaryKeyword(parsed.keywords[0] || '')
               setDirty(true)
             }} placeholder={'One keyword per line, or paste a CSV with metrics.\nlunar age calculator\nhow to calculate lunar age\nlunar age vs western age'} /></label>
-            <p className="text-xs text-slate-500">{keywords.length.toLocaleString()} keywords{sourceProjectId ? ' · Linked to a Gap Scan project; crawled pages will be checked for reuse.' : ' · Add existing URLs alongside your context to plan improvements.'}</p>
+            <p className="font-mono text-[11px] text-muted">{keywords.length.toLocaleString()} keywords{sourceProjectId ? ' · Linked to a Gap Scan project; crawled pages will be checked for reuse.' : ' · Add existing URLs alongside your context to plan improvements.'}</p>
           </div>
           <div className="space-y-4">
-            <label className="block text-sm font-medium">Main topic / homepage keyword<input aria-label="Main topic" list="map-keyword-options" maxLength={300} className={inputClass} value={primaryKeyword} onChange={event => { setPrimaryKeyword(event.target.value); setDirty(true) }} placeholder="e.g. lunar age calculator" /><datalist id="map-keyword-options">{keywords.slice(0, 300).map(keyword => <option key={keyword} value={keyword} />)}</datalist></label>
-            <label className="block text-sm font-medium">Website and audience context<textarea aria-label="Website and audience context" maxLength={12000} className={`${inputClass} min-h-32`} value={context} onChange={event => { setContext(event.target.value); setDirty(true) }} placeholder="Your site URL, audience, what you offer, existing page URLs, and topics to exclude. Be specific about what your site can help people do." /></label>
-            <label className="block text-sm font-medium">Existing page URLs <span className="font-normal text-slate-400">(optional)</span><textarea aria-label="Existing page URLs" className={`${inputClass} min-h-20 font-mono text-xs`} value={existingUrls} onChange={event => { setExistingUrls(event.target.value); setDirty(true) }} placeholder={'https://example.com/\nhttps://example.com/existing-guide/'} /><span className="mt-1 block text-xs font-normal text-slate-500">Add your existing pages so we can avoid suggesting them again. Linked scans include known site pages automatically. Use one URL per line.</span></label>
-            <p className="text-sm leading-relaxed text-slate-500">There is no fixed number of pages. Add a page only when it answers a different question or helps the reader do a different task.</p>
+            <label className="block"><span className={fieldLabel}>▸ Main topic / homepage keyword</span><input aria-label="Main topic" list="map-keyword-options" maxLength={300} className={inputClass} value={primaryKeyword} onChange={event => { setPrimaryKeyword(event.target.value); setDirty(true) }} placeholder="e.g. lunar age calculator" /><datalist id="map-keyword-options">{keywords.slice(0, 300).map(keyword => <option key={keyword} value={keyword} />)}</datalist></label>
+            <label className="block"><span className={fieldLabel}>▸ Website and audience context</span><textarea aria-label="Website and audience context" maxLength={12000} className={`${inputClass} min-h-32`} value={context} onChange={event => { setContext(event.target.value); setDirty(true) }} placeholder="Your site URL, audience, what you offer, existing page URLs, and topics to exclude. Be specific about what your site can help people do." /></label>
+            <label className="block"><span className={fieldLabel}>▸ Existing page URLs <span className="font-normal text-muted/70">(optional)</span></span><textarea aria-label="Existing page URLs" className={`${inputClass} min-h-20 text-xs`} value={existingUrls} onChange={event => { setExistingUrls(event.target.value); setDirty(true) }} placeholder={'https://example.com/\nhttps://example.com/existing-guide/'} /><span className="mt-1 block text-xs font-normal text-muted">Add your existing pages so we can avoid suggesting them again. Linked scans include known site pages automatically. Use one URL per line.</span></label>
+            <p className="annotation">There is no fixed number of pages. Add a page only when it answers a different question or helps the reader do a different task.</p>
           </div>
         </div>
       </fieldset>
-      {researchSummary && <div role="status" className="mt-4 rounded-lg bg-cyan-50 p-3 text-sm text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200">
-        <p>{researchSummary.new_gaps} new gaps · {researchSummary.planning_keywords} keywords imported for planning</p>
-        <p className="mt-1 text-xs">The planning list includes useful research and existing topics. A low gap count does not prevent building your map.</p>
-        {researchSummary.pending_review > 0 && <p className="mt-1 text-xs">{researchSummary.pending_review} research {researchSummary.pending_review === 1 ? 'candidate still needs' : 'candidates still need'} review. The planner checks them before assigning them to pages.</p>}
-        {researchSummary.not_included > 0 && <p className="mt-1 text-xs">This map uses a balanced selection of 300 keywords. {researchSummary.not_included} additional keywords remain in your scan research.</p>}
+      {researchSummary && <div role="status" className="mt-4 rounded-lg border border-line bg-ink/60 p-3 text-sm text-text">
+        <p className="font-mono text-xs text-amber">{researchSummary.new_gaps} new gaps · {researchSummary.planning_keywords} keywords imported for planning</p>
+        <p className="mt-1 text-xs text-muted">The planning list includes useful research and existing topics. A low gap count does not prevent building your map.</p>
+        {researchSummary.pending_review > 0 && <p className="mt-1 text-xs text-muted">{researchSummary.pending_review} research {researchSummary.pending_review === 1 ? 'candidate still needs' : 'candidates still need'} review. The planner checks them before assigning them to pages.</p>}
+        {researchSummary.not_included > 0 && <p className="mt-1 text-xs text-muted">This map uses a balanced selection of 300 keywords. {researchSummary.not_included} additional keywords remain in your scan research.</p>}
       </div>}
-      {projectImport.isFetching && <p role="status" className="mt-4 text-sm text-slate-500">Loading keywords and site context…</p>}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5 dark:border-slate-800"><p className="max-w-lg text-xs leading-relaxed text-slate-500">Start with your main topic, even if your scan found no new gaps. The planner uses existing pages and research, checks overlap, and explores missing topics.</p><Button disabled={locked || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button></div>
-      {totalInputKeywords > 300 && <p role="alert" className="mt-3 text-sm text-rose-700">Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.</p>}
-      {busy === 'build' && <div role="status" className="mt-4 rounded-lg bg-cyan-50 p-4 text-sm text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200"><p className="font-semibold">Planning your topic coverage · {elapsed}s</p><p className="mt-1 text-xs">Discovery, page planning and intent review can take a few minutes. Keep this tab open; successful maps are saved automatically.</p></div>}
-      {visibleError && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{visibleError}</p>}
+      {projectImport.isFetching && <p role="status" className="annotation mt-4">Loading keywords and site context…</p>}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-dashed border-line pt-5">
+        <p className="max-w-lg font-mono text-[11px] leading-relaxed text-muted">Start with your main topic, even if your scan found no new gaps. The planner uses existing pages and research, checks overlap, and explores missing topics.</p>
+        <Button disabled={locked || totalInputKeywords > 300 || !primaryKeyword.trim() || context.length > 12000} onClick={build}>{busy === 'build' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}{busy === 'build' ? 'Building your map…' : 'Build topical map'}</Button>
+      </div>
+      {totalInputKeywords > 300 && <p role="alert" className="annotation mt-3 !text-red">Use at most 300 distinct keywords per map, including the main topic. Narrow the list to one focused subject.</p>}
+      {busy === 'build' && <div role="status" className="bg-blueprint mt-4 rounded-xl border border-dashed border-amber/50 p-4">
+        <p className="font-mono text-sm font-semibold text-amber">Planning your topic coverage · {elapsed}s</p>
+        <div className="mt-3 space-y-2">{[92, 64, 38].map(width => <div key={width} className="h-3 rounded border border-dashed border-line bg-ink/60"><div className="h-full animate-pulse rounded bg-amber/30" style={{ width: `${width}%` }} /></div>)}</div>
+        <p className="mt-3 text-xs text-muted">Discovery, page planning and intent review can take a few minutes. Keep this tab open; successful maps are saved automatically.</p>
+      </div>}
+      {visibleError && <p role="alert" className="mt-4 rounded-lg border border-red/50 bg-red/10 p-3 font-mono text-sm text-red">{visibleError}</p>}
     </Card>
+
     {mapping && <>
-      {dirty && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Inputs have changed. The map below is your previous result; build again to apply these changes.</p>}
-      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">{activeHistoryId ? 'Saved in your map history' : 'Map preview'} · {cleaned.length} keywords assigned</p><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => downloadText('usable-keywords.txt', cleaned.join('\n'))}><Download className="h-4 w-4" />Keywords</Button><Button variant="secondary" onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, mapContext))}><Download className="h-4 w-4" />Architecture brief</Button></div></div>
+      {dirty && <p role="status" className="rounded-lg border border-dashed border-amber/50 bg-amber/5 p-3 font-mono text-sm text-amber">Inputs have changed. The map below is your previous result; build again to apply these changes.</p>}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="annotation">{activeHistoryId ? 'Saved in your map history' : 'Map preview'} · {cleaned.length} keywords assigned</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => downloadText('usable-keywords.txt', cleaned.join('\n'))}><Download className="h-4 w-4" />Keywords</Button>
+          <Button variant="secondary" size="sm" onClick={() => downloadText('grand-website-architecture-prompt.md', grandArchitecturePrompt(mapping, mapContext))}><Download className="h-4 w-4" />Architecture brief</Button>
+        </div>
+      </div>
       <TopicalAuthorityMap key={activeHistoryId || 'preview'} mapping={mapping} onOpen={openPage} />
     </>}
-    {!mapping && <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700"><Network className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" /><h3 className="mt-4 font-semibold">A connected plan, from topic to page</h3><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">Your map will show the main hub, supporting topic groups, individual page briefs and internal links. Start with the topic you want your site to be known for.</p></div>}
+
+    {!mapping && <div className="bg-blueprint rounded-2xl border-2 border-dashed border-line p-8 text-center">
+      <div className="node-missing mx-auto h-16 w-16"><Network className="h-6 w-6" /></div>
+      <h3 className="mt-4 font-display font-semibold text-text">A connected plan, from topic to page</h3>
+      <p className="annotation mx-auto mt-2 max-w-md">Your map will show the main hub, supporting topic groups, individual page briefs and internal links. Start with the topic you want your site to be known for.</p>
+    </div>}
   </div>
 }

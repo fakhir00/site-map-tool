@@ -1,9 +1,17 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Clock, FileText } from 'lucide-react'
+import { ArrowLeft, Clock3, FileText } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { api, type ArticleListResponse } from '../lib/api'
+import { api, type ArticleDraft, type ArticleListResponse } from '../lib/api'
+import { Card } from '../components/ui/Card'
 import { GeneratedArticlePanel } from '../components/GeneratedArticlePanel'
+
+function dossierStamp(article: ArticleDraft) {
+  if (article.status === 'passed') return <span className="stamp stamp-green">Passed</span>
+  if (article.status === 'needs_revision') return <span className="stamp stamp-red">Needs revision</span>
+  if (article.status === 'error') return <span className="stamp stamp-red">Error</span>
+  return <span className="stamp stamp-amber">Generating</span>
+}
 
 export default function WriteBlogArticle() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -20,50 +28,61 @@ export default function WriteBlogArticle() {
     return <div>Project not found</div>
   }
 
+  const isActive = (article: ArticleDraft) => selectedArticleId ? selectedArticleId === article.id : data?.items?.[0]?.id === article.id
+
   return (
     <div className="mx-auto max-w-7xl py-8">
       <div className="mb-6">
         <Link 
           to="/write-blog" 
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 mb-4"
+          className="mb-4 inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-muted transition-colors hover:text-amber"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Blog Writer
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Article Studio</h1>
+        <p className="annotation">ARTICLE STUDIO — DOSSIER FILES</p>
+        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-text">Article Studio</h1>
       </div>
       
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_1fr]">
-        <div className="space-y-4">
-          <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4">
-            <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-950 dark:text-slate-50">
-              <Clock className="h-4 w-4" />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+        <div>
+          <Card className="p-4">
+            <h3 className="mb-4 flex items-center gap-2 font-display font-semibold text-text">
+              <Clock3 className="h-4 w-4 text-amber" />
               History
             </h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {data?.items?.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No articles generated yet.</p>
+                <div className="bg-blueprint rounded-xl border-2 border-dashed border-line p-6 text-center">
+                  <p className="annotation mx-auto max-w-[16rem]">No articles filed yet. Commission one from the Blog Writer slip.</p>
+                </div>
               ) : (
-                data?.items?.map((article) => (
-                  <button
-                    key={article.id}
-                    onClick={() => setSelectedArticleId(article.id)}
-                    className={`flex w-full items-start gap-3 rounded-md px-3 py-2 text-left transition-colors ${
-                      (selectedArticleId ? selectedArticleId === article.id : data?.items?.[0]?.id === article.id)
-                        ? 'bg-cyan-50 text-cyan-900 dark:bg-cyan-900/30 dark:text-cyan-50'
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${(selectedArticleId ? selectedArticleId === article.id : data?.items?.[0]?.id === article.id) ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{article.title || article.keyword_phrase}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{new Date(article.created_at).toLocaleDateString()}</p>
-                    </div>
-                  </button>
-                ))
+                data?.items?.map((article) => {
+                  const active = isActive(article)
+                  return (
+                    <button
+                      key={article.id}
+                      onClick={() => setSelectedArticleId(article.id)}
+                      className={`block w-full rounded-xl border p-3.5 text-left transition-colors ${
+                        active
+                          ? 'border-amber/70 bg-raised shadow-[0_6px_20px_-8px_rgba(245,165,36,0.4)]'
+                          : 'border-line bg-ink hover:border-amber/40 hover:bg-raised'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-amber' : 'text-muted'}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-text">{article.title || article.keyword_phrase}</p>
+                          <p className="mt-1 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-muted">{new Date(article.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3">{dossierStamp(article)}</div>
+                    </button>
+                  )
+                })
               )}
             </div>
-          </div>
+          </Card>
         </div>
 
         <div>

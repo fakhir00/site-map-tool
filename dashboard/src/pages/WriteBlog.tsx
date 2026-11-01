@@ -70,35 +70,44 @@ export default function WriteBlog() {
     }
   }
 
+  const pending = articleMutation.isPending || manualMutation.isPending
+
   return (
     <div className="mx-auto max-w-3xl py-8 space-y-8">
       
       {articleError && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300">
-          {articleError}
+        <div className="flex items-center gap-3 rounded-xl border-2 border-red/50 bg-panel p-4">
+          <span className="stamp stamp-red">Error</span>
+          <p className="text-sm text-text">{articleError}</p>
         </div>
       )}
 
-      {/* Manual Blog Generator Box */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
-            <FilePenLine className="h-5 w-5" />
+      {/* Commissioning slip */}
+      <Card className="relative overflow-hidden">
+        <div className="construction-line is-horizontal top-0" />
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber/40 bg-amber/10 text-amber">
+              <FilePenLine className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="annotation">COMMISSION SLIP — BLOG WRITER</p>
+              <h2 className="mt-1 font-display text-2xl font-bold tracking-tight text-text">Blog Writer</h2>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Blog Writer</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Generate a targeted blog post from a main keyword and an optional keyword cluster.</p>
-          </div>
+          <span className="stamp stamp-amber">Commission</span>
         </div>
+        <p className="mt-3 text-sm text-muted">Generate a targeted blog post from a main keyword and an optional keyword cluster. The writer drafts it, the auditor scores it, and the finished sheet lands in your Article Studio.</p>
 
-        <div className="space-y-5">
+        <div className="mt-6 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Main Keyword <span className="text-red-500">*</span>
+            <label className="mb-1.5 block font-mono text-xs uppercase tracking-[0.14em] text-muted" htmlFor="blog-main-keyword">
+              Main Keyword <span className="text-red">*</span>
             </label>
             <input
+              id="blog-main-keyword"
               type="text"
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-lg border border-line bg-ink px-3 py-2.5 text-sm text-text placeholder:text-muted/60 focus:border-amber/70 focus:outline-none focus:ring-1 focus:ring-amber/40"
               placeholder="e.g. mortgage calculator"
               value={mainKeyword}
               onChange={(e) => setMainKeyword(e.target.value)}
@@ -106,14 +115,13 @@ export default function WriteBlog() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Keyword Cluster (Optional)
+            <label className="mb-1.5 block font-mono text-xs uppercase tracking-[0.14em] text-muted" htmlFor="blog-cluster">
+              Keyword Cluster <span className="text-muted/70">(optional)</span>
             </label>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-              Enter related keywords to naturally include in the article.
-            </p>
+            <p className="annotation mb-2">Related keywords to naturally include in the article, one per line.</p>
             <textarea
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              id="blog-cluster"
+              className="w-full rounded-lg border border-line bg-ink px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted/60 focus:border-amber/70 focus:outline-none focus:ring-1 focus:ring-amber/40"
               rows={4}
               placeholder={`home loan rates\namortization schedule\ninterest rates`}
               value={keywordCluster}
@@ -121,16 +129,32 @@ export default function WriteBlog() {
             />
           </div>
 
-          {architectureBrief && <label className="block text-sm font-medium">Architecture brief<textarea aria-label="Architecture brief" value={architectureBrief} onChange={event => setArchitectureBrief(event.target.value)} maxLength={12000} rows={8} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm dark:border-slate-700" /></label>}
+          {architectureBrief && (
+            <div>
+              <label className="mb-1.5 block font-mono text-xs uppercase tracking-[0.14em] text-muted" htmlFor="blog-brief">
+                Architecture brief <span className="text-muted/70">(attached sheet)</span>
+              </label>
+              <textarea
+                id="blog-brief"
+                aria-label="Architecture brief"
+                value={architectureBrief}
+                onChange={event => setArchitectureBrief(event.target.value)}
+                maxLength={12000}
+                rows={8}
+                className="w-full rounded-lg border border-line bg-ink p-3 font-mono text-sm text-text placeholder:text-muted/60 focus:border-amber/70 focus:outline-none focus:ring-1 focus:ring-amber/40"
+              />
+            </div>
+          )}
 
           <Button 
-            className="w-full bg-cyan-500 hover:bg-cyan-600 text-white" 
+            variant="primary"
+            className="w-full"
             size="lg"
-            disabled={articleMutation.isPending || manualMutation.isPending || !mainKeyword}
+            disabled={pending || !mainKeyword}
             onClick={handleGenerateBlog}
           >
-            {articleMutation.isPending || manualMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-            {articleMutation.isPending || manualMutation.isPending ? 'Generating...' : 'Generate Blog'}
+            {pending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+            {pending ? 'Generating…' : 'Generate Blog'}
           </Button>
         </div>
       </Card>

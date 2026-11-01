@@ -31,35 +31,32 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
 
   return (
     <Card className="overflow-hidden p-0">
-      <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4 flex items-center justify-between">
+      <div className="border-b border-line px-5 py-4 flex items-center justify-between">
         <div>
-          <h3 className="flex items-center gap-2 font-semibold text-slate-950 dark:text-slate-50">
-            <Activity className="h-4 w-4 text-cyan-600 dark:text-cyan-500" />
+          <h3 className="flex items-center gap-2 font-mono text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-text">
+            <Activity className="h-4 w-4 text-amber" />
             Competitor Coverage
           </h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="annotation mt-2">
             Pages discovered on competitor websites
           </p>
         </div>
         <div className="flex items-center gap-2">
            <span className="relative flex h-2.5 w-2.5">
-            {isActive && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>}
-            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isActive ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-slate-700'}`}></span>
+            {isActive && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber opacity-75"></span>}
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isActive ? 'bg-amber' : 'bg-line'}`}></span>
           </span>
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{isActive ? 'Active' : 'Standby'}</span>
+          <span className="font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted">{isActive ? 'Active' : 'Standby'}</span>
         </div>
       </div>
       
-      <div className="relative h-[400px] w-full bg-slate-50/50 dark:bg-slate-900/50">
-        {/* Subtle grid background to look high-tech but light-themed */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-        
-        {data.length === 0 ? <div className="flex h-full items-center justify-center text-sm text-slate-500">No competitor pages discovered yet.</div> : <ResponsiveContainer width="100%" height="100%">
+      <div className="bg-blueprint relative h-[400px] w-full">
+        {data.length === 0 ? <div className="flex h-full items-center justify-center px-6 text-center"><p className="annotation">No competitor pages discovered yet.</p></div> : <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
-            <PolarGrid stroke="#e2e8f0" />
+            <PolarGrid stroke="#1E3A5F" />
             <PolarAngleAxis 
               dataKey="subject" 
-              tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} 
+              tick={{ fill: '#93A8C4', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }} 
             />
             <PolarRadiusAxis 
               angle={30} 
@@ -69,31 +66,31 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                borderColor: '#e2e8f0',
+                backgroundColor: '#0B1F3A',
+                borderColor: '#1E3A5F',
                 borderRadius: '8px',
-                color: '#0f172a',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                backdropFilter: 'blur(4px)'
+                color: '#EAF2FB',
+                boxShadow: '0 12px 32px -16px rgba(0, 0, 0, 0.6)',
               }}
-              itemStyle={{ color: '#0891b2', fontWeight: 600 }}
+              labelStyle={{ color: '#93A8C4', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
+              itemStyle={{ color: '#F5A524', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}
               formatter={(value) => [`${value} pages`, 'URLs found']}
             />
             <Radar
               name="URLs found"
               dataKey="A"
-              stroke="#06b6d4"
+              stroke="#F5A524"
               strokeWidth={2}
-              fill="#06b6d4"
+              fill="#F5A524"
               fillOpacity={0.15}
               isAnimationActive={true}
               animationDuration={2500}
             />
-            {/* Adding a second radar polygon for a more complex look */}
+            {/* Dashed sky baseline for a measured-drawing look */}
             <Radar
               name="Baseline"
               dataKey="A"
-              stroke="#6366f1"
+              stroke="#38BDF8"
               strokeWidth={1}
               strokeDasharray="4 4"
               fill="transparent"
@@ -106,4 +103,3 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
     </Card>
   )
 }
-
