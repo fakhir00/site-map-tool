@@ -206,7 +206,7 @@ export function DashboardLayout() {
         </header>
 
         <main id="main-content" className="warm-glow-bg flex-1 min-h-0 overflow-y-auto">
-          <div key={location.pathname} className="route-enter mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <div key={location.pathname} className="route-enter mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-6">
             <div className="mb-6 hidden items-center justify-between lg:flex">
               <div>
                 <div className="flex items-center gap-2">
