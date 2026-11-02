@@ -105,9 +105,10 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
   const [zoomPercent, setZoomPercent] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('gapcrawl_keywords_zoom')
-      return saved ? parseInt(saved, 10) : 90
+      if (!saved || saved === '90') return 100
+      return parseInt(saved, 10)
     } catch {
-      return 90
+      return 100
     }
   })
 
@@ -309,16 +310,14 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
             >
               <ZoomIn className="h-3.5 w-3.5" />
             </button>
-            {zoomPercent !== 90 && (
-              <button
-                type="button"
-                onClick={() => handleSetZoom(90)}
-                className="text-[10px] text-muted hover:text-glow-amber px-1 font-mono transition-colors"
-                title="Reset to 90% default zoom"
-              >
-                Reset
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => handleSetZoom(100)}
+              className="text-[10px] text-muted hover:text-ink px-1 font-mono transition-colors cursor-pointer"
+              title="Reset to 100% default zoom"
+            >
+              Reset
+            </button>
           </div>
 
           {isSelectionMode ? (
