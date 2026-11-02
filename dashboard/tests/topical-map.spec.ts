@@ -95,9 +95,7 @@ test('builds a map with an explicit main topic and exports actual URL links', as
   const downloaded = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export links' }).click()
   expect((await downloaded).suggestedFilename()).toBe('internal-links.csv')
-  await page.getByRole('tab', { name: 'Keyword decisions' }).click()
-  await expect(page.getByRole('tabpanel')).toContainText('Manual calculation task')
-  await page.getByRole('tab', { name: 'Keyword decisions' }).press('Home')
+  await page.getByRole('tab', { name: 'Links (2)' }).press('Home')
   await expect(page.getByRole('tab', { name: /^pages$/i })).toBeFocused()
   await page.getByRole('tab', { name: /^pages$/i }).press('ArrowRight')
   await expect(page.getByRole('tab', { name: /^map$/i })).toHaveAttribute('aria-selected', 'true')
@@ -328,7 +326,7 @@ test('every tab explains its purpose and existing URLs never offer Create', asyn
   await loadSaved(page)
   for (const [tab, title] of [
     ['Map', 'See how your topics fit together'], ['Pages', 'Choose what to create or improve'],
-    ['Links (2)', 'Connect related pages on your site'], ['Keyword decisions', 'Understand where each keyword belongs'],
+    ['Links (2)', 'Connect related pages on your site'],
   ]) {
     await page.getByRole('tab', { name: tab, exact: true }).click()
     await expect(page.getByRole('tabpanel').getByRole('heading', { name: title })).toBeVisible()
@@ -348,7 +346,7 @@ test('starts with Pages and uses the requested tab order', async ({ page }) => {
   await setup(page, true)
   await loadSaved(page)
   const tabs = page.getByRole('tab')
-  await expect(tabs).toHaveText(['Pages', 'Map', 'Links (2)', 'Keyword decisions'])
+  await expect(tabs).toHaveText(['Pages', 'Map', 'Links (2)'])
   await expect(page.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute('aria-selected', 'true')
 })
 

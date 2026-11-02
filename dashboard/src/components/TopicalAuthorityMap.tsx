@@ -11,7 +11,6 @@ const tabHelp = {
   map: { title: 'See how your topics fit together', text: 'The hub is your main topic. Spokes are supporting pages grouped by topic. Select a card to read its brief, or use Create tool, Create blog or Create page to open the right editor with the plan filled in.' },
   pages: { title: 'Choose what to create or improve', text: 'Work through your content plan here. Create tool opens Build Page; Create blog opens Blog Writer; Create page opens the page builder. Pages already on your site are marked Existing page. Improve them at their current URL instead of creating duplicates.' },
   links: { title: 'Connect related pages on your site', text: 'Each arrow shows which page should link to another. Add the link within relevant content using the suggested anchor text (the clickable words). Select a destination to read its brief, or export the link list.' },
-  keywords: { title: 'Understand where each keyword belongs', text: 'Main keyword is the primary topic of a page. Include on page means cover it within that page, without creating another URL. Not included means it does not need a page in this plan. Select a destination to see its brief.' },
 }
 const label = (page: PageDetail) => page.article_title || page.target_keyword || 'Untitled page'
 const evidence = (page: PageDetail) => page.evidence_type === 'editorial_proposal' ? 'Research idea' : 'Supplied keyword'
@@ -30,7 +29,7 @@ function fallbackLinks(pages: PageDetail[]): MapLink[] {
 
 export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
   const briefRef = useRef<HTMLElement>(null)
-  const [tab, setTab] = useState<'map' | 'pages' | 'links' | 'keywords'>('pages')
+  const [tab, setTab] = useState<'map' | 'pages' | 'links'>('pages')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
@@ -151,7 +150,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
       </div>
       <p className="mt-3 text-xs leading-relaxed text-muted">{coverage.supporting} supporting keywords are included within page content. Related phrases can share a page; each page covers one distinct reader task.</p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {coverage.excluded > 0 && <button type="button" onClick={() => { setTab('keywords'); setQuery(''); setFilter('all') }} className="font-medium text-soft-violet underline underline-offset-2 hover:text-ink">{coverage.excluded} keywords excluded · Review keyword decisions</button>}
+        {coverage.excluded > 0 && <span className="text-muted">{coverage.excluded} keywords excluded</span>}
         {coverage.unassigned > 0 && <p role="status" className="text-glow-amber">{coverage.unassigned} {coverage.unassigned === 1 ? 'keyword has' : 'keywords have'} no recorded placement. Rebuild to review coverage.</p>}
       </div>
     </Card>
@@ -181,15 +180,15 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
     <Card className="overflow-hidden p-0" lift={false}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
         <div className="flex flex-wrap gap-1 rounded-full border border-line bg-raised p-1" role="tablist" aria-label="Map views">
-          {(['pages', 'map', 'links', 'keywords'] as const).map(view => (
+          {(['pages', 'map', 'links'] as const).map(view => (
             <button key={view} type="button" id={`map-tab-${view}`} role="tab" tabIndex={tab === view ? 0 : -1} aria-controls="map-panel" aria-selected={tab === view} onKeyDown={event => {
-              const views = ['pages', 'map', 'links', 'keywords'] as const
+              const views = ['pages', 'map', 'links'] as const
               const index = views.indexOf(view)
               const next = event.key === 'ArrowRight' ? (index + 1) % views.length : event.key === 'ArrowLeft' ? (index + views.length - 1) % views.length : event.key === 'Home' ? 0 : event.key === 'End' ? views.length - 1 : -1
               if (next >= 0) { event.preventDefault(); setTab(views[next]); document.getElementById(`map-tab-${views[next]}`)?.focus() }
             }} onClick={() => setTab(view)}
               className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${tab === view ? 'bg-glow-amber text-on-accent shadow-[0_0_18px_rgba(245,165,36,0.35)]' : 'text-muted hover:text-ink'}`}>
-              {view === 'keywords' ? 'Keyword decisions' : view === 'links' ? `Links (${links.length})` : view === 'pages' ? 'Pages' : 'Map'}
+              {view === 'links' ? `Links (${links.length})` : view === 'pages' ? 'Pages' : 'Map'}
             </button>
           ))}
         </div>
@@ -347,17 +346,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
             {!visibleLinks.length && <p className="p-8 text-center text-sm text-muted">No links match these filters.</p>}
           </div>}
 
-          {tab === 'keywords' && <div className="space-y-2.5">
-            <p className="mb-4 text-sm text-muted">Every keyword gets one destination or a documented reason for exclusion.</p>
-            {(mapping.keyword_assignments || []).filter(item => `${item.keyword} ${item.assigned_to || ''}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || visible.some(page => page.target_keyword === item.assigned_to))).map(item => (
-              <div key={item.keyword} className="rounded-2xl border border-line bg-raised p-4 text-sm">
-                <div className="flex flex-wrap justify-between gap-2"><strong className="text-ink">{item.keyword}</strong><span className="text-xs text-muted">{{ page_target: 'Main keyword', supporting: 'Include on page', discard: 'Not included' }[item.disposition]}</span></div>
-                {item.assigned_to && <button type="button" onClick={() => selectTarget(item.assigned_to!)} className="mt-1 text-xs text-soft-violet underline underline-offset-2 hover:text-ink">{item.assigned_to} {item.placement ? `· ${item.placement}` : ''}</button>}
-                <p className="mt-2 text-xs text-muted">{item.reason}</p>
-              </div>
-            ))}
-            {!mapping.keyword_assignments?.length && <p className="text-sm text-muted">This saved plan has no recorded keyword decisions.</p>}
-          </div>}
+
         </div>
 
         {selected && <aside ref={briefRef} aria-label="Page brief" className="border-t border-line p-4 sm:p-5 xl:border-l xl:border-t-0">

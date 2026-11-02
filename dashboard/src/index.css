@@ -75,7 +75,7 @@ textarea {
    Warm ivory background, soft white surfaces, deep warm text.
    Amber stays the hero (buttons keep their glow); text accents
    are deepened so body text keeps ≥ 4.5:1 contrast.
-   Every bg-*/text-*/border-* utility flips automatically because
+   Every bg-*, text-*, and border-* utility flips automatically because
    Tailwind v4 utilities reference these variables.
    ============================================================ */
 html.light {
