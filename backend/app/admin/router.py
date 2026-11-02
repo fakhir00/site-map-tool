@@ -21,7 +21,8 @@ from app.auth.jwt import create_admin_token, get_current_superadmin, security
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-UPLOAD_DIR = Path("uploads/payment_proofs")
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "payment_proofs"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 SUPERADMIN_ID = "crawladmin@1"
 SUPERADMIN_PASSWORD = "crawlgap@7861"

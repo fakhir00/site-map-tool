@@ -23,7 +23,14 @@ import {
   X,
   ZoomIn,
 } from 'lucide-react'
-import { adminAuth, api, DEMO_BACKEND_ENABLED, type AdminStats, type AdminUserRequest } from '../lib/api'
+import {
+  adminAuth,
+  api,
+  DEMO_BACKEND_ENABLED,
+  getApiMediaUrl,
+  type AdminStats,
+  type AdminUserRequest,
+} from '../lib/api'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -551,8 +558,9 @@ export function SuperAdmin() {
                     const isRejected = user.status === 'rejected'
                     const isWorking = actionLoadingId === user.id
                     const adminToken = adminAuth.getToken()
-                    const proofUrlWithAuth = user.payment_proof_url
-                      ? `${user.payment_proof_url}?token=${encodeURIComponent(adminToken || '')}`
+                    const rawUrl = getApiMediaUrl(user.payment_proof_url)
+                    const proofUrlWithAuth = rawUrl
+                      ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(adminToken || '')}`
                       : null
 
                     return (

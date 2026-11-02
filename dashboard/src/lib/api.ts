@@ -13,6 +13,21 @@ const needsProductionApiUrl = isBrowser && !isLocalHost && !configuredApiUrl
 export const DEMO_BACKEND_ENABLED =
   import.meta.env.VITE_ENABLE_DEMO_BACKEND === 'true'
 
+export function getApiMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null
+  if (
+    path.startsWith('http://') ||
+    path.startsWith('https://') ||
+    path.startsWith('data:') ||
+    path.startsWith('blob:')
+  ) {
+    return path
+  }
+  const baseUrl = API_URL.replace(/\/api$/, '')
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return `${baseUrl}${cleanPath}`
+}
+
 type ApiRequestInit = RequestInit & {
   timeoutMs?: number
 }

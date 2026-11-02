@@ -22,7 +22,7 @@ from app.auth.jwt import hash_password, verify_password, create_access_token, ge
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-UPLOAD_DIR = Path("uploads/payment_proofs")
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "payment_proofs"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 

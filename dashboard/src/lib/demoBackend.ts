@@ -723,6 +723,9 @@ export async function demoFetch<T>(endpoint: string, options: RequestInit = {}):
   }
 
   if (path === '/admin/requests' && method === 'GET') {
+    const DEMO_RECEIPT_DATA_URI =
+      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400"><rect width="100%" height="100%" fill="%2318181b"/><rect x="20" y="20" width="560" height="360" rx="16" fill="%2327272a" stroke="%233f3f46" stroke-width="2"/><text x="40" y="70" fill="%23f59e0b" font-family="sans-serif" font-size="20" font-weight="bold">OFFICIAL PAYMENT RECEIPT</text><text x="40" y="120" fill="%23fafafa" font-family="sans-serif" font-size="14">Transaction ID: TXN-948271039-GAP</text><text x="40" y="150" fill="%23a1a1aa" font-family="sans-serif" font-size="14">Payment Method: Bank Transfer / Card</text><text x="40" y="180" fill="%23a1a1aa" font-family="sans-serif" font-size="14">Amount Paid: $99.00 USD</text><text x="40" y="210" fill="%2310b981" font-family="sans-serif" font-size="14" font-weight="bold">Status: Completed</text><circle cx="500" cy="80" r="30" fill="%2310b981" opacity="0.2"/><path d="M488 80 l8 8 l16 -16" stroke="%2310b981" stroke-width="4" fill="none"/></svg>'
+
     const requests = state.users.map((u) => ({
       id: u.id,
       email: u.email,
@@ -731,7 +734,9 @@ export async function demoFetch<T>(endpoint: string, options: RequestInit = {}):
       is_active: Boolean(u.is_active),
       has_payment_proof: Boolean(u.payment_proof_filename || u.payment_proof_path),
       payment_proof_filename: u.payment_proof_filename || (u.payment_proof_path ? 'proof.png' : null),
-      payment_proof_url: u.payment_proof_path ? `/api/admin/proof-image/${u.id}` : null,
+      payment_proof_url: u.payment_proof_path
+        ? (u.payment_proof_path.startsWith('data:') ? u.payment_proof_path : DEMO_RECEIPT_DATA_URI)
+        : null,
       payment_proof_uploaded_at: u.reviewed_at || isoNow(),
       rejection_reason: u.rejection_reason || null,
       created_at: u.created_at,
