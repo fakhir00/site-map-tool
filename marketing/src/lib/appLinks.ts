@@ -1,6 +1,6 @@
 const dashboardBaseUrl = (
   import.meta.env.PUBLIC_DASHBOARD_URL ||
-  (import.meta.env.DEV ? 'http://127.0.0.1:5173' : 'https://app.sitemapseo.io')
+  (import.meta.env.DEV ? 'http://127.0.0.1:5173' : 'https://app.crawlgap.io')
 ).replace(/\/$/, '');
 
 export function dashboardUrl(path = '/') {

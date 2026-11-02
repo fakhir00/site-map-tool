@@ -11,14 +11,14 @@ interface Props {
 
 const {
   title,
-  description = 'SiteMapSEO compares your sitemap against competitor sitemaps, extracts URL-topic keyword gaps, and presents prioritized content opportunities — helping you create better content faster.',
+  description = 'CrawlGap compares your sitemap against competitor sitemaps, extracts URL-topic keyword gaps, and presents prioritized content opportunities — helping you create better content faster.',
   canonicalURL = Astro.url.href,
   ogImage = '/og-image.png',
   noIndex = false,
 } = Astro.props;
 
-const siteURL = 'https://sitemapseo.io';
-const siteName = 'SiteMapSEO';
+const siteURL = 'https://crawlgap.io';
+const siteName = 'CrawlGap';
 const fullTitle = title.includes(siteName) ? title : `${title} | ${siteName}`;
 
 const schema = {
@@ -29,7 +29,7 @@ const schema = {
       '@id': `${siteURL}/#organization`,
       name: siteName,
       url: siteURL,
-      legalName: 'SiteMapSEO Inc.',
+      legalName: 'CrawlGap Inc.',
       logo: {
         '@type': 'ImageObject',
         url: `${siteURL}/logo.svg`,
@@ -38,8 +38,8 @@ const schema = {
       },
       description: 'AI-powered competitor sitemap analysis and SEO keyword discovery platform.',
       sameAs: [
-        'https://twitter.com/sitemapseo',
-        'https://linkedin.com/company/sitemapseo',
+        'https://twitter.com/crawlgap',
+        'https://linkedin.com/company/crawlgap',
       ],
     },
     {
@@ -91,7 +91,7 @@ const schema = {
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@sitemapseo" />
+    <meta name="twitter:site" content="@crawlgap" />
     <meta name="twitter:title" content={fullTitle} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={`${siteURL}${ogImage}`} />

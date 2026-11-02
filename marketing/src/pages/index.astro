@@ -8,7 +8,7 @@ const registerUrl = dashboardUrl('/register');
 ---
 
 <BaseLayout
-  title="SiteMapSEO — Competitor SEO Intelligence, Automated"
+  title="CrawlGap — Competitor SEO Intelligence, Automated"
   description="Automatically compare your sitemap against competitor sitemaps, extract URL-topic keywords, and discover content gaps. Turn competitor intelligence into your content strategy."
 >
   <Header />
@@ -18,14 +18,14 @@ const registerUrl = dashboardUrl('/register');
     ══════════════════════════════════════ -->
     <section class="hero" aria-labelledby="hero-heading">
       <div class="hero-bg" aria-hidden="true">
-        <div class="glow-orb glow-teal" style="width:600px;height:600px;top:-200px;left:-100px;"></div>
-        <div class="glow-orb glow-indigo" style="width:500px;height:500px;top:100px;right:-150px;"></div>
+        <div class="glow-orb glow-amber" style="width:600px;height:600px;top:-200px;left:-100px;"></div>
+        <div class="glow-orb glow-violet" style="width:500px;height:500px;top:100px;right:-150px;"></div>
         <div class="bg-grid" style="position:absolute;inset:0;opacity:0.6;"></div>
       </div>
 
       <div class="container hero-inner">
         <div class="hero-content">
-          <div class="badge badge-teal animate-fade-up" style="margin-bottom:1.5rem;">
+          <div class="badge badge-amber animate-fade-up" style="margin-bottom:1.5rem;">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="6" cy="6" r="6" opacity="0.3"/><circle cx="6" cy="6" r="3"/></svg>
             Now in Public Beta — Free to Start
           </div>
@@ -36,7 +36,7 @@ const registerUrl = dashboardUrl('/register');
           </h1>
 
           <p class="hero-subtitle animate-fade-up delay-200">
-            SiteMapSEO reads your sitemap and competitor sitemaps, compares URL topics,
+            CrawlGap reads your sitemap and competitor sitemaps, compares URL topics,
             and delivers a prioritized list of keyword gaps —
             so you can create content that actually ranks.
           </p>
@@ -78,11 +78,11 @@ const registerUrl = dashboardUrl('/register');
               <span class="chrome-dot" style="background:#ff5f57;"></span>
               <span class="chrome-dot" style="background:#febc2e;"></span>
               <span class="chrome-dot" style="background:#28c840;"></span>
-              <span class="chrome-url">app.sitemapseo.io/projects</span>
+              <span class="chrome-url">app.crawlgap.io/projects</span>
             </div>
             <img
               src="/dashboard-mockup.png"
-              alt="SiteMapSEO dashboard showing keyword opportunities table with competitor SEO analysis"
+              alt="CrawlGap dashboard showing keyword opportunities table with competitor SEO analysis"
               width="680"
               height="420"
               loading="eager"
@@ -130,7 +130,7 @@ const registerUrl = dashboardUrl('/register');
             Everything you need to<br/><span class="gradient-text">outsmart the competition</span>
           </h2>
           <p class="section-desc">
-            From sitemap discovery to keyword export — SiteMapSEO handles the entire pipeline
+            From sitemap discovery to keyword export — CrawlGap handles the entire pipeline
             so your content team can focus on creating, not researching.
           </p>
         </div>
@@ -139,19 +139,19 @@ const registerUrl = dashboardUrl('/register');
           {[
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke="currentColor" stroke-width="1.5"/><path d="M15 12H9m3-3v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-              color: 'teal',
+              color: 'amber',
               title: 'Automatic Sitemap Discovery',
               desc: 'Finds sitemaps via /sitemap.xml, /sitemap_index.xml, and robots.txt. Handles gzipped sitemaps and nested indexes automatically.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-              color: 'indigo',
+              color: 'violet',
               title: 'Smart URL Filtering',
               desc: 'Extracts sitemap URLs and turns clean URL slugs into comparable content topics. Fully configurable per project.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/><path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-              color: 'pink',
+              color: 'green',
               title: 'Sitemap Keyword Gaps',
               desc: 'Compares your sitemap topics against competitor sitemap topics to reveal missing keywords without scraping every page.',
             },
@@ -163,13 +163,13 @@ const registerUrl = dashboardUrl('/register');
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 2v7h7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
-              color: 'teal',
+              color: 'amber',
               title: 'Content Gap Analysis',
               desc: 'Add your own sitemap to instantly see what topics competitors cover that you\'re missing — ranked by opportunity.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-              color: 'indigo',
+              color: 'violet',
               title: 'Scheduled Re-scans',
               desc: 'Set daily, weekly, or monthly rescans. Get notified when competitors publish new content with keywords you\'re tracking.',
             },
@@ -191,7 +191,7 @@ const registerUrl = dashboardUrl('/register');
     ══════════════════════════════════════ -->
     <section id="how-it-works" class="section how-section" aria-labelledby="how-heading">
       <div class="how-bg" aria-hidden="true">
-        <div class="glow-orb glow-indigo" style="width:400px;height:400px;top:50%;left:50%;transform:translate(-50%,-50%);"></div>
+        <div class="glow-orb glow-violet" style="width:400px;height:400px;top:50%;left:50%;transform:translate(-50%,-50%);"></div>
       </div>
       <div class="container">
         <div class="section-header reveal">
@@ -203,11 +203,11 @@ const registerUrl = dashboardUrl('/register');
 
         <div class="steps-grid">
           {[
-            { n: '01', color: '#00e5c9', title: 'Enter Competitor Domain', desc: 'Paste any competitor\'s root domain. We\'ll take it from there — no sitemap URL needed.' },
-            { n: '02', color: '#6366f1', title: 'Discover Sitemaps', desc: 'We scan /sitemap.xml, /sitemap_index.xml, robots.txt, and fall back to homepage crawling.' },
-            { n: '03', color: '#ec4899', title: 'Extract & Filter URLs', desc: 'Blog URLs are identified via smart pattern matching. Preview the count before analysis begins.' },
-            { n: '04', color: '#f59e0b', title: 'Compare Sitemap Topics', desc: 'We extract meaningful phrases from URL slugs and compare competitor coverage against your own sitemap.' },
-            { n: '05', color: '#00e5c9', title: 'Explore Opportunities', desc: 'Your keyword dashboard populates in real-time. Sort, filter, export, and build winning content.' },
+            { n: '01', color: '#F5A524', title: 'Enter Competitor Domain', desc: 'Paste any competitor\'s root domain. We\'ll take it from there — no sitemap URL needed.' },
+            { n: '02', color: '#A78BFA', title: 'Discover Sitemaps', desc: 'We scan /sitemap.xml, /sitemap_index.xml, robots.txt, and fall back to homepage crawling.' },
+            { n: '03', color: '#F5A524', title: 'Extract & Filter URLs', desc: 'Blog URLs are identified via smart pattern matching. Preview the count before analysis begins.' },
+            { n: '04', color: '#A78BFA', title: 'Compare Sitemap Topics', desc: 'We extract meaningful phrases from URL slugs and compare competitor coverage against your own sitemap.' },
+            { n: '05', color: '#F5A524', title: 'Explore Opportunities', desc: 'Your keyword dashboard populates in real-time. Sort, filter, export, and build winning content.' },
           ].map((step, i) => (
             <div class="step-card reveal" style={`animation-delay:${i * 0.12}s`}>
               <div class="step-number" style={`color:${step.color};border-color:${step.color}22;background:${step.color}11`}>{step.n}</div>
@@ -291,9 +291,9 @@ const registerUrl = dashboardUrl('/register');
         <h2 id="metrics-heading" class="visually-hidden">Platform metrics</h2>
         <div class="metrics-grid">
           {[
-            { value: '50+', label: 'Keywords per 100-post blog', color: 'var(--color-teal)' },
-            { value: '&lt;2hr', label: 'Full 200-page analysis', color: 'var(--color-indigo)' },
-            { value: '3s', label: 'Dashboard load time', color: 'var(--color-pink)' },
+            { value: '50+', label: 'Keywords per 100-post blog', color: 'var(--color-amber)' },
+            { value: '&lt;2hr', label: 'Full 200-page analysis', color: 'var(--color-violet)' },
+            { value: '3s', label: 'Dashboard load time', color: 'var(--color-green)' },
             { value: '99.9%', label: 'Platform uptime SLA', color: 'var(--color-amber)' },
           ].map(m => (
             <div class="metric-card reveal glass-card">
@@ -345,11 +345,11 @@ const registerUrl = dashboardUrl('/register');
               </thead>
               <tbody>
                 {[
-                  { kw: 'content gap analysis', freq: 47, type: 'How-to Guide', read: 'Grade 10', color: '#00e5c9' },
-                  { kw: 'keyword clustering strategy', freq: 38, type: 'Long-form Post', read: 'Grade 11', color: '#6366f1' },
-                  { kw: 'competitor SEO audit', freq: 34, type: 'Tutorial', read: 'Grade 9', color: '#ec4899' },
+                  { kw: 'content gap analysis', freq: 47, type: 'How-to Guide', read: 'Grade 10', color: '#F5A524' },
+                  { kw: 'keyword clustering strategy', freq: 38, type: 'Long-form Post', read: 'Grade 11', color: '#A78BFA' },
+                  { kw: 'competitor SEO audit', freq: 34, type: 'Tutorial', read: 'Grade 9', color: '#34D399' },
                   { kw: 'topic modeling for SEO', freq: 29, type: 'Case Study', read: 'Grade 12', color: '#f59e0b' },
-                  { kw: 'internal linking structure', freq: 24, type: 'Best Practices', read: 'Grade 8', color: '#00e5c9' },
+                  { kw: 'internal linking structure', freq: 24, type: 'Best Practices', read: 'Grade 8', color: '#F5A524' },
                 ].map(row => (
                   <tr>
                     <td>
@@ -383,7 +383,7 @@ const registerUrl = dashboardUrl('/register');
     ══════════════════════════════════════ -->
     <section id="pricing" class="section pricing-section" aria-labelledby="pricing-heading">
       <div class="pricing-bg" aria-hidden="true">
-        <div class="glow-orb glow-teal" style="width:500px;height:500px;bottom:-200px;left:-100px;"></div>
+        <div class="glow-orb glow-amber" style="width:500px;height:500px;bottom:-200px;left:-100px;"></div>
       </div>
       <div class="container">
         <div class="section-header reveal">
@@ -415,7 +415,7 @@ const registerUrl = dashboardUrl('/register');
                 'Community support',
               ].map(f => (
                 <li class="pricing-feature">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#00e5c9" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#00e5c9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#F5A524" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#F5A524" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   {f}
                 </li>
               ))}
@@ -425,7 +425,7 @@ const registerUrl = dashboardUrl('/register');
 
           <!-- PRO (featured) -->
           <div class="pricing-card featured reveal" style="animation-delay:0.1s;">
-            <div class="pricing-plan" style="color:var(--color-teal);">Pro</div>
+            <div class="pricing-plan" style="color:var(--color-amber);">Pro</div>
             <div class="pricing-price">
               <span class="price-amount">$29</span>
               <span class="price-period">/month</span>
@@ -443,7 +443,7 @@ const registerUrl = dashboardUrl('/register');
                 'Keyword bank (unlimited)',
               ].map(f => (
                 <li class="pricing-feature">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#6366f1" opacity="0.2"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#F5A524" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#F5A524" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   {f}
                 </li>
               ))}
@@ -503,12 +503,12 @@ const registerUrl = dashboardUrl('/register');
         <div class="testimonials-grid">
           {[
             {
-              quote: "SiteMapSEO cut our content research time by 80%. We went from spending a full week on competitor analysis to getting actionable insights in under an hour.",
+              quote: "CrawlGap cut our content research time by 80%. We went from spending a full week on competitor analysis to getting actionable insights in under an hour.",
               name: "Sarah Chen",
               role: "Head of SEO",
               company: "GrowthLab Agency",
               avatar: "SC",
-              color: '#00e5c9',
+              color: '#F5A524',
             },
             {
               quote: "The keyword clustering alone is worth the subscription price. I found 200+ opportunities in a niche I thought was saturated. Game changer.",
@@ -516,7 +516,7 @@ const registerUrl = dashboardUrl('/register');
               role: "Content Strategist",
               company: "TechFlow Inc.",
               avatar: "MR",
-              color: '#6366f1',
+              color: '#A78BFA',
             },
             {
               quote: "Finally a tool that doesn't just give me a keyword list — it shows me exactly what my competitors are writing about and how I can do it better.",
@@ -524,7 +524,7 @@ const registerUrl = dashboardUrl('/register');
               role: "Freelance SEO Consultant",
               company: "@priyaseo_",
               avatar: "PP",
-              color: '#ec4899',
+              color: '#34D399',
             },
           ].map(t => (
             <div class="testimonial-card glass-card reveal">
@@ -562,12 +562,12 @@ const registerUrl = dashboardUrl('/register');
         <div class="faq-container reveal">
           {[
             {
-              q: 'How does SiteMapSEO find keywords from competitor blogs?',
+              q: 'How does CrawlGap find keywords from competitor blogs?',
               a: 'We automatically discover your competitor\'s sitemap, extract content URL slugs, normalize the phrases, and compare them against your own sitemap topics. This surfaces keyword gaps from the competitor sitemap structure without fetching every page.',
             },
             {
               q: 'Does it respect robots.txt and crawl limits?',
-              a: 'Yes, absolutely. SiteMapSEO reads and respects every site\'s robots.txt, honors Crawl-delay directives, and applies randomized delays between requests (1–5 seconds). We are committed to ethical scraping practices and require users to agree to our terms before scanning.',
+              a: 'Yes, absolutely. CrawlGap reads and respects every site\'s robots.txt, honors Crawl-delay directives, and applies randomized delays between requests (1–5 seconds). We are committed to ethical scraping practices and require users to agree to our terms before scanning.',
             },
             {
               q: 'How long does it take to analyze a 200-page blog?',
@@ -579,11 +579,11 @@ const registerUrl = dashboardUrl('/register');
             },
             {
               q: 'What makes this different from tools like Ahrefs or SEMrush?',
-              a: 'Traditional tools show you keyword volumes and rankings. SiteMapSEO shows you exactly which keywords your competitors are actively writing about — extracted directly from their content. It\'s competitor content intelligence, not just SERP data. Think of it as a layer on top of your existing SEO stack.',
+              a: 'Traditional tools show you keyword volumes and rankings. CrawlGap shows you exactly which keywords your competitors are actively writing about — extracted directly from their content. It\'s competitor content intelligence, not just SERP data. Think of it as a layer on top of your existing SEO stack.',
             },
             {
               q: 'Can I add my own sitemap for content gap analysis?',
-              a: 'Yes! Add your own domain to a project and SiteMapSEO will compare your existing content against your competitors\'. The content gap view highlights topics they cover that you\'re completely missing, ranked by the number of competitor posts about that topic.',
+              a: 'Yes! Add your own domain to a project and CrawlGap will compare your existing content against your competitors\'. The content gap view highlights topics they cover that you\'re completely missing, ranked by the number of competitor posts about that topic.',
             },
           ].map((item, i) => (
             <div class="faq-item">
@@ -615,12 +615,12 @@ const registerUrl = dashboardUrl('/register');
         <div class="cta-card reveal">
           <div class="cta-glow" aria-hidden="true"></div>
           <div class="cta-content">
-            <p class="section-label" style="color:var(--color-teal);margin-bottom:1rem;">Ready to start?</p>
+            <p class="section-label" style="margin-bottom:1rem;">Ready to start?</p>
             <h2 id="cta-heading" class="cta-title">
               Start discovering keyword<br/>opportunities <span class="gradient-text">today, for free</span>
             </h2>
             <p class="cta-desc">
-              Join 2,000+ SEO professionals who use SiteMapSEO to build
+              Join 2,000+ SEO professionals who use CrawlGap to build
               smarter content strategies. No credit card required.
             </p>
             <div class="cta-actions">
@@ -779,25 +779,25 @@ const registerUrl = dashboardUrl('/register');
   }
 
   .pill-1 {
-    background: rgba(0,229,201,0.1);
-    border-color: rgba(0,229,201,0.3);
-    color: var(--color-teal);
+    background: rgba(245,165,36,0.1);
+    border-color: rgba(245,165,36,0.3);
+    color: var(--color-amber);
     top: -24px;
     right: 60px;
   }
 
   .pill-2 {
-    background: rgba(99,102,241,0.1);
-    border-color: rgba(99,102,241,0.3);
-    color: var(--color-indigo);
+    background: rgba(167,139,250,0.1);
+    border-color: rgba(167,139,250,0.3);
+    color: var(--color-violet);
     bottom: 40px;
     left: -40px;
   }
 
   .pill-3 {
-    background: rgba(236,72,153,0.1);
-    border-color: rgba(236,72,153,0.3);
-    color: var(--color-pink);
+    background: rgba(245,165,36,0.08);
+    border-color: rgba(245,165,36,0.25);
+    color: var(--color-amber);
     bottom: -16px;
     right: 20px;
   }
@@ -830,7 +830,7 @@ const registerUrl = dashboardUrl('/register');
     transform: translateX(-50%);
     width: 4px;
     height: 8px;
-    background: var(--color-teal);
+    background: var(--color-amber);
     border-radius: 2px;
     animation: scroll-bounce 1.5s ease-in-out infinite;
   }
@@ -891,7 +891,7 @@ const registerUrl = dashboardUrl('/register');
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--color-teal);
+    color: var(--color-amber);
   }
 
   .section-title {
@@ -932,10 +932,9 @@ const registerUrl = dashboardUrl('/register');
     justify-content: center;
     margin-bottom: 1.25rem;
   }
-  .feature-icon-teal { background: var(--color-teal-glow); color: var(--color-teal); border: 1px solid rgba(0,229,201,0.2); }
-  .feature-icon-indigo { background: var(--color-indigo-glow); color: var(--color-indigo); border: 1px solid rgba(99,102,241,0.2); }
-  .feature-icon-pink { background: rgba(236,72,153,0.1); color: #ec4899; border: 1px solid rgba(236,72,153,0.2); }
-  .feature-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+  .feature-icon-amber { background: var(--color-amber-glow); color: var(--color-amber); border: 1px solid rgba(245,165,36,0.22); }
+  .feature-icon-violet { background: var(--color-violet-glow); color: var(--color-violet); border: 1px solid rgba(167,139,250,0.22); }
+  .feature-icon-green { background: var(--color-green-glow); color: var(--color-green); border: 1px solid rgba(52,211,153,0.22); }
 
   .feature-title { font-size: 1.0625rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--color-text); }
   .feature-desc { font-size: 0.9375rem; color: var(--color-text-muted); line-height: 1.65; }
@@ -995,8 +994,8 @@ const registerUrl = dashboardUrl('/register');
     overflow: hidden;
     border: 1px solid var(--color-border);
     background:
-      linear-gradient(135deg, rgba(0, 229, 201, 0.08), transparent 32%),
-      linear-gradient(315deg, rgba(245, 158, 11, 0.08), transparent 26%),
+      linear-gradient(135deg, rgba(245, 165, 36, 0.08), transparent 32%),
+      linear-gradient(315deg, rgba(167, 139, 250, 0.07), transparent 26%),
       var(--color-surface);
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
   }
@@ -1027,7 +1026,7 @@ const registerUrl = dashboardUrl('/register');
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--color-teal);
+    color: var(--color-amber);
   }
 
   .sitemap-demo-title {
@@ -1043,11 +1042,11 @@ const registerUrl = dashboardUrl('/register');
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
-    border: 1px solid rgba(0, 229, 201, 0.18);
+    border: 1px solid rgba(245, 165, 36, 0.22);
     border-radius: 999px;
     padding: 0.5rem 0.75rem;
-    color: var(--color-teal);
-    background: rgba(0, 229, 201, 0.08);
+    color: var(--color-amber);
+    background: rgba(245, 165, 36, 0.08);
     font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 700;
@@ -1057,8 +1056,8 @@ const registerUrl = dashboardUrl('/register');
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--color-teal);
-    box-shadow: 0 0 0 6px rgba(0, 229, 201, 0.12);
+    background: var(--color-amber);
+    box-shadow: 0 0 0 6px rgba(245, 165, 36, 0.12);
   }
 
   .sitemap-demo-tabs {
@@ -1089,7 +1088,7 @@ const registerUrl = dashboardUrl('/register');
   }
 
   .sitemap-tab.active {
-    box-shadow: inset 0 0 0 1px rgba(0, 229, 201, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(245, 165, 36, 0.25);
   }
 
   .sitemap-demo-body {
@@ -1174,10 +1173,10 @@ const registerUrl = dashboardUrl('/register');
     width: 122px;
     height: 122px;
     border-radius: 50%;
-    border: 1px solid rgba(0, 229, 201, 0.22);
+    border: 1px solid rgba(245, 165, 36, 0.25);
     background:
-      radial-gradient(circle at 50% 50%, rgba(0, 229, 201, 0.18), transparent 58%),
-      conic-gradient(from 160deg, rgba(0, 229, 201, 0.8), rgba(99, 102, 241, 0.55), rgba(245, 158, 11, 0.35), rgba(0, 229, 201, 0.8));
+      radial-gradient(circle at 50% 50%, rgba(245, 165, 36, 0.18), transparent 58%),
+      conic-gradient(from 160deg, rgba(245, 165, 36, 0.85), rgba(167, 139, 250, 0.5), rgba(245, 165, 36, 0.4), rgba(245, 165, 36, 0.85));
   }
 
   .compare-ring span,
@@ -1211,7 +1210,7 @@ const registerUrl = dashboardUrl('/register');
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, var(--color-teal), var(--color-amber));
+    background: linear-gradient(90deg, #F5A524, #F97316);
     transition: width 0.35s ease;
   }
 
@@ -1282,7 +1281,7 @@ const registerUrl = dashboardUrl('/register');
 
   .gap-source-link:hover {
     color: var(--color-text);
-    border-color: rgba(0, 229, 201, 0.28);
+    border-color: rgba(245, 165, 36, 0.3);
   }
 
   @media (max-width: 900px) {
@@ -1475,8 +1474,8 @@ const registerUrl = dashboardUrl('/register');
     position: relative;
     padding: clamp(2.5rem, 6vw, 5rem);
     border-radius: 24px;
-    border: 1px solid rgba(0,229,201,0.15);
-    background: linear-gradient(135deg, rgba(0,229,201,0.04) 0%, rgba(99,102,241,0.06) 50%, rgba(236,72,153,0.03) 100%);
+    border: 1px solid rgba(245,165,36,0.18);
+    background: linear-gradient(135deg, rgba(245,165,36,0.05) 0%, rgba(167,139,250,0.04) 50%, rgba(245,165,36,0.02) 100%);
     text-align: center;
     overflow: hidden;
   }
@@ -1488,7 +1487,7 @@ const registerUrl = dashboardUrl('/register');
     transform: translateX(-50%);
     width: 500px;
     height: 300px;
-    background: radial-gradient(ellipse, rgba(99,102,241,0.15) 0%, transparent 70%);
+    background: radial-gradient(ellipse, rgba(245,165,36,0.16) 0%, transparent 70%);
     pointer-events: none;
   }
 
