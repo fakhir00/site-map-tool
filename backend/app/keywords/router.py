@@ -50,16 +50,39 @@ async def list_keywords(
         if _is_displayable_keyword(keyword)
     ]
 
+    # Fetch source types for all matching keywords to prioritize:
+    # 1. Competitors, 2. Autocomplete (provider), 3. AI recommendations
+    all_kw_ids = [kw.id for kw in filtered_keywords]
+    kw_source_types: dict[uuid.UUID, set[str]] = {}
+    if all_kw_ids:
+        kw_sources_query = (
+            select(KeywordUrl.keyword_id, Url.source_type)
+            .join(Url, Url.id == KeywordUrl.url_id)
+            .where(KeywordUrl.keyword_id.in_(all_kw_ids))
+        )
+        for kw_id, s_type in (await db.execute(kw_sources_query)).all():
+            kw_source_types.setdefault(kw_id, set()).add(s_type or "")
+
+    def get_source_tier(kw_id: uuid.UUID) -> int:
+        types = kw_source_types.get(kw_id, set())
+        if "competitor" in types:
+            return 1
+        if "provider" in types:
+            return 2
+        if "ai" in types:
+            return 3
+        return 4
+
     if sort_by == "frequency":
-        filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", -k.frequency))
+        filtered_keywords.sort(key=lambda k: (get_source_tier(k.id), k.keyword_type != "top-pick", -k.frequency))
     elif sort_by == "phrase":
-        filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", k.phrase))
+        filtered_keywords.sort(key=lambda k: (get_source_tier(k.id), k.keyword_type != "top-pick", k.phrase))
     elif sort_by == "search_volume_asc":
-        filtered_keywords.sort(key=lambda k: (k.search_volume is None, k.search_volume or 0))
+        filtered_keywords.sort(key=lambda k: (get_source_tier(k.id), k.search_volume is None, k.search_volume or 0))
     elif sort_by == "search_volume_desc":
-        filtered_keywords.sort(key=lambda k: (k.search_volume is None, -(k.search_volume or 0)))
+        filtered_keywords.sort(key=lambda k: (get_source_tier(k.id), k.search_volume is None, -(k.search_volume or 0)))
     else:
-        filtered_keywords.sort(key=lambda k: (k.keyword_type != "top-pick", -k.created_at.timestamp()))
+        filtered_keywords.sort(key=lambda k: (get_source_tier(k.id), k.keyword_type != "top-pick", -k.created_at.timestamp()))
 
     total = len(filtered_keywords)
     start = (page - 1) * page_size
@@ -76,7 +99,12 @@ async def list_keywords(
     for kw in keywords:
         sources = sources_by_keyword.get(kw.id, [])
         kw_out = KeywordOut.model_validate(kw)
-        kw_out.competitor_pages = competitor_counts.get(kw.id, 0)
+        comp_count = competitor_counts.get(kw.id, 0)
+        if any(s.source_type == "ai" for s in sources):
+            comp_count += 1
+        if any(s.source_type == "provider" for s in sources):
+            comp_count += 1
+        kw_out.competitor_pages = comp_count
         kw_out.source_urls = [source.url for source in sources]
         kw_out.sources = sources
         items.append(kw_out)
@@ -469,6 +497,29 @@ async def export_keywords(
         if _is_displayable_keyword(keyword)
     ]
 
+    all_kw_ids = [kw.id for kw in keywords]
+    kw_source_types: dict[uuid.UUID, set[str]] = {}
+    if all_kw_ids:
+        kw_sources_query = (
+            select(KeywordUrl.keyword_id, Url.source_type)
+            .join(Url, Url.id == KeywordUrl.url_id)
+            .where(KeywordUrl.keyword_id.in_(all_kw_ids))
+        )
+        for kw_id, s_type in (await db.execute(kw_sources_query)).all():
+            kw_source_types.setdefault(kw_id, set()).add(s_type or "")
+
+    def get_source_tier(kw_id: uuid.UUID) -> int:
+        types = kw_source_types.get(kw_id, set())
+        if "competitor" in types:
+            return 1
+        if "provider" in types:
+            return 2
+        if "ai" in types:
+            return 3
+        return 4
+
+    keywords.sort(key=lambda k: (get_source_tier(k.id), k.keyword_type != "top-pick", -k.frequency))
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -484,10 +535,15 @@ async def export_keywords(
     for kw in keywords:
         sources = sources_by_keyword.get(kw.id, [])
         source_domains = sorted(dict.fromkeys(_source_label(source) for source in sources))
+        comp_count = len({source.url for source in sources if source.source_type == "competitor"})
+        if any(s.source_type == "ai" for s in sources):
+            comp_count += 1
+        if any(s.source_type == "provider" for s in sources):
+            comp_count += 1
         writer.writerow([
             kw.phrase,
             kw.keyword_type,
-            len({source.url for source in sources if source.source_type == "competitor"}),
+            comp_count,
             "; ".join(source_domains),
             "; ".join(source.url for source in sources),
             kw.search_volume if kw.search_volume is not None else "",

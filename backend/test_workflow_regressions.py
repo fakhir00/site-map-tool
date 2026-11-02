@@ -59,7 +59,7 @@ class WorkflowTests(unittest.TestCase):
         self.stack.enter_context(patch('app.scan.router.settings.DATABASE_URL', f'sqlite+aiosqlite:///{path}'))
         self.client = self.stack.enter_context(TestClient(app))
         with self.sessions() as db:
-            user = User(email='test@example.com')
+            user = User(email='test@example.com', is_active=True)
             db.add(user)
             db.commit()
             self.user_id = user.id
@@ -332,8 +332,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(rows['circuit diagram symbols']['search_volume'], 0)
         self.assertEqual(rows['circuit diagram symbols']['sources'][0]['source_type'], 'provider')
         self.assertEqual(rows['circuit diagram tutorial']['sources'][0]['source_domain'], 'DataForSEO')
-        self.assertEqual(rows['circuit diagram for beginners']['sources'][0]['source_type'], 'ai')
-        self.assertEqual(rows['circuit diagram for beginners']['competitor_pages'], 0)
+        self.assertEqual(rows['circuit diagram for beginners']['competitor_pages'], 1)
+        self.assertEqual(rows['circuit diagram symbols']['competitor_pages'], 1)
         self.assertEqual(rows['circuit diagram troubleshooting']['competitor_pages'], 1)
         self.assertEqual(rows['circuit diagram troubleshooting']['sources'][0]['source_type'], 'competitor')
 

@@ -47,6 +47,31 @@ function sourceDomains(keyword: Keyword) {
   return Array.from(byLabel.values())
 }
 
+function getCompetitorCount(keyword: Keyword): number {
+  const sources = keywordSources(keyword)
+  const compPages = sources.filter((s) => s.source_type === 'competitor').length
+  const hasAi = sources.some((s) => s.source_type === 'ai')
+  const hasProvider = sources.some((s) => s.source_type === 'provider')
+
+  let count = compPages
+  if (hasAi) count += 1
+  if (hasProvider) count += 1
+
+  if (count > 0) return count
+  if (typeof keyword.competitor_pages === 'number' && keyword.competitor_pages > 0) {
+    return keyword.competitor_pages
+  }
+  return 0
+}
+
+function getSourceTier(keyword: Keyword): number {
+  const sources = keywordSources(keyword)
+  if (sources.some((s) => s.source_type === 'competitor')) return 1
+  if (sources.some((s) => s.source_type === 'provider')) return 2
+  if (sources.some((s) => s.source_type === 'ai')) return 3
+  return 4
+}
+
 function KeywordIntentBadge({ keywordPhrase }: { keywordPhrase: string }) {
   const [intent, setIntent] = useState<string | null>(null)
 
@@ -244,7 +269,13 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
     return <Card className="p-0" lift={false}><TableSkeleton /></Card>
   }
 
-  const keywords = data?.items || []
+  const rawKeywords = data?.items || []
+  const keywords = [...rawKeywords].sort((a, b) => {
+    const tierA = getSourceTier(a)
+    const tierB = getSourceTier(b)
+    if (tierA !== tierB) return tierA - tierB
+    return 0
+  })
 
   return (
     <Card className="overflow-hidden p-0" lift={false}>
@@ -493,7 +524,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                   </td>
                   <td className="px-2.5 py-2 whitespace-nowrap align-middle">{keywordBadge(keyword.keyword_type)}</td>
                   <td className="px-2.5 py-2 text-right font-mono text-xs text-ink whitespace-nowrap align-middle">
-                    {keyword.competitor_pages ?? keywordSources(keyword).filter(source => source.source_type === 'competitor').length}
+                    {getCompetitorCount(keyword)}
                   </td>
                   <td className="px-3 py-2 align-middle">
                     <div className="flex max-w-[220px] flex-wrap items-center gap-1">
