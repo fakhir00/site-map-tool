@@ -400,7 +400,7 @@ export function HubSpokeView({ projectId, search = '', type = '' }: HubSpokeView
   }
 
   return (
-    <div className="p-4 md:p-8 bg-surface min-h-[500px] rounded-2xl border border-line shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+    <div className="p-4 md:p-8 bg-surface min-h-[500px] rounded-2xl border border-line shadow-card">
       {generationError && <p role="alert" className="mb-4 text-sm text-warm-red">{generationError.message}</p>}
       <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-6">
         <div>

@@ -95,7 +95,7 @@ export default function WriteBlogArticle() {
                 </p>
                 <Link
                   to="/write-blog"
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-glow-amber px-4 py-2 text-sm font-semibold text-abyss transition-all hover:bg-[#ffb63d]"
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-glow-amber px-4 py-2 text-sm font-semibold text-on-accent transition-all hover:bg-[#ffb63d]"
                 >
                   Write your first article
                 </Link>
@@ -110,11 +110,11 @@ export default function WriteBlogArticle() {
                     className={`card-lift w-full rounded-2xl border p-4 text-left transition-colors ${
                       isActive
                         ? 'border-glow-amber/40 bg-raised shadow-[0_0_24px_rgba(245,165,36,0.12)]'
-                        : 'border-line bg-surface hover:border-white/15'
+                        : 'border-line bg-surface hover:border-overlay/15'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-glow-amber/15 text-glow-amber' : 'bg-white/5 text-muted'}`}>
+                      <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-glow-amber/15 text-glow-amber' : 'bg-overlay/5 text-muted'}`}>
                         <FileText className="h-4 w-4" />
                       </div>
                       <div className="min-w-0 flex-1">

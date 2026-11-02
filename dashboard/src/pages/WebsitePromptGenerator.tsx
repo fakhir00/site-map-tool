@@ -126,9 +126,9 @@ export default function WebsitePromptGenerator() {
               <span
                 className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
                   isActive
-                    ? 'bg-glow-amber text-abyss'
+                    ? 'bg-glow-amber text-on-accent'
                     : isDone
-                      ? 'bg-alive-green text-abyss'
+                      ? 'bg-alive-green text-on-accent'
                       : 'border border-line bg-raised text-muted'
                 }`}
               >
@@ -424,7 +424,7 @@ export default function WebsitePromptGenerator() {
     <div className="page-shell">
       <div className="warm-glow-bg pb-2 pt-4 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-glow-amber shadow-[0_0_32px_rgba(245,165,36,0.45)]">
-          <Rocket className="h-7 w-7 text-abyss" />
+          <Rocket className="h-7 w-7 text-on-accent" />
         </div>
         <h1 className="mt-5 font-display text-4xl font-bold tracking-tight sm:text-5xl">
           Astro Launchpad

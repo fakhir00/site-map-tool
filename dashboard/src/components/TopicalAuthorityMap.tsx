@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowRight, CheckCircle2, Download, FileText, Hammer, Layers, Network, Search, Wrench, X } from 'lucide-react'
+import { ArrowDown, ArrowRight, CheckCircle2, ChevronDown, Download, FileText, Hammer, Layers, Network, Search, Wrench, X } from 'lucide-react'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Badge } from './ui/Badge'
@@ -17,129 +17,15 @@ const label = (page: PageDetail) => page.article_title || page.target_keyword ||
 const evidence = (page: PageDetail) => page.evidence_type === 'editorial_proposal' ? 'Research idea' : 'Supplied keyword'
 const safeUrl = (value?: string | null) => value && /^https?:\/\//i.test(value) ? value : undefined
 
-const AMBER = '#F5A524'
-const WARM_WHITE = '#F2F4F8'
+/* 3-tier tree accents — fixed hexes that read well on both dark and light */
+const GROUP_ACCENTS = ['bg-glow-amber', 'bg-soft-violet', 'bg-alive-green']
+const PAGE_LIMIT = 12
 
 function fallbackLinks(pages: PageDetail[]): MapLink[] {
   return pages.flatMap(page => (page.internal_links || []).flatMap(target => {
     const other = pages.find(candidate => candidate.target_keyword === target)
     return other ? [{ source: page.id || page.target_keyword!, target: other.id || target, source_keyword: page.target_keyword!, target_keyword: target, source_url: page.existing_url || page.slug || '/', target_url: other.existing_url || other.slug || '/', anchor_text: label(other), relationship: 'related', reason: 'Link recorded in this saved plan.' }] : []
   }))
-}
-
-type GraphNode = { x: number; y: number; name: string; count: number; toBuild: number; color: string }
-
-function HubSpokeGraph({ hubLabel, hubExisting, groups, onSelectGroup, selectedGroup }: {
-  hubLabel: string
-  hubExisting: boolean
-  groups: [string, PageDetail[]][]
-  onSelectGroup: (name: string | null) => void
-  selectedGroup: string | null
-}) {
-  const W = 900
-  const H = 460
-  const cx = W / 2
-  const cy = H / 2 - 10
-  const rx = 300
-  const ry = 138
-  const n = groups.length
-  const hubColor = hubExisting ? WARM_WHITE : AMBER
-
-  const nodes: GraphNode[] = groups.map(([name, pages], i) => {
-    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1)
-    const x = cx + rx * Math.cos(angle)
-    const y = cy + ry * Math.sin(angle)
-    const toBuild = pages.filter(page => !isExistingPage(page)).length
-    return { x, y, name, count: pages.length, toBuild, color: toBuild > 0 ? AMBER : WARM_WHITE }
-  })
-
-  // Gentle curved spokes: quadratic bezier with a perpendicular offset on the control point
-  const spokePath = (node: GraphNode) => {
-    const dx = node.x - cx
-    const dy = node.y - cy
-    const dist = Math.hypot(dx, dy) || 1
-    const startX = cx + (dx / dist) * 52
-    const startY = cy + (dy / dist) * 52
-    const endX = node.x - (dx / dist) * 30
-    const endY = node.y - (dy / dist) * 30
-    const mx = (startX + endX) / 2
-    const my = (startY + endY) / 2
-    const px = -dy / dist
-    const py = dx / dist
-    const bow = 34
-    const qx = mx + px * bow
-    const qy = my + py * bow
-    return `M ${startX} ${startY} Q ${qx} ${qy} ${endX} ${endY}`
-  }
-
-  return (
-    <div className="overflow-hidden">
-      <style>{`
-        .hsg-node { transform-box: fill-box; transform-origin: center; transition: transform 200ms ease; cursor: pointer; }
-        .hsg-node:hover { transform: scale(1.1); }
-      `}</style>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full select-none" role="img" aria-label="Hub and spoke topic graph">
-        <defs>
-          <filter id="hsg-glow-amber" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="10" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="hsg-glow-white" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="8" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <radialGradient id="hsg-hub" cx="40%" cy="35%" r="80%">
-            <stop offset="0%" stopColor={hubColor} stopOpacity="0.95" />
-            <stop offset="100%" stopColor={hubColor} stopOpacity="0.55" />
-          </radialGradient>
-        </defs>
-
-        {nodes.map(node => (
-          <path key={`spoke-${node.name}`} className="hsg-spoke-flow" d={spokePath(node)} fill="none"
-            stroke={node.color === AMBER ? 'rgba(245,165,36,0.35)' : 'rgba(242,244,248,0.18)'}
-            strokeWidth={2.5} strokeLinecap="round" />
-        ))}
-
-        {nodes.map((node, i) => (
-          <g key={`node-${node.name}`} className="hsg-node" onClick={() => onSelectGroup(selectedGroup === node.name ? null : node.name)}>
-            <title>{node.name} — {node.count} pages ({node.toBuild} to build)</title>
-            <g className="hsg-float" style={{ animationDelay: `${-(i * 1.35).toFixed(2)}s` }}>
-              {node.color === AMBER && (
-                <circle cx={node.x} cy={node.y} r={26} fill="none" stroke={AMBER} strokeWidth={2} className="hsg-pulse-ring" />
-              )}
-              <circle cx={node.x} cy={node.y} r={26} fill={node.color} opacity={0.9}
-                filter={node.color === AMBER ? 'url(#hsg-glow-amber)' : 'url(#hsg-glow-white)'} />
-              {selectedGroup === node.name && (
-                <circle cx={node.x} cy={node.y} r={34} fill="none" stroke={AMBER} strokeWidth={2} strokeDasharray="5 5" opacity={0.9} />
-              )}
-              <text x={node.x} y={node.y + 5} textAnchor="middle" fontSize={15} fontWeight={700} fill="#0B0E14" fontFamily="JetBrains Mono, monospace">{node.count}</text>
-              <text x={node.x} y={node.y + 48} textAnchor="middle" fontSize={12.5} fill="#9AA3B2" fontFamily="Inter, sans-serif">
-                {node.name.length > 26 ? `${node.name.slice(0, 25)}…` : node.name}
-              </text>
-              <text x={node.x} y={node.y + 65} textAnchor="middle" fontSize={10.5} fill={node.color === AMBER ? AMBER : '#9AA3B2'} fontFamily="JetBrains Mono, monospace">
-                {node.toBuild > 0 ? `${node.toBuild} to build` : 'complete'}
-              </text>
-            </g>
-          </g>
-        ))}
-
-        <g className="hsg-node" onClick={() => onSelectGroup(null)}>
-          <title>{hubLabel} — main hub (click to clear filter)</title>
-          <circle cx={cx} cy={cy} r={58} fill="#0B0E14" opacity={0.45} />
-          <circle cx={cx} cy={cy} r={46} fill="url(#hsg-hub)" filter={hubColor === AMBER ? 'url(#hsg-glow-amber)' : 'url(#hsg-glow-white)'} />
-          <text x={cx} y={cy - 2} textAnchor="middle" fontSize={13} fontWeight={700} fill="#0B0E14" fontFamily="Inter, sans-serif">HUB</text>
-          <text x={cx} y={cy + 16} textAnchor="middle" fontSize={10.5} fill="#0B0E14" opacity={0.75} fontFamily="Inter, sans-serif">
-            {hubLabel.length > 24 ? `${hubLabel.slice(0, 23)}…` : hubLabel}
-          </text>
-        </g>
-      </svg>
-      <div className="flex flex-wrap items-center justify-center gap-6 border-t border-line px-4 py-3.5 text-xs text-muted">
-        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: AMBER, boxShadow: `0 0 10px ${AMBER}` }} />Pages to build</span>
-        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: WARM_WHITE, boxShadow: `0 0 10px ${WARM_WHITE}` }} />Already on your site</span>
-        <span className="font-mono">Click a node to filter the groups below</span>
-      </div>
-    </div>
-  )
 }
 
 export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
@@ -149,6 +35,8 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
   const [filter, setFilter] = useState('all')
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [selectedTarget, setSelectedTarget] = useState<string | null>(mapping.master_hub?.target_keyword || null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [showAllGroups, setShowAllGroups] = useState<Set<string>>(new Set())
   const pages = useMemo(() => [mapping.master_hub, ...(mapping.spokes || [])].filter((page): page is PageDetail => Boolean(page?.target_keyword)), [mapping])
   const coverage = useMemo(() => keywordCoverage(mapping), [mapping])
   const selected = pages.find(page => page.target_keyword === selectedTarget)
@@ -180,6 +68,21 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
     setSelectedGroup(name)
     setQuery(name || '')
   }
+  const toggleInSet = (prev: Set<string>, name: string) => {
+    const next = new Set(prev)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    return next
+  }
+  const toggleCollapsed = (name: string) => setCollapsedGroups(prev => toggleInSet(prev, name))
+  const toggleShowAll = (name: string) => setShowAllGroups(prev => toggleInSet(prev, name))
+  /* Groups visible after the active group filter + search/filter are applied */
+  const filteredGroups = useMemo(() => groups
+    .filter(([name]) => !selectedGroup || name === selectedGroup)
+    .map(([name, members]) => [name, members.filter(matches)] as [string, PageDetail[]])
+    .filter(([, members]) => members.length > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, selectedGroup, query, filter])
   const coveragePercent = coverage.total > 0 ? Math.round((coverage.used / coverage.total) * 100) : 0
   const pagesToCreate = pages.filter(page => !isExistingPage(page)).length
 
@@ -197,7 +100,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
   const card = (page: PageDetail) => (
     <div key={page.target_keyword} className="flex flex-col gap-2.5">
       <button type="button" aria-pressed={selectedTarget === page.target_keyword} onClick={() => selectPage(page)}
-        className={`card-lift w-full rounded-2xl border p-5 text-left ${selectedTarget === page.target_keyword ? 'border-glow-amber/70 bg-glow-amber/[0.05] shadow-[0_0_28px_rgba(245,165,36,0.14)]' : 'border-line bg-raised hover:border-white/15'}`}>
+        className={`card-lift w-full rounded-2xl border p-5 text-left ${selectedTarget === page.target_keyword ? 'border-glow-amber/70 bg-glow-amber/[0.05] shadow-[0_0_28px_rgba(245,165,36,0.14)]' : 'border-line bg-raised hover:border-overlay/15'}`}>
         <span className="mb-3 flex items-center justify-between gap-2">
           {pageTypeChip(page)}
           {pageStatusBadge(page)}
@@ -205,7 +108,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
         <span className="block text-[15px] font-semibold leading-6 text-ink">{label(page)}</span>
         <span className="mt-1 block break-all font-mono text-[11px] text-muted/80">{page.existing_url || page.slug || '/'}</span>
         <span className="mt-3 block text-xs text-muted">{pageKeywords(page).length} keywords covered · {(page.targeted_keywords || []).length} supporting</span>
-        <span className={`mt-3 inline-flex w-fit rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${page.evidence_type === 'editorial_proposal' ? 'border-glow-amber/30 bg-glow-amber/10 text-glow-amber' : 'border-line bg-white/5 text-muted'}`}>{evidence(page)}</span>
+        <span className={`mt-3 inline-flex w-fit rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${page.evidence_type === 'editorial_proposal' ? 'border-glow-amber/30 bg-glow-amber/10 text-glow-amber' : 'border-line bg-overlay/5 text-muted'}`}>{evidence(page)}</span>
       </button>
       <Button size="sm" variant="primary" className="w-full" onClick={() => onOpen(page)}>{pageActionLabel(page)}<ArrowRight className="h-4 w-4" /></Button>
     </div>
@@ -243,7 +146,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
         <p className="text-sm font-semibold text-ink">{coverage.used.toLocaleString()} <span className="font-normal text-muted">of {coverage.total.toLocaleString()} keywords placed</span></p>
         <p className="font-mono text-xs text-glow-amber">{coveragePercent}%</p>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-overlay/5">
         <div className="h-full rounded-full bg-glow-amber shadow-[0_0_12px_rgba(245,165,36,0.5)] transition-all duration-700" style={{ width: `${coveragePercent}%` }} />
       </div>
       <p className="mt-3 text-xs leading-relaxed text-muted">{coverage.supporting} supporting keywords are included within page content. Related phrases can share a page; each page covers one distinct reader task.</p>
@@ -285,7 +188,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
               const next = event.key === 'ArrowRight' ? (index + 1) % views.length : event.key === 'ArrowLeft' ? (index + views.length - 1) % views.length : event.key === 'Home' ? 0 : event.key === 'End' ? views.length - 1 : -1
               if (next >= 0) { event.preventDefault(); setTab(views[next]); document.getElementById(`map-tab-${views[next]}`)?.focus() }
             }} onClick={() => setTab(view)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${tab === view ? 'bg-glow-amber text-abyss shadow-[0_0_18px_rgba(245,165,36,0.35)]' : 'text-muted hover:text-ink'}`}>
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${tab === view ? 'bg-glow-amber text-on-accent shadow-[0_0_18px_rgba(245,165,36,0.35)]' : 'text-muted hover:text-ink'}`}>
               {view === 'keywords' ? 'Keyword decisions' : view === 'links' ? `Links (${links.length})` : view === 'pages' ? 'Pages' : 'Map'}
             </button>
           ))}
@@ -314,37 +217,96 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
           </div>
 
           {tab === 'map' && <>
-            {groups.length > 0 && (
-              <Card className="mb-6 overflow-hidden p-0" lift={false}>
-                <HubSpokeGraph
-                  hubLabel={mapping.master_hub ? label(mapping.master_hub) : 'Main hub'}
-                  hubExisting={!!mapping.master_hub && isExistingPage(mapping.master_hub)}
-                  groups={selectedGroup ? groups.filter(([name]) => name === selectedGroup) : groups}
-                  onSelectGroup={onSelectGroup}
-                  selectedGroup={selectedGroup}
-                />
-              </Card>
+            {/* Legend — slim, token-driven, reads in both modes */}
+            <div className="mb-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted">
+              <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-glow-amber shadow-[0_0_10px_rgba(245,165,36,0.55)]" />Pages to build</span>
+              <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-ink" />Already on your site</span>
+              <span className="font-mono">Click a group name to filter</span>
+            </div>
+
+            {/* TIER 1 — main hub, centered */}
+            {mapping.master_hub?.target_keyword && matches(mapping.master_hub) && (
+              <div className="animate-fade-up mx-auto max-w-md">
+                <button type="button" onClick={() => onSelectGroup(null)}
+                  title={selectedGroup ? 'Clear group filter' : 'Main hub'}
+                  className="mb-3 flex w-full items-center justify-center gap-2 rounded-full py-1 text-xs font-bold uppercase tracking-[0.18em] text-glow-amber transition-colors hover:text-ink">
+                  <Network className="h-4 w-4" />Main hub{selectedGroup ? ' · clear filter' : ''}
+                </button>
+                {card(mapping.master_hub)}
+              </div>
             )}
-            {groups.length > 0 && <div className="mb-5 flex justify-center text-muted/40"><ArrowDown className="h-6 w-6" /></div>}
-            {groups.length > 0 && <div className="grid items-start gap-5 md:grid-cols-2 2xl:grid-cols-3">
-              {groups.filter(([name]) => !selectedGroup || name === selectedGroup).map(([name, members], gi) => {
-                const filtered = members.filter(matches)
-                if (!filtered.length) return null
-                const toBuild = filtered.filter(page => !isExistingPage(page)).length
-                return (
-                  <div key={name} className={`animate-fade-up rounded-2xl border border-line bg-raised p-4 stagger-${Math.min(gi + 1, 8)}`}>
-                    <div className="mb-4 flex items-center justify-between gap-2">
-                      <h4 className="flex items-center gap-2 text-sm font-bold text-ink">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: toBuild > 0 ? AMBER : WARM_WHITE, boxShadow: `0 0 10px ${toBuild > 0 ? AMBER : WARM_WHITE}` }} />
-                        {name}
-                      </h4>
-                      <span className="font-mono text-xs text-muted">{filtered.length}</span>
+
+            {/* Active group filter chip */}
+            {selectedGroup && (
+              <div className="animate-fade-up mt-5 flex justify-center">
+                <button type="button" onClick={() => onSelectGroup(null)}
+                  className="flex items-center gap-2 rounded-full border border-glow-amber/40 bg-glow-amber/10 px-4 py-1.5 text-xs font-semibold text-ink transition-colors hover:bg-glow-amber/20">
+                  Filtering: <span className="text-glow-amber">{selectedGroup}</span>
+                  <X className="h-3.5 w-3.5 text-muted" />
+                </button>
+              </div>
+            )}
+
+            {/* Connector stem between tiers */}
+            {groups.length > 0 && (
+              <div className="flex justify-center py-4" aria-hidden="true">
+                <span className="flex flex-col items-center">
+                  <span className="h-7 w-px bg-gradient-to-b from-glow-amber/70 to-glow-amber/10" />
+                  <ArrowDown className="h-5 w-5 text-glow-amber/80" />
+                </span>
+              </div>
+            )}
+
+            {/* TIER 2 + 3 — topic groups with their page cards */}
+            {groups.length > 0 && <>
+              <p className="mb-4 text-center font-mono text-xs text-muted">
+                {filteredGroups.length} of {groups.length} groups · {filteredGroups.reduce((n, [, members]) => n + members.length, 0)} pages
+              </p>
+              <div className="grid items-start gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                {filteredGroups.map(([name, members], gi) => {
+                  const toBuild = members.filter(page => !isExistingPage(page)).length
+                  const isSelected = selectedGroup === name
+                  const collapsed = collapsedGroups.has(name)
+                  const showAll = showAllGroups.has(name)
+                  const shown = showAll ? members : members.slice(0, PAGE_LIMIT)
+                  return (
+                    <div key={name} className={`animate-fade-up overflow-hidden rounded-2xl border bg-raised stagger-${Math.min(gi + 1, 8)} ${isSelected ? 'border-glow-amber/60 shadow-[0_0_28px_rgba(245,165,36,0.14)]' : 'border-line card-lift'}`}>
+                      <div className={`h-1 w-full ${GROUP_ACCENTS[gi % GROUP_ACCENTS.length]}`} />
+                      <div className="p-4 sm:p-5">
+                        <div className="flex items-center justify-between gap-2">
+                          <button type="button" onClick={() => onSelectGroup(isSelected ? null : name)}
+                            title={isSelected ? 'Clear group filter' : `Filter to ${name}`}
+                            className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 text-left">
+                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${toBuild > 0 ? 'bg-glow-amber shadow-[0_0_10px_rgba(245,165,36,0.55)]' : 'bg-ink'}`} />
+                            <span className={`truncate text-sm font-bold transition-colors ${isSelected ? 'text-glow-amber' : 'text-ink group-hover:text-glow-amber'}`}>{name}</span>
+                          </button>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <span className="font-mono text-xs text-muted">{members.length}{toBuild > 0 ? ` · ${toBuild} to build` : ''}</span>
+                            <button type="button" onClick={() => toggleCollapsed(name)} aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
+                              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-overlay/5 hover:text-ink">
+                              <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${collapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className={`collapse-body ${collapsed ? 'is-collapsed' : ''}`}>
+                          <div>
+                            <div className={collapsed ? '' : 'pt-4'}>
+                              <div className="space-y-3">{shown.map(card)}</div>
+                              {members.length > PAGE_LIMIT && (
+                                <button type="button" onClick={() => toggleShowAll(name)}
+                                  className="mt-3 w-full rounded-xl border border-line bg-overlay/5 py-2 text-xs font-semibold text-muted transition-colors hover:border-glow-amber/40 hover:text-ink">
+                                  {showAll ? 'Show fewer pages' : `Show all ${members.length} pages`}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-3">{filtered.map(card)}</div>
-                  </div>
-                )
-              })}
-            </div>}
+                  )
+                })}
+              </div>
+            </>}
             {!mapping.spokes?.length && <p className="py-10 text-center text-sm text-muted">No distinct supporting pages were identified. Add evidence for more reader tasks and rebuild.</p>}
             {pages.length > 0 && visible.length === 0 && <p className="py-10 text-center text-sm text-muted">No pages match these filters.</p>}
           </>}
@@ -360,7 +322,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
                   <details className="mt-3 text-xs">
                     <summary className="cursor-pointer font-medium text-soft-violet hover:text-ink">{pageKeywords(page).length} keywords covered</summary>
                     <p className="mt-2 text-muted">Main keyword: <span className="text-ink">{page.target_keyword}</span></p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">{page.targeted_keywords?.map(keyword => <span key={keyword} className="rounded-md border border-line bg-white/5 px-2 py-1 text-muted">{keyword}</span>)}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">{page.targeted_keywords?.map(keyword => <span key={keyword} className="rounded-md border border-line bg-overlay/5 px-2 py-1 text-muted">{keyword}</span>)}</div>
                   </details>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -399,10 +361,10 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
         </div>
 
         {selected && <aside ref={briefRef} aria-label="Page brief" className="border-t border-line p-4 sm:p-5 xl:border-l xl:border-t-0">
-          <div className="rounded-2xl border border-line bg-raised p-6 shadow-[0_24px_64px_rgba(0,0,0,0.5)] xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
+          <div className="rounded-2xl border border-line bg-raised p-6 shadow-panel xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
             <div className="flex items-start justify-between gap-3">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-glow-amber">Page brief</p>
-              <button type="button" aria-label="Close page brief" onClick={() => setSelectedTarget(null)} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/5 hover:text-ink"><X className="h-4 w-4" /></button>
+              <button type="button" aria-label="Close page brief" onClick={() => setSelectedTarget(null)} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-overlay/5 hover:text-ink"><X className="h-4 w-4" /></button>
             </div>
             <h4 className="mt-3 font-display text-xl font-bold tracking-tight text-ink">{label(selected)}</h4>
             <p className="mt-1 break-all font-mono text-xs text-muted">{selected.existing_url || selected.slug || '/'}</p>
@@ -424,7 +386,7 @@ export function TopicalAuthorityMap({ mapping, onOpen }: Props) {
               {!!selected.scope_out?.length && <div><p className="mb-1 font-semibold text-ink">Leave to other pages</p><ul className="list-disc space-y-1 pl-4 text-muted">{selected.scope_out.map(scope => <li key={scope}>{scope}</li>)}</ul></div>}
               <div><p className="mb-1 font-semibold text-ink">Primary keyword</p><p className="text-muted">{selected.target_keyword}</p><p className="mt-2 font-mono text-xs text-muted">Volume: {selected.search_volume?.toLocaleString() ?? 'Unknown'} · Difficulty: {selected.difficulty ?? 'Unknown'}</p></div>
               {selected.evidence_type === 'editorial_proposal' && <div className="rounded-xl border border-glow-amber/25 bg-glow-amber/[0.06] p-3.5 text-xs leading-relaxed text-ink">Proposed from: {selected.support_phrase || 'site context'}. {selected.evidence_rationale || 'Confirm relevance and demand with research.'} No measured demand is implied.</div>}
-              {!!selected.targeted_keywords?.length && <div><p className="mb-2 font-semibold text-ink">Supporting keywords</p><div className="flex flex-wrap gap-1.5">{selected.targeted_keywords.map(keyword => <span key={keyword} className="rounded-md border border-line bg-white/5 px-2 py-1 text-xs text-muted">{keyword}</span>)}</div></div>}
+              {!!selected.targeted_keywords?.length && <div><p className="mb-2 font-semibold text-ink">Supporting keywords</p><div className="flex flex-wrap gap-1.5">{selected.targeted_keywords.map(keyword => <span key={keyword} className="rounded-md border border-line bg-overlay/5 px-2 py-1 text-xs text-muted">{keyword}</span>)}</div></div>}
               {!!selected.h2_sections?.length && <div><p className="mb-2 font-semibold text-ink">Section outline</p><ol className="list-decimal space-y-2 pl-4 text-muted">{selected.h2_sections.map((section, index) => <li key={index}><span className="font-medium text-ink">{section.h2_heading}</span>{section.section_definition && <p className="mt-0.5 text-xs">{section.section_definition}</p>}{!!section.targeted_keywords_placed_here?.length && <p className="mt-1 text-xs">Include: {section.targeted_keywords_placed_here.join(', ')}</p>}</li>)}</ol></div>}
               {!!selected.faq_schema_questions?.length && <div><p className="mb-2 font-semibold text-ink">Questions to answer</p>{selected.faq_schema_questions.map((faq, index) => <div key={index} className="mt-1 text-muted"><p>{faq.question}</p>{!!faq.targeted_keywords_placed_here?.length && <p className="mt-1 text-xs">Include: {faq.targeted_keywords_placed_here.join(', ')}</p>}</div>)}</div>}
               {!!selected.tool_functions?.length && <div><p className="mb-2 font-semibold text-ink">Tool requirements</p><ul className="list-disc pl-4 text-muted">{selected.tool_functions.map(item => <li key={item}>{item}</li>)}</ul></div>}

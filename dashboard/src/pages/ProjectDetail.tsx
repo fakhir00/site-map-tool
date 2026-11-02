@@ -208,7 +208,7 @@ export function ProjectDetail() {
                 <p className="font-display font-bold text-ink">{isPaused ? 'Gap Scan paused' : 'Gap Scan in progress'}</p>
                 <span className="font-mono text-sm font-semibold text-glow-amber">{percent}%</span>
               </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
+              <div className="h-2.5 overflow-hidden rounded-full bg-overlay/5">
                 <div className="h-full rounded-full bg-glow-amber shadow-[0_0_16px_rgba(245,165,36,0.6)] transition-all duration-500" style={{ width: `${Math.min(percent, 100)}%` }} />
               </div>
               <p className="mt-2.5 truncate text-sm text-muted">{scanStatus?.current_url || 'Finding top Google competitors and crawling sitemaps'}</p>
@@ -288,7 +288,7 @@ export function ProjectDetail() {
               Crawled sources <span className="ml-2 font-mono text-xs font-normal text-muted">{sources.length}</span>
             </summary>
             <div className="disclosure"><div>
-            <div className="mt-3 max-h-72 divide-y divide-white/5 overflow-y-auto">
+            <div className="mt-3 max-h-72 divide-y divide-overlay/5 overflow-y-auto">
               {sources.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted">No sources have been queued yet.</p>
               ) : (
@@ -329,7 +329,7 @@ export function ProjectDetail() {
               Gap Scan history <span className="ml-2 font-mono text-xs font-normal text-muted">{jobs.length}</span>
             </summary>
             <div className="disclosure"><div>
-            <div className="mt-3 divide-y divide-white/5">
+            <div className="mt-3 divide-y divide-overlay/5">
               {jobs.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted">No Gap Scan jobs yet.</p>
               ) : (

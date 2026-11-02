@@ -59,7 +59,7 @@ function StepPills({ step }: { step: 1 | 2 | 3 }) {
             >
               <span
                 className={`flex h-4 w-4 items-center justify-center rounded-full font-mono text-[10px] ${
-                  active ? 'bg-glow-amber text-abyss' : done ? 'bg-alive-green text-abyss' : 'bg-white/10 text-muted'
+                  active ? 'bg-glow-amber text-on-accent' : done ? 'bg-alive-green text-on-accent' : 'bg-overlay/10 text-muted'
                 }`}
               >
                 {done ? <Check className="h-2.5 w-2.5" strokeWidth={3.5} /> : n}

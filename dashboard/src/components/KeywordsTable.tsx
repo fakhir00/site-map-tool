@@ -376,7 +376,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               <th className="px-5 py-3.5 text-right">Save</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody className="divide-y divide-overlay/5">
             {keywords.length === 0 ? (
               <tr>
                 <td className="px-5 py-14 text-center" colSpan={8}>
@@ -389,7 +389,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
               </tr>
             ) : (
               keywords.map((keyword) => (
-                <tr className="transition-colors hover:bg-white/[0.03]" key={keyword.id}>
+                <tr className="transition-colors hover:bg-overlay/[0.03]" key={keyword.id}>
                   <td className="max-w-[360px] px-5 py-4">
                     <div className="flex items-center gap-2">
                       {isSelectionMode && (
@@ -425,7 +425,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                         <a
                           className={`inline-flex max-w-[160px] items-center truncate rounded-lg border px-2 py-1 text-xs font-medium transition-colors ${
                             source.sourceType === 'own'
-                              ? 'border-line bg-white/5 text-muted hover:text-ink'
+                              ? 'border-line bg-overlay/5 text-muted hover:text-ink'
                               : 'border-soft-violet/30 bg-soft-violet/10 text-soft-violet hover:text-ink'
                           }`}
                           href={source.href}
@@ -438,7 +438,7 @@ export function KeywordsTable({ projectId, isActive = false }: { projectId: stri
                         </a>
                       ))}
                       {sourceDomains(keyword).length > 4 && (
-                        <span className="inline-flex rounded-lg border border-line bg-white/5 px-2 py-1 text-xs font-medium text-muted">
+                        <span className="inline-flex rounded-lg border border-line bg-overlay/5 px-2 py-1 text-xs font-medium text-muted">
                           +{sourceDomains(keyword).length - 4}
                         </span>
                       )}
