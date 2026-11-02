@@ -1275,27 +1275,52 @@ Each object must have:
         if not isinstance(payload, list):
             return []
 
+        existing_lookup = {clean_phrase(k): k for k in existing_keywords}
         valid_keywords = []
         seen_phrases: set[str] = set()
         for kw in payload:
             if isinstance(kw, dict) and kw.get("phrase"):
                 phrase = clean_phrase(str(kw["phrase"]))
                 kw_type = normalize_keyword_type(kw.get("type"))
-                if phrase in seen_phrases:
+                matched_phrase = existing_lookup.get(phrase, phrase)
+                if matched_phrase in seen_phrases:
                     continue
-                if not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
+                if phrase not in existing_lookup and not is_publishable_keyword(phrase, min_words=2, topic_terms=topic_terms, negative_terms=negative_terms):
                     continue
-                valid_keywords.append(_generated_keyword_for_review(
-                    kw, phrase, kw_type, seed_keywords, evidence, audit_summary, apply_gap_filter,
-                ))
-                seen_phrases.add(phrase)
-        return valid_keywords
+                valid_keywords.append({
+                    "phrase": matched_phrase,
+                    "type": kw_type or "top-pick",
+                })
+                seen_phrases.add(matched_phrase)
+        if valid_keywords:
+            return valid_keywords
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse JSON from %s: %s", ai_provider_name(), exc)
-        return []
     except Exception as exc:
         logger.error("Failed to generate top picks via %s: %s", ai_provider_name(), exc)
-        return []
+
+    # Fallback: score existing keywords by relevance to seed keywords
+    if existing_keywords:
+        logger.info("Using algorithmic fallback for top picks")
+        cleaned_seeds = [clean_phrase(s) for s in seed_keywords]
+        seed_words: set[str] = set()
+        for s in cleaned_seeds:
+            seed_words.update(s.split())
+
+        scored = []
+        for k in existing_keywords:
+            cleaned = clean_phrase(k)
+            words = set(cleaned.split())
+            overlap = len(words & seed_words)
+            phrase_bonus = 3 if any(s in cleaned for s in cleaned_seeds) else 0
+            len_score = 2 if 3 <= len(cleaned.split()) <= 6 else 1
+            score = overlap * 2 + phrase_bonus + len_score
+            scored.append((score, k))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [{"phrase": k, "type": "top-pick"} for _, k in scored[:8]]
+
+    return []
 
 
 def filter_keyword_gap_recommendations(

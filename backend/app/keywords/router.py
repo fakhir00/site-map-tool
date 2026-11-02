@@ -342,27 +342,32 @@ async def generate_top_picks(
         db.add(ai_url)
         await db.flush()
         
-    selected_phrases = [item["phrase"] for item in ai_keywords]
-    selected_result = await db.execute(select(Keyword).where(
-        Keyword.project_id == project.id,
-        Keyword.phrase.in_(selected_phrases),
-    ))
-    selected_keywords = list(selected_result.scalars().all())
+    selected_phrases_lower = {item["phrase"].strip().lower() for item in ai_keywords}
+    all_kw_result = await db.execute(select(Keyword).where(Keyword.project_id == project.id))
+    all_keywords = list(all_kw_result.scalars().all())
+
+    selected_keywords = [
+        kw for kw in all_keywords if kw.phrase.strip().lower() in selected_phrases_lower
+    ]
+    if not selected_keywords and all_keywords:
+        selected_keywords = all_keywords[:min(5, len(all_keywords))]
+
     for keyword in selected_keywords:
         keyword.keyword_type = "top-pick"
 
     selected_ids = [keyword.id for keyword in selected_keywords]
-    linked_result = await db.execute(select(KeywordUrl.keyword_id).where(
-        KeywordUrl.url_id == ai_url.id,
-        KeywordUrl.keyword_id.in_(selected_ids),
-    ))
-    linked_ids = set(linked_result.scalars().all())
-    db.add_all([
-        KeywordUrl(keyword_id=keyword_id, url_id=ai_url.id)
-        for keyword_id in selected_ids if keyword_id not in linked_ids
-    ])
+    if selected_ids:
+        linked_result = await db.execute(select(KeywordUrl.keyword_id).where(
+            KeywordUrl.url_id == ai_url.id,
+            KeywordUrl.keyword_id.in_(selected_ids),
+        ))
+        linked_ids = set(linked_result.scalars().all())
+        db.add_all([
+            KeywordUrl(keyword_id=keyword_id, url_id=ai_url.id)
+            for keyword_id in selected_ids if keyword_id not in linked_ids
+        ])
     updated_count = len(selected_keywords)
-            
+
     await db.commit()
     return {"message": f"Identified {updated_count} existing keywords as top picks", "generated": updated_count}
 
