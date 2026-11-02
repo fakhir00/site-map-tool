@@ -386,7 +386,7 @@ export function ProjectsList() {
               </div>
               <button
                 aria-label="Close"
-                className="rounded-lg p-2 text-muted transition-colors hover:bg-white/5 hover:text-ink"
+                className="rounded-lg p-2 text-muted transition-colors hover:bg-overlay/5 hover:text-ink"
                 onClick={() => setShowNewModal(false)}
                 type="button"
               >

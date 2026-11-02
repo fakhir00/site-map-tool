@@ -186,7 +186,7 @@ export function GeneratedArticlePanel({ projectId, articleId }: { projectId: str
         <Card lift={false} className="overflow-hidden p-0">
           <button
             onClick={() => setPromptOpen(!promptOpen)}
-            className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-white/[0.02]"
+            className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-overlay/[0.02]"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-soft-violet/15 text-soft-violet">
@@ -233,7 +233,7 @@ export function GeneratedArticlePanel({ projectId, articleId }: { projectId: str
         <Card lift={false} className="overflow-hidden p-0">
           <button
             onClick={() => setArticleOpen(!articleOpen)}
-            className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-white/[0.02]"
+            className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-overlay/[0.02]"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-alive-green/15 text-alive-green">
@@ -254,7 +254,7 @@ export function GeneratedArticlePanel({ projectId, articleId }: { projectId: str
                   <button
                     onClick={() => setViewMode('preview')}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                      viewMode === 'preview' ? 'bg-white/10 text-ink' : 'text-muted hover:text-ink'
+                      viewMode === 'preview' ? 'bg-overlay/10 text-ink' : 'text-muted hover:text-ink'
                     }`}
                   >
                     <Eye className="h-4 w-4" /> Preview
@@ -262,7 +262,7 @@ export function GeneratedArticlePanel({ projectId, articleId }: { projectId: str
                   <button
                     onClick={() => setViewMode('markdown')}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                      viewMode === 'markdown' ? 'bg-white/10 text-ink' : 'text-muted hover:text-ink'
+                      viewMode === 'markdown' ? 'bg-overlay/10 text-ink' : 'text-muted hover:text-ink'
                     }`}
                   >
                     <Code className="h-4 w-4" /> Markdown

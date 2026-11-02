@@ -160,7 +160,7 @@ export function HubSpokeWorkspace() {
         <div className="disclosure"><div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {history.map((item, hi) => (
-            <div key={item.id} className={`animate-fade-up relative rounded-xl border p-3.5 transition-colors stagger-${Math.min(hi + 1, 8)} ${activeHistoryId === item.id ? 'border-glow-amber/60 bg-glow-amber/[0.06]' : 'border-line bg-raised hover:border-white/15'}`}>
+            <div key={item.id} className={`animate-fade-up relative rounded-xl border p-3.5 transition-colors stagger-${Math.min(hi + 1, 8)} ${activeHistoryId === item.id ? 'border-glow-amber/60 bg-glow-amber/[0.06]' : 'border-line bg-raised hover:border-overlay/15'}`}>
               <button type="button" disabled={locked || deleteHistoryMutation.isPending} onClick={() => loadHistory(item.id)} className="block w-full pr-8 text-left disabled:opacity-50">
                 <span className="block truncate text-sm font-semibold text-ink">{item.title}</span>
                 <span className="mt-1.5 flex items-center gap-2 text-xs text-muted"><Clock3 className="h-3 w-3" />{new Date(item.created_at).toLocaleDateString()} · {item.keyword_count} keywords</span>
@@ -248,7 +248,7 @@ export function HubSpokeWorkspace() {
             <p className="font-display font-bold text-ink">Planning your topic coverage</p>
             <span className="font-mono text-sm text-glow-amber">{elapsed}s</span>
           </div>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="animate-shimmer h-full w-full rounded-full" /></div>
+          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-overlay/5"><div className="animate-shimmer h-full w-full rounded-full" /></div>
           <p className="mt-3 text-xs text-muted">Discovery, page planning and intent review can take a few minutes. Keep this tab open; successful maps are saved automatically.</p>
         </div>
       )}

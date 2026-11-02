@@ -117,7 +117,7 @@ export default function WriteBlog() {
                 <button
                   type="button"
                   onClick={() => setSelectedKeyword(null)}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/5 hover:text-ink"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-overlay/5 hover:text-ink"
                   aria-label="Clear selected keyword"
                 >
                   <X className="h-4 w-4" />

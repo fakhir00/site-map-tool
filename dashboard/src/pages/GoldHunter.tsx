@@ -112,7 +112,7 @@ function SeedSkeleton() {
   return (
     <div className="space-y-8" aria-hidden="true">
       {[0, 1].map((card) => (
-        <div key={card} className="rounded-2xl border border-white/8 bg-surface p-8">
+        <div key={card} className="rounded-2xl border border-overlay/8 bg-surface p-8">
           <div className="animate-shimmer h-5 w-56 rounded-full" />
           <div className="animate-shimmer mt-6 h-24 rounded-xl" />
           <div className="mt-6 space-y-3">
@@ -194,7 +194,7 @@ export function GoldHunter() {
           />
           <div className="relative flex flex-col gap-3 sm:flex-row">
             <Input
-              className="h-14 flex-1 rounded-2xl border-white/10 bg-raised/90 px-5 text-base shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur"
+              className="h-14 flex-1 rounded-2xl border-overlay/10 bg-raised/90 px-5 text-base shadow-input backdrop-blur"
               placeholder="https://yoursite.com/best-page"
               value={url}
               onChange={(e) => setUrl(e.target.value)}

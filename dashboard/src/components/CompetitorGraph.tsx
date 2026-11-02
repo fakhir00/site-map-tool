@@ -9,6 +9,7 @@ import {
 } from 'recharts'
 import { Card } from './ui/Card'
 import { Activity } from 'lucide-react'
+import { useTheme } from './themeContext'
 
 interface SourceData {
   source_type: string
@@ -28,6 +29,13 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
     subject: source.source_domain?.replace(/^https?:\/\//, ''),
     A: source.urls_found,
   }))
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
+  const gridStroke = isLight ? '#E3D4B8' : '#2A3348'
+  const tickFill = isLight ? '#6F6355' : '#9AA3B2'
+  const tooltipStyle = isLight
+    ? { backgroundColor: '#FFFFFF', borderColor: '#E6D9C3', borderRadius: '12px', color: '#1D1712', boxShadow: '0 16px 40px rgba(93,64,28,0.18)' }
+    : { backgroundColor: '#161B26', borderColor: '#1C2230', borderRadius: '12px', color: '#F2F4F8', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }
 
   return (
     <Card className="overflow-hidden p-0" lift={false}>
@@ -51,8 +59,10 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
       </div>
 
       <div className="relative h-[380px] w-full">
-        {/* Subtle dark grid backdrop */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:28px_28px]"></div>
+        {/* Subtle grid backdrop — white veil on dark, ink veil on light */}
+        <div className={`pointer-events-none absolute inset-0 bg-[size:28px_28px] ${isLight
+          ? 'bg-[linear-gradient(to_right,#1d171208_1px,transparent_1px),linear-gradient(to_bottom,#1d171208_1px,transparent_1px)]'
+          : 'bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)]'}`}></div>
 
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
@@ -63,10 +73,10 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart cx="50%" cy="50%" outerRadius="68%" data={data}>
-              <PolarGrid stroke="#2A3348" />
+              <PolarGrid stroke={gridStroke} />
               <PolarAngleAxis
                 dataKey="subject"
-                tick={{ fill: '#9AA3B2', fontSize: 11, fontWeight: 500 }}
+                tick={{ fill: tickFill, fontSize: 11, fontWeight: 500 }}
               />
               <PolarRadiusAxis
                 angle={30}
@@ -75,15 +85,9 @@ export function CompetitorGraph({ sources, isActive = false }: CompetitorGraphPr
                 axisLine={false}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: '#161B26',
-                  borderColor: '#1C2230',
-                  borderRadius: '12px',
-                  color: '#F2F4F8',
-                  boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-                }}
-                itemStyle={{ color: '#F5A524', fontWeight: 600 }}
-                labelStyle={{ color: '#9AA3B2' }}
+                contentStyle={tooltipStyle}
+                itemStyle={{ color: isLight ? '#B45309' : '#F5A524', fontWeight: 600 }}
+                labelStyle={{ color: tickFill }}
                 formatter={(value) => [`${value} pages`, 'URLs found']}
               />
               <Radar
