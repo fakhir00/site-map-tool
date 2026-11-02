@@ -13,6 +13,12 @@ import type {
 
 type DemoUserRecord = User & {
   password: string
+  is_active?: boolean
+  status?: 'pending_proof' | 'pending_approval' | 'approved' | 'rejected'
+  payment_proof_filename?: string | null
+  payment_proof_path?: string | null
+  rejection_reason?: string | null
+  reviewed_at?: string | null
 }
 
 type DemoKeywordBankRecord = KeywordBankEntry & {
@@ -52,11 +58,13 @@ const defaultState: DemoState = {
 
 export class DemoApiError extends Error {
   status: number
+  data?: Record<string, unknown>
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, data?: Record<string, unknown>) {
     super(message)
     this.name = 'DemoApiError'
     this.status = status
+    this.data = data
   }
 }
 
@@ -561,8 +569,26 @@ export async function demoFetch<T>(endpoint: string, options: RequestInit = {}):
       throw new DemoApiError('Password must be at least 8 characters', 422)
     }
 
-    if (state.users.some((user) => user.email === email)) {
-      throw new DemoApiError('Email already registered', 400)
+    const existingUser = state.users.find((u) => u.email === email)
+    if (existingUser) {
+      if (existingUser.status === 'approved' || (existingUser.is_active && existingUser.status !== 'rejected')) {
+        throw new DemoApiError('Email already registered', 400)
+      }
+      if (existingUser.status === 'pending_approval') {
+        throw new DemoApiError('An account with this email is already awaiting approval', 400)
+      }
+      existingUser.password = password
+      if (fullName) existingUser.full_name = fullName
+      existingUser.status = 'pending_proof'
+      existingUser.is_active = false
+      existingUser.rejection_reason = null
+      saveState(state)
+      return {
+        message: 'Account details saved. Please upload your payment proof to complete registration.',
+        status: 'pending_proof',
+        email: existingUser.email,
+        full_name: existingUser.full_name,
+      } as T
     }
 
     const user = {
@@ -571,6 +597,8 @@ export async function demoFetch<T>(endpoint: string, options: RequestInit = {}):
       password,
       full_name: fullName || null,
       plan: 'free',
+      is_active: false,
+      status: 'pending_proof',
       created_at: isoNow(),
     } satisfies DemoUserRecord
 
@@ -578,9 +606,58 @@ export async function demoFetch<T>(endpoint: string, options: RequestInit = {}):
     saveState(state)
 
     return {
-      access_token: user.id,
-      token_type: 'bearer',
-      user: stripPassword(user),
+      message: 'Account created. Please upload your payment proof to complete registration.',
+      status: 'pending_proof',
+      email: user.email,
+      full_name: user.full_name,
+    } as T
+  }
+
+  if (path === '/auth/upload-payment-proof' && method === 'POST') {
+    let email = ''
+    let filename = 'payment-proof.png'
+    if (options.body instanceof FormData) {
+      email = String(options.body.get('email') || '').trim().toLowerCase()
+      const file = options.body.get('file') as File | null
+      if (file && file.name) filename = file.name
+    } else {
+      const body = jsonBody(options)
+      email = String(body.email || '').trim().toLowerCase()
+      if (body.filename) filename = String(body.filename)
+    }
+
+    const user = state.users.find((item) => item.email === email)
+    if (!user) {
+      throw new DemoApiError('User not found for this email', 404)
+    }
+
+    user.status = 'pending_approval'
+    user.payment_proof_filename = filename
+    user.payment_proof_path = filename
+    user.rejection_reason = null
+    saveState(state)
+
+    return {
+      message: 'Payment proof uploaded successfully. Awaiting approval.',
+      status: 'pending_approval',
+      email: user.email,
+    } as T
+  }
+
+  if (path === '/auth/registration-status' && method === 'GET') {
+    const email = String(url.searchParams.get('email') || '').trim().toLowerCase()
+    const user = state.users.find((item) => item.email === email)
+    if (!user) {
+      throw new DemoApiError('No registration found for this email', 404)
+    }
+    return {
+      email: user.email,
+      full_name: user.full_name,
+      status: user.status || (user.is_active ? 'approved' : 'pending_proof'),
+      is_active: Boolean(user.is_active),
+      has_proof: Boolean(user.payment_proof_path),
+      uploaded_at: user.reviewed_at || isoNow(),
+      rejection_reason: user.rejection_reason || null,
     } as T
   }
 
@@ -594,11 +671,116 @@ export async function demoFetch<T>(endpoint: string, options: RequestInit = {}):
       throw new DemoApiError('Invalid email or password', 401)
     }
 
+    const status = user.status || (user.is_active ? 'approved' : 'pending_proof')
+    if (status === 'pending_proof') {
+      throw new DemoApiError('Please upload your payment proof to continue.', 403, {
+        code: 'PENDING_PROOF',
+        status: 'pending_proof',
+        email: user.email,
+        message: 'Please upload your payment proof to continue.',
+      })
+    }
+    if (status === 'pending_approval') {
+      throw new DemoApiError('Your payment proof is currently under review. Please wait for approval.', 403, {
+        code: 'PENDING_APPROVAL',
+        status: 'pending_approval',
+        email: user.email,
+        message: 'Your payment proof is currently under review. Please wait for approval.',
+      })
+    }
+    if (status === 'rejected') {
+      throw new DemoApiError(user.rejection_reason || 'Your payment proof was not approved.', 403, {
+        code: 'REJECTED',
+        status: 'rejected',
+        email: user.email,
+        rejection_reason: user.rejection_reason,
+        message: user.rejection_reason || 'Your payment proof was not approved. Please verify your information and try again or contact customer support.',
+      })
+    }
+
     return {
       access_token: user.id,
       token_type: 'bearer',
       user: stripPassword(user),
     } as T
+  }
+
+  if (path === '/admin/login' && method === 'POST') {
+    const body = jsonBody(options)
+    const adminId = String(body.admin_id || '').trim()
+    const password = String(body.password || '')
+
+    if (adminId !== 'crawladmin@1' || password !== 'crawlgap@7861') {
+      throw new DemoApiError('Invalid superadmin credentials', 401)
+    }
+
+    return {
+      access_token: 'demo-superadmin-token',
+      token_type: 'bearer',
+      role: 'superadmin',
+      admin_id: 'crawladmin@1',
+    } as T
+  }
+
+  if (path === '/admin/requests' && method === 'GET') {
+    const requests = state.users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      full_name: u.full_name,
+      status: u.status || (u.is_active ? 'approved' : 'pending_proof'),
+      is_active: Boolean(u.is_active),
+      has_payment_proof: Boolean(u.payment_proof_filename || u.payment_proof_path),
+      payment_proof_filename: u.payment_proof_filename || (u.payment_proof_path ? 'proof.png' : null),
+      payment_proof_url: u.payment_proof_path ? `/api/admin/proof-image/${u.id}` : null,
+      payment_proof_uploaded_at: u.reviewed_at || isoNow(),
+      rejection_reason: u.rejection_reason || null,
+      created_at: u.created_at,
+      reviewed_at: u.reviewed_at || null,
+    }))
+    return requests as T
+  }
+
+  if (path === '/admin/stats' && method === 'GET') {
+    const total = state.users.length
+    const pending_approval = state.users.filter((u) => u.status === 'pending_approval').length
+    const approved = state.users.filter((u) => u.status === 'approved' || (u.is_active && u.status !== 'rejected')).length
+    const rejected = state.users.filter((u) => u.status === 'rejected').length
+    const pending_proof = state.users.filter((u) => u.status === 'pending_proof').length
+
+    return {
+      total,
+      pending_approval,
+      approved,
+      rejected,
+      pending_proof,
+    } as T
+  }
+
+  const approveMatch = path.match(/^\/admin\/requests\/([^/]+)\/approve$/)
+  if (approveMatch && method === 'POST') {
+    const targetId = approveMatch[1]
+    const targetUser = state.users.find((u) => u.id === targetId)
+    if (!targetUser) throw new DemoApiError('User not found', 404)
+    targetUser.is_active = true
+    targetUser.status = 'approved'
+    targetUser.rejection_reason = null
+    targetUser.reviewed_at = isoNow()
+    saveState(state)
+    return { success: true, message: `Account for ${targetUser.email} approved.` } as T
+  }
+
+  const rejectMatch = path.match(/^\/admin\/requests\/([^/]+)\/reject$/)
+  if (rejectMatch && method === 'POST') {
+    const targetId = rejectMatch[1]
+    const body = jsonBody(options)
+    const targetUser = state.users.find((u) => u.id === targetId)
+    if (!targetUser) throw new DemoApiError('User not found', 404)
+    targetUser.is_active = false
+    targetUser.status = 'rejected'
+    targetUser.rejection_reason = String(body.reason || 'Payment proof could not be verified. Please verify your information and try again or contact customer support.')
+    targetUser.reviewed_at = isoNow()
+    saveState(state)
+    return { success: true, message: `Registration for ${targetUser.email} rejected.` } as T
   }
 
   const user = currentUser(state, options)

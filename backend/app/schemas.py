@@ -34,6 +34,8 @@ class UserOut(BaseModel):
     email: str
     full_name: Optional[str]
     plan: str
+    is_active: bool = False
+    status: str = "pending_proof"
     created_at: datetime
 
     class Config:
@@ -44,6 +46,63 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class RegisterResponse(BaseModel):
+    message: str
+    status: str
+    email: str
+    full_name: Optional[str] = None
+
+
+class PaymentProofResponse(BaseModel):
+    message: str
+    status: str
+    email: str
+
+
+class RegistrationStatusResponse(BaseModel):
+    email: str
+    full_name: Optional[str] = None
+    status: str
+    is_active: bool
+    has_proof: bool
+    uploaded_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+
+
+class AdminLogin(BaseModel):
+    admin_id: str
+    password: str
+
+
+class AdminTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str = "superadmin"
+    admin_id: str
+
+
+class AdminUserRequestOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    full_name: Optional[str] = None
+    status: str
+    is_active: bool
+    has_payment_proof: bool
+    payment_proof_filename: Optional[str] = None
+    payment_proof_url: Optional[str] = None
+    payment_proof_uploaded_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+    reviewed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AdminRejectBody(BaseModel):
+    reason: Optional[str] = None
 
 
 # ── Projects ──────────────────────────────────────────────────

@@ -17,6 +17,9 @@ const WriteBlogArticle = lazy(() => import('./pages/WriteBlogArticle'))
 const SavedKeywords = lazy(() => import('./pages/SavedKeywords'))
 const GoldHunter = lazy(() => import('./pages/GoldHunter').then((module) => ({ default: module.GoldHunter })))
 const HubSpokeWorkspace = lazy(() => import('./pages/HubSpokeWorkspace').then((module) => ({ default: module.HubSpokeWorkspace })))
+const PaymentProofUpload = lazy(() => import('./pages/PaymentProofUpload').then((module) => ({ default: module.PaymentProofUpload })))
+const Waitlist = lazy(() => import('./pages/Waitlist').then((module) => ({ default: module.Waitlist })))
+const SuperAdmin = lazy(() => import('./pages/SuperAdmin').then((module) => ({ default: module.SuperAdmin })))
 
 function PrivateRoute() {
   const location = useLocation()
@@ -46,6 +49,13 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
           </Route>
+
+          {/* Payment Proof Verification & Waitlist */}
+          <Route path="/payment-proof" element={<PaymentProofUpload />} />
+          <Route path="/waitlist" element={<Waitlist />} />
+
+          {/* Superadmin Portal - Hidden & Noindex */}
+          <Route path="/superadmin" element={<SuperAdmin />} />
 
           <Route element={<PrivateRoute />}>
             <Route path="/" element={<DashboardLayout />}>

@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, Lock, Mail, Map } from 'lucide-react'
-import { DEMO_BACKEND_ENABLED, api, auth, type User } from '../lib/api'
+import { DEMO_BACKEND_ENABLED, api, auth, ApiError, type User } from '../lib/api'
 import { marketingUrl } from '../lib/marketing'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -37,6 +37,26 @@ export function Login() {
       auth.setToken(data.access_token)
       navigate(from, { replace: true })
     } catch (err) {
+      if (err instanceof ApiError && err.data) {
+        const status = err.data.status as string | undefined
+        const userEmail = (err.data.email as string) || email
+        sessionStorage.setItem('pending_verification_email', userEmail)
+
+        if (status === 'pending_proof') {
+          navigate('/payment-proof', { state: { email: userEmail } })
+          return
+        }
+        if (status === 'pending_approval' || status === 'rejected') {
+          navigate('/waitlist', {
+            state: {
+              email: userEmail,
+              status,
+              rejection_reason: err.data.rejection_reason as string | undefined,
+            },
+          })
+          return
+        }
+      }
       setError(err instanceof Error ? err.message : 'Failed to sign in')
     } finally {
       setLoading(false)

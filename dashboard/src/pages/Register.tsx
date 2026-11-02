@@ -1,22 +1,14 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Lock, Mail, Map, UserRound } from 'lucide-react'
-import { DEMO_BACKEND_ENABLED, api, auth, type User } from '../lib/api'
+import { DEMO_BACKEND_ENABLED, api, type RegisterResult } from '../lib/api'
 import { marketingUrl } from '../lib/marketing'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 
-type TokenResponse = {
-  access_token: string
-  token_type: string
-  user: User
-}
-
 export function Register() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -30,14 +22,16 @@ export function Register() {
     setLoading(true)
 
     try {
-      const data = await api.post<TokenResponse>('/auth/register', {
+      const data = await api.post<RegisterResult>('/auth/register', {
         email,
         password,
         full_name: fullName,
       })
-      queryClient.clear()
-      auth.setToken(data.access_token)
-      navigate('/', { replace: true })
+      sessionStorage.setItem('pending_verification_email', data.email || email)
+      navigate('/payment-proof', {
+        replace: true,
+        state: { email: data.email || email, fullName },
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account')
     } finally {
@@ -57,8 +51,13 @@ export function Register() {
 
         <Card className="p-8">
           <div className="mb-7 text-center">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-glow-amber/30 bg-glow-amber/10 px-3 py-1 text-xs font-medium text-glow-amber">
+              <span>Step 1 of 2</span>
+              <span>•</span>
+              <span>Account Details</span>
+            </div>
             <h1 className="font-display text-2xl font-bold tracking-tight">Create your account</h1>
-            <p className="mt-2 text-sm leading-6 text-muted">A minute now, and your first project is ready to go.</p>
+            <p className="mt-2 text-sm leading-6 text-muted">Create your profile, then submit payment proof for approval.</p>
           </div>
 
           {DEMO_BACKEND_ENABLED && (

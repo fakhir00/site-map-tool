@@ -206,13 +206,55 @@ export type ArticleListResponse = {
   items: ArticleDraft[]
 }
 
+export type RegisterResult = {
+  message: string
+  status: 'pending_proof' | 'pending_approval' | 'approved' | 'rejected'
+  email: string
+  full_name: string | null
+}
+
+export type RegistrationStatus = {
+  email: string
+  full_name: string | null
+  status: 'pending_proof' | 'pending_approval' | 'approved' | 'rejected'
+  is_active: boolean
+  has_proof: boolean
+  uploaded_at: string | null
+  rejection_reason: string | null
+}
+
+export type AdminUserRequest = {
+  id: string
+  email: string
+  full_name: string | null
+  status: 'pending_proof' | 'pending_approval' | 'approved' | 'rejected'
+  is_active: boolean
+  has_payment_proof: boolean
+  payment_proof_filename: string | null
+  payment_proof_url: string | null
+  payment_proof_uploaded_at: string | null
+  rejection_reason: string | null
+  created_at: string
+  reviewed_at: string | null
+}
+
+export type AdminStats = {
+  total: number
+  pending_approval: number
+  approved: number
+  rejected: number
+  pending_proof: number
+}
+
 export class ApiError extends Error {
   status: number
+  data?: Record<string, unknown>
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, data?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.data = data
   }
 }
 
@@ -259,7 +301,7 @@ function apiConnectionMessage(reason: 'timeout' | 'network' | 'html') {
   return `Could not reach the API at ${API_URL}. Make sure the backend is running and CORS allows this dashboard URL.`
 }
 
-async function parseErrorResponse(response: Response) {
+async function parseErrorResponse(response: Response): Promise<{ message: string; data?: Record<string, unknown> }> {
   const contentType = response.headers.get('content-type') || ''
 
   if (contentType.includes('application/json')) {
@@ -268,19 +310,25 @@ async function parseErrorResponse(response: Response) {
       | null
 
     if (payload) {
+      const data = (
+        typeof payload.detail === 'object' && payload.detail !== null
+          ? payload.detail
+          : payload
+      ) as Record<string, unknown>
+
       if ('detail' in payload && payload.detail !== undefined) {
-        return errorMessage(payload.detail)
+        return { message: errorMessage(payload.detail), data }
       }
       if ('message' in payload && payload.message !== undefined) {
-        return errorMessage(payload.message)
+        return { message: errorMessage(payload.message), data }
       }
       if ('error' in payload && payload.error !== undefined) {
-        return errorMessage(payload.error)
+        return { message: errorMessage(payload.error), data }
       }
 
       const serialized = JSON.stringify(payload)
       if (serialized !== '{}' && serialized !== '[]') {
-        return serialized
+        return { message: serialized, data }
       }
     }
   }
@@ -288,18 +336,18 @@ async function parseErrorResponse(response: Response) {
   const text = (await response.text().catch(() => '')).trim()
 
   if (contentType.includes('text/html') || /^<!doctype html/i.test(text) || /^<html/i.test(text)) {
-    return apiConnectionMessage('html')
+    return { message: apiConnectionMessage('html') }
   }
 
   if (text) {
-    return text
+    return { message: text }
   }
 
   if (response.status === 404 && needsProductionApiUrl) {
-    return apiConnectionMessage('network')
+    return { message: apiConnectionMessage('network') }
   }
 
-  return `${response.status} ${response.statusText || 'API request failed'}`
+  return { message: `${response.status} ${response.statusText || 'API request failed'}` }
 }
 
 export const auth = {
@@ -314,13 +362,34 @@ export const auth = {
   },
 }
 
+export const adminAuth = {
+  hasToken() {
+    return Boolean(localStorage.getItem('superadmin_token'))
+  },
+  getToken() {
+    return localStorage.getItem('superadmin_token')
+  },
+  setToken(adminToken: string) {
+    localStorage.setItem('superadmin_token', adminToken)
+  },
+  clear() {
+    localStorage.removeItem('superadmin_token')
+  },
+}
+
 export const api = {
   async fetch<T>(endpoint: string, options: ApiRequestInit = {}): Promise<T> {
     const { timeoutMs = REQUEST_TIMEOUT_MS, ...requestOptions } = options
     const headers = new Headers(options.headers)
     const accessToken = token()
+    const superadminToken = adminAuth.getToken()
 
-    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+    if (endpoint.startsWith('/admin') && superadminToken && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${superadminToken}`)
+    } else if (accessToken && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${accessToken}`)
+    }
+
     if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json')
     }
@@ -333,7 +402,7 @@ export const api = {
         })
       } catch (err) {
         if (err instanceof DemoApiError) {
-          throw new ApiError(err.message, err.status)
+          throw new ApiError(err.message, err.status, err.data)
         }
         throw new ApiError(err instanceof Error ? err.message : 'Demo backend failed', 0)
       }
@@ -381,14 +450,26 @@ export const api = {
     }
 
     if (response.status === 401) {
-      auth.clear()
-      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
-        window.location.assign('/login')
+      if (endpoint.startsWith('/admin')) {
+        adminAuth.clear()
+      } else {
+        auth.clear()
+        const pathname = window.location.pathname
+        if (
+          !pathname.startsWith('/login') &&
+          !pathname.startsWith('/register') &&
+          !pathname.startsWith('/superadmin') &&
+          !pathname.startsWith('/payment-proof') &&
+          !pathname.startsWith('/waitlist')
+        ) {
+          window.location.assign('/login')
+        }
       }
     }
 
     if (!response.ok) {
-      throw new ApiError(await parseErrorResponse(response), response.status)
+      const errRes = await parseErrorResponse(response)
+      throw new ApiError(errRes.message, response.status, errRes.data)
     }
 
     if (response.status === 204) return null as T
@@ -417,10 +498,19 @@ export const api = {
   },
 
   post<T>(endpoint: string, body?: unknown, options: ApiRequestInit = {}): Promise<T> {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
     return api.fetch<T>(endpoint, {
       ...options,
       method: 'POST',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: isFormData ? (body as FormData) : body === undefined ? undefined : JSON.stringify(body),
+    })
+  },
+
+  upload<T>(endpoint: string, formData: FormData, options: ApiRequestInit = {}): Promise<T> {
+    return api.fetch<T>(endpoint, {
+      ...options,
+      method: 'POST',
+      body: formData,
     })
   },
 

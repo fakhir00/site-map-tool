@@ -115,6 +115,20 @@ async def _ensure_runtime_schema(conn):
             await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN is_done BOOLEAN NOT NULL DEFAULT 0"))
         if "done_at" not in bank_columns:
             await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN done_at DATETIME"))
+
+        result = await conn.execute(text("PRAGMA table_info(users)"))
+        user_columns = {row[1] for row in result.fetchall()}
+        for col, col_type in [
+            ("status", "VARCHAR(50) DEFAULT 'approved'"),
+            ("payment_proof_path", "VARCHAR(512)"),
+            ("payment_proof_filename", "VARCHAR(255)"),
+            ("payment_proof_uploaded_at", "DATETIME"),
+            ("rejection_reason", "TEXT"),
+            ("reviewed_at", "DATETIME"),
+        ]:
+            if col not in user_columns:
+                await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+        await conn.execute(text("UPDATE users SET status = 'approved' WHERE (status IS NULL OR status = '') AND is_active = 1"))
         return
 
     result = await conn.execute(
@@ -192,6 +206,20 @@ async def _ensure_runtime_schema(conn):
     if "done_at" not in bank_columns:
         await conn.execute(text("ALTER TABLE keyword_bank ADD COLUMN done_at TIMESTAMP WITH TIME ZONE"))
 
+    result = await conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"))
+    user_columns = {row[0] for row in result.fetchall()}
+    for col, col_type in [
+        ("status", "VARCHAR(50) DEFAULT 'approved'"),
+        ("payment_proof_path", "VARCHAR(512)"),
+        ("payment_proof_filename", "VARCHAR(255)"),
+        ("payment_proof_uploaded_at", "TIMESTAMP WITH TIME ZONE"),
+        ("rejection_reason", "TEXT"),
+        ("reviewed_at", "TIMESTAMP WITH TIME ZONE"),
+    ]:
+        if col not in user_columns:
+            await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+    await conn.execute(text("UPDATE users SET status = 'approved' WHERE (status IS NULL OR status = '') AND is_active = true"))
+
 
 app = FastAPI(
     title="SiteMapSEO API",
@@ -234,8 +262,10 @@ from app.website_prompts.router import router as website_prompts_router
 from app.goldhunter.router import router as goldhunter_router
 from app.hub_spoke.router import router as hub_spoke_workspace_router
 from app.providers.router import router as providers_router
+from app.admin.router import router as admin_router
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(projects_router)
 app.include_router(scan_router)
 app.include_router(keywords_router)

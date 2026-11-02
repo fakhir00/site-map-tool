@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /superadmin
 
 Sitemap: https://sitemapseo.io/sitemap-index.xml

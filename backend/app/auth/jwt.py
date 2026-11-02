@@ -44,6 +44,35 @@ def create_access_token(user_id: uuid.UUID) -> str:
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def create_admin_token(admin_id: str = "crawladmin@1") -> str:
+    expire = datetime.utcnow() + timedelta(days=1)
+    payload = {"sub": admin_id, "role": "superadmin", "exp": expire, "iat": datetime.utcnow()}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+async def get_current_superadmin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> str:
+    auth_error = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing superadmin authentication token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if not credentials:
+        raise auth_error
+
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        role = payload.get("role")
+        admin_id = payload.get("sub")
+        if role != "superadmin" or admin_id != "crawladmin@1":
+            raise auth_error
+        return admin_id
+    except (JWTError, ValueError):
+        raise auth_error
+
+
+
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db),
