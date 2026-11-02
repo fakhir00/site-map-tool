@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { scrollToTop } from '../lib/utils'
 
 type Seed = {
   keyword: string
@@ -244,7 +245,7 @@ export function GoldHunter() {
         {scanning ? (
           <SeedSkeleton />
         ) : history.length === 0 ? (
-          <SeedEmptyState onExplore={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
+          <SeedEmptyState onExplore={() => scrollToTop()} />
         ) : (
           <div className="space-y-10">
             <div className="flex items-center justify-between">

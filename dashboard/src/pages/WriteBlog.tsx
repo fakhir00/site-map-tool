@@ -8,6 +8,7 @@ import { Input } from '../components/ui/Input'
 import { Badge } from '../components/ui/Badge'
 import { FilePenLine, Loader2, Sparkles, X } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
+import { scrollToTop } from '../lib/utils'
 
 export default function WriteBlog() {
   const queryClient = useQueryClient()
@@ -204,7 +205,7 @@ export default function WriteBlog() {
               setArchitectureBrief('')
               setKeywordCluster('')
               setSelectedKeyword(kw)
-              window.scrollTo({ top: 0, behavior: 'smooth' })
+              scrollToTop()
             }}
           />
         </div>

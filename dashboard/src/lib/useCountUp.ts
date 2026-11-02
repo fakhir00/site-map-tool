@@ -6,13 +6,15 @@ import { useEffect, useRef, useState } from 'react'
  * value. Re-runs when `target` changes.
  */
 export function useCountUp(target: number, duration = 900): number {
-  const [value, setValue] = useState(0)
+  const [value, setValue] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? target : 0
+  ))
   const rafRef = useRef(0)
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setValue(target)
-      return
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      const id = requestAnimationFrame(() => setValue(target))
+      return () => cancelAnimationFrame(id)
     }
     let raf = 0
     const start = performance.now()

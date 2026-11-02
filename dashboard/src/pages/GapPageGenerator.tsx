@@ -19,6 +19,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { SavedKeywordsTable } from '../components/SavedKeywordsTable'
+import { scrollToTop } from '../lib/utils'
 
 type IntentResponse = {
   intent: string
@@ -514,7 +515,7 @@ export default function GapPageGenerator() {
             onAction={(kw) => {
               setKeyword(kw.phrase)
               setArchitectureBrief('')
-              window.scrollTo({ top: 0, behavior: 'smooth' })
+              scrollToTop()
             }}
           />
         </section>

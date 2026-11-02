@@ -62,7 +62,7 @@ export function DashboardLayout() {
     : location.pathname.startsWith('/projects/') ? 'Project' : (activeNav?.name ?? 'Projects')
 
   return (
-    <div className="flex min-h-screen bg-abyss text-ink">
+    <div className="flex min-h-screen lg:h-screen lg:h-dvh lg:overflow-hidden bg-abyss text-ink">
       {sidebarOpen && (
         <button
           aria-label="Close navigation"
@@ -73,7 +73,7 @@ export function DashboardLayout() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-line bg-surface transition-transform duration-300 ease-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 shrink-0 flex-col border-r border-line bg-surface transition-transform duration-300 ease-out lg:sticky lg:top-0 lg:h-screen lg:h-dvh lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -98,7 +98,7 @@ export function DashboardLayout() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 py-5">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-5">
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon
@@ -159,7 +159,7 @@ export function DashboardLayout() {
           </div>
         </nav>
 
-        <div className="shrink-0 border-t border-line bg-abyss/40 p-4">
+        <div className="shrink-0 sticky bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur-sm p-4">
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-glow-amber/15 text-sm font-bold text-glow-amber ring-1 ring-glow-amber/30">
               {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
@@ -187,8 +187,8 @@ export function DashboardLayout() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-line bg-abyss/80 px-5 backdrop-blur-md lg:hidden">
+      <div className="flex min-w-0 flex-1 flex-col lg:h-screen lg:h-dvh lg:overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-abyss/80 px-5 backdrop-blur-md lg:hidden">
           <a className="flex items-center gap-3" href={websiteUrl}>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-glow-amber text-abyss shadow-[0_0_16px_rgba(245,165,36,0.3)]">
               <Map className="h-4 w-4" />
@@ -205,7 +205,7 @@ export function DashboardLayout() {
           </button>
         </header>
 
-        <main className="warm-glow-bg flex-1 overflow-y-auto">
+        <main id="main-content" className="warm-glow-bg flex-1 min-h-0 overflow-y-auto">
           <div key={location.pathname} className="route-enter mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             <div className="mb-6 hidden items-center justify-between lg:flex">
               <div>
