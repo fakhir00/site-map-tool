@@ -27,18 +27,18 @@ const registerUrl = dashboardUrl('/register');
         <div class="hero-content">
           <div class="badge badge-amber animate-fade-up" style="margin-bottom:1.5rem;">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="6" cy="6" r="6" opacity="0.3"/><circle cx="6" cy="6" r="3"/></svg>
-            Now in Public Beta — Free to Start
+            CrawlGap&nbsp;&nbsp;Content intelligence
           </div>
 
           <h1 id="hero-heading" class="hero-title animate-fade-up delay-100">
-            Uncover Your Competitors'<br/>
-            <span class="gradient-text">SEO Strategy</span> in Minutes
+            Build the site<br/>
+            <span class="gradient-text">Google can understand.</span>
           </h1>
 
           <p class="hero-subtitle animate-fade-up delay-200">
-            CrawlGap reads your sitemap and competitor sitemaps, compares URL topics,
-            and delivers a prioritized list of keyword gaps —
-            so you can create content that actually ranks.
+            We search Google, read the ranking sites' sitemaps, and compare them
+            with yours — then give you the topical map of the gaps, with plug-and-play
+            keywords and prompts to build on them.
           </p>
 
           <div class="hero-cta animate-fade-up delay-300">
@@ -298,7 +298,12 @@ const registerUrl = dashboardUrl('/register');
     ══════════════════════════════════════ -->
     <section class="section metrics-section" aria-labelledby="metrics-heading">
       <div class="container">
-        <h2 id="metrics-heading" class="visually-hidden">Platform metrics</h2>
+        <div class="section-header reveal">
+          <p class="section-label">By the numbers</p>
+          <h2 id="metrics-heading" class="section-title">
+            What one run <span class="gradient-text">gives you</span>
+          </h2>
+        </div>
         <div class="metrics-grid">
           {[
             { value: '7', label: 'Tools in one product', color: 'var(--color-amber)' },
@@ -949,7 +954,7 @@ const registerUrl = dashboardUrl('/register');
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 1.5rem;
     margin-bottom: 4rem;
   }
@@ -1132,7 +1137,7 @@ const registerUrl = dashboardUrl('/register');
     list-style: none;
   }
 
-  .sitemap-url-list li {
+  :global(.sitemap-url-list li) {
     display: grid;
     gap: 0.25rem;
     min-height: 58px;
@@ -1142,7 +1147,7 @@ const registerUrl = dashboardUrl('/register');
     background: rgba(255, 255, 255, 0.035);
   }
 
-  .url-path {
+  :global(.url-path) {
     overflow: hidden;
     color: var(--color-text);
     font-family: var(--font-mono);
@@ -1151,7 +1156,7 @@ const registerUrl = dashboardUrl('/register');
     white-space: nowrap;
   }
 
-  .url-topic {
+  :global(.url-topic) {
     color: var(--color-text-faint);
     font-size: 0.75rem;
   }
@@ -1247,7 +1252,7 @@ const registerUrl = dashboardUrl('/register');
     gap: 0.625rem;
   }
 
-  .gap-chip {
+  :global(.gap-chip) {
     display: inline-flex;
     align-items: center;
     min-height: 34px;
@@ -1266,7 +1271,7 @@ const registerUrl = dashboardUrl('/register');
     gap: 0.5rem;
   }
 
-  .gap-source-link {
+  :global(.gap-source-link) {
     display: inline-flex;
     max-width: 100%;
     min-height: 32px;
@@ -1281,7 +1286,7 @@ const registerUrl = dashboardUrl('/register');
     text-decoration: none;
   }
 
-  .gap-source-link:hover {
+  :global(.gap-source-link:hover) {
     color: var(--color-text);
     border-color: rgba(245, 165, 36, 0.3);
   }
@@ -1296,7 +1301,7 @@ const registerUrl = dashboardUrl('/register');
     .sitemap-demo-header,
     .gap-panel-head { align-items: flex-start; flex-direction: column; }
     .sitemap-demo-tabs { grid-template-columns: 1fr; }
-    .url-path { white-space: normal; word-break: break-word; }
+    :global(.url-path) { white-space: normal; word-break: break-word; }
   }
 
   /* ── METRICS ── */
