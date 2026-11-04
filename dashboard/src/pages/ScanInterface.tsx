@@ -73,8 +73,7 @@ export default function ScanInterface() {
             Gap Scan
           </Badge>
           <h1 className="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">
-            Find the gaps.
-            <span className="text-glow-amber"> Win the traffic.</span>
+            Find content gaps.
           </h1>
           <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-muted">
             Drop in your site and the keywords you want to own. We'll stack your sitemap
