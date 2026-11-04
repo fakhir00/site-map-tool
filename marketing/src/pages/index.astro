@@ -262,7 +262,7 @@ const registerUrl = dashboardUrl('/register');
           </p>
         </div>
 
-        <div class="reveal glass-card" style="border-radius:20px;overflow:hidden;">
+        <div class="reveal glass-card preview-shot">
           <img src="/keyword-table-real.png" alt="Real CrawlGap keyword gap table — keywords ranked with intent, type, competitor and source counts" style="display:block;width:100%;height:auto;" loading="lazy" />
         </div>
     </section>
@@ -572,6 +572,16 @@ const registerUrl = dashboardUrl('/register');
     color: var(--color-amber);
     bottom: -16px;
     right: 20px;
+  }
+
+  /* Real product screenshot */
+  .preview-shot { border-radius: 20px; overflow: hidden; }
+  .preview-shot img { display: block; width: 100%; height: auto; }
+
+  @media (max-width: 768px) {
+    .floating-pill { display: none; }
+    .preview-shot { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .preview-shot img { min-width: 680px; max-width: none; }
   }
 
   /* Scroll indicator */
