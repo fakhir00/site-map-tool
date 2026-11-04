@@ -222,69 +222,6 @@ const registerUrl = dashboardUrl('/register');
           CrawlGap reads sitemaps — the lists of pages sites publish — mechanically, and compares them
           to find the gaps. <strong style="color:var(--color-text);">It does not read or copy a competitor's text.</strong>
         </p>
-
-        <!-- Interactive sitemap comparison demo -->
-        <div class="how-visual reveal" id="playground" style="animation-delay:0.5s;">
-          <div class="sitemap-demo" data-sitemap-demo>
-            <div class="sitemap-demo-header">
-              <div>
-                <p class="sitemap-demo-eyebrow">Sitemap gap preview</p>
-                <h3 class="sitemap-demo-title">Compare sitemap topics before any page scraping starts.</h3>
-              </div>
-              <div class="sitemap-demo-status">
-                <span class="pulse-dot" aria-hidden="true"></span>
-                Sitemap only
-              </div>
-            </div>
-
-            <div class="sitemap-demo-tabs" role="tablist" aria-label="Competitor sitemap examples">
-              <button type="button" class="sitemap-tab active" role="tab" aria-selected="true" data-demo-source="smartdraw">smartdraw.com</button>
-              <button type="button" class="sitemap-tab" role="tab" aria-selected="false" data-demo-source="lucidchart">lucidchart.com</button>
-              <button type="button" class="sitemap-tab" role="tab" aria-selected="false" data-demo-source="edrawsoft">edrawsoft.com</button>
-            </div>
-
-            <div class="sitemap-demo-body">
-              <div class="sitemap-pane">
-                <div class="sitemap-pane-head">
-                  <span>Your sitemap</span>
-                  <strong data-demo-own-count>126 URLs</strong>
-                </div>
-                <ul class="sitemap-url-list" data-demo-list="own" aria-label="Your sitemap URLs"></ul>
-              </div>
-
-              <div class="sitemap-compare">
-                <div class="compare-ring">
-                  <span data-demo-overlap>38%</span>
-                  <small>topic overlap</small>
-                </div>
-                <div class="compare-meter" aria-hidden="true">
-                  <span data-demo-meter style="width:38%"></span>
-                </div>
-                <p class="compare-note">Different competitor sitemap, different gap list.</p>
-              </div>
-
-              <div class="sitemap-pane">
-                <div class="sitemap-pane-head">
-                  <span data-demo-competitor-label>Competitor sitemap</span>
-                  <strong data-demo-competitor-count>214 URLs</strong>
-                </div>
-                <ul class="sitemap-url-list" data-demo-list="competitor" aria-label="Competitor sitemap URLs"></ul>
-              </div>
-            </div>
-
-            <div class="keyword-gap-panel" aria-live="polite">
-              <div class="gap-panel-head">
-                <div>
-                  <span>Keyword gaps found</span>
-                  <strong data-demo-gap-count>18 opportunities</strong>
-                </div>
-                <span class="source-count" data-demo-source-count>3 sitemap sources</span>
-              </div>
-              <div class="gap-keywords" data-demo-gaps></div>
-              <div class="gap-sources" data-demo-sources></div>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -1300,6 +1237,10 @@ const registerUrl = dashboardUrl('/register');
   }
 
   /* ── METRICS ── */
+  .metrics-section {
+    padding-block: clamp(2rem, 4vw, 3.5rem);
+  }
+
   .metrics-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
