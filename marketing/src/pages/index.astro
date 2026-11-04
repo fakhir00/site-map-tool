@@ -122,7 +122,7 @@ const registerUrl = dashboardUrl('/register');
         <div class="section-header reveal">
           <p class="section-label">The workflow</p>
           <h2 id="features-heading" class="section-title">
-            7 tools. <span class="gradient-text">One complete workflow.</span>
+            6 tools. <span class="gradient-text">One complete workflow.</span>
           </h2>
           <p class="section-desc">
             One run takes you from a URL to a build order — each tool hands
@@ -167,12 +167,6 @@ const registerUrl = dashboardUrl('/register');
               color: 'green',
               title: 'Blog Writer',
               desc: 'Pick a keyword gap and the writer drafts the article. The auditor scores it — you check the finished draft before you publish.',
-            },
-            {
-              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-              color: 'amber',
-              title: 'Keyword Bank',
-              desc: 'Every gap queued with its priority and build status. Nothing falls through the cracks.',
             },
           ].map((feat, i) => (
             <div class={`glass-card feature-card reveal`} style={`animation-delay:${i * 0.1}s`}>
@@ -238,7 +232,7 @@ const registerUrl = dashboardUrl('/register');
         </div>
         <div class="metrics-grid">
           {[
-            { value: '7', label: 'Tools in one product', color: 'var(--color-amber)' },
+            { value: '6', label: 'Tools in one product', color: 'var(--color-amber)' },
             { value: '300', label: 'Keywords per map', color: 'var(--color-violet)' },
             { value: '4', label: 'Steps from site to map', color: 'var(--color-green)' },
             { value: '1', label: 'Build order per run', color: 'var(--color-amber)' },
