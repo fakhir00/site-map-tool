@@ -8,8 +8,8 @@ const registerUrl = dashboardUrl('/register');
 ---
 
 <BaseLayout
-  title="CrawlGap — Sitemap Based Competitor Research"
-  description="Compare your site with competitor sites, review keyword opportunities from sitemap URLs, and use CrawlGap's research and content planning tools."
+  title="CrawlGap — Competitor SEO Intelligence, Automated"
+  description="Automatically compare your sitemap against competitor sitemaps, extract URL-topic keywords, and discover content gaps. Turn competitor intelligence into your content strategy."
 >
   <Header />
   <main>
@@ -27,23 +27,23 @@ const registerUrl = dashboardUrl('/register');
         <div class="hero-content">
           <div class="badge badge-amber animate-fade-up" style="margin-bottom:1.5rem;">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="6" cy="6" r="6" opacity="0.3"/><circle cx="6" cy="6" r="3"/></svg>
-            Sitemap based SEO research
+            Now in Public Beta — Free to Start
           </div>
 
           <h1 id="hero-heading" class="hero-title animate-fade-up delay-100">
-            Find content topics<br/>
-            <span class="gradient-text">your site may be missing</span>
+            Uncover Your Competitors'<br/>
+            <span class="gradient-text">SEO Strategy</span> in Minutes
           </h1>
 
           <p class="hero-subtitle animate-fade-up delay-200">
-            CrawlGap compares your site's sitemap with competitor sitemaps and shows
-            keyword opportunities based on their URLs. Review the results, save keywords,
-            and use the planning and writing tools to develop content ideas.
+            CrawlGap reads your sitemap and competitor sitemaps, compares URL topics,
+            and delivers a prioritized list of keyword gaps —
+            so you can create content that actually ranks.
           </p>
 
           <div class="hero-cta animate-fade-up delay-300">
             <a href={registerUrl} class="btn btn-primary btn-lg" id="hero-cta-primary">
-              Open CrawlGap
+              Start Analyzing Free
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                 <path d="M3.75 9h10.5M9 3.75 14.25 9 9 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -53,6 +53,22 @@ const registerUrl = dashboardUrl('/register');
             </a>
           </div>
 
+          <div class="hero-stats animate-fade-up delay-400">
+            <div class="hero-stat">
+              <span class="hero-stat-value">50K+</span>
+              <span class="hero-stat-label">Keywords discovered</span>
+            </div>
+            <div class="hero-stat-divider" aria-hidden="true"></div>
+            <div class="hero-stat">
+              <span class="hero-stat-value">2M+</span>
+              <span class="hero-stat-label">URLs analyzed</span>
+            </div>
+            <div class="hero-stat-divider" aria-hidden="true"></div>
+            <div class="hero-stat">
+              <span class="hero-stat-value">&lt;2hr</span>
+              <span class="hero-stat-label">Per 200-page blog</span>
+            </div>
+          </div>
         </div>
 
         <!-- Dashboard Mockup -->
@@ -88,17 +104,34 @@ const registerUrl = dashboardUrl('/register');
     </section>
 
     <!-- ══════════════════════════════════════
+         LOGO MARQUEE / SOCIAL PROOF
+    ══════════════════════════════════════ -->
+    <section class="marquee-section" aria-label="Used by SEO professionals at">
+      <div class="container">
+        <p class="marquee-label">Trusted by SEO professionals at</p>
+      </div>
+      <div class="marquee-wrapper">
+        <div class="marquee-track animate-marquee" aria-hidden="true">
+          {['Shopify', 'HubSpot', 'Moz', 'Ahrefs', 'Semrush', 'Surfer SEO', 'Clearscope', 'ContentKing', 'Shopify', 'HubSpot', 'Moz', 'Ahrefs', 'Semrush', 'Surfer SEO', 'Clearscope', 'ContentKing'].map(name => (
+            <span class="marquee-item">{name}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
          FEATURES SECTION
     ══════════════════════════════════════ -->
     <section id="features" class="section" aria-labelledby="features-heading">
       <div class="container">
         <div class="section-header reveal">
-          <p class="section-label">Platform Features</p>
+          <p class="section-label">The workflow</p>
           <h2 id="features-heading" class="section-title">
-            Research and planning<br/><span class="gradient-text">for content opportunities</span>
+            7 tools. <span class="gradient-text">One complete workflow.</span>
           </h2>
           <p class="section-desc">
-            CrawlGap includes sitemap comparison, keyword research, content planning, and AI assisted drafting tools.
+            One run takes you from a URL to a build order — each tool hands
+            its output to the next. Nothing to work out by hand.
           </p>
         </div>
 
@@ -107,38 +140,44 @@ const registerUrl = dashboardUrl('/register');
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke="currentColor" stroke-width="1.5"/><path d="M15 12H9m3-3v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
               color: 'amber',
-              title: 'Sitemap Comparison',
-              desc: 'Compare pages listed on your site and competitor sitemaps to spot topics competitors cover that may be missing from your site.',
+              title: 'Seed Finder',
+              desc: 'Drop in any URL and pull the seed keywords — the topics your map starts from.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
               color: 'violet',
-              title: 'Keyword Research',
-              desc: 'Review keyword ideas collected from sitemap URLs, competitor pages, seed topics, and AI assisted research.',
+              title: 'Gap Scan',
+              desc: 'Compare your sitemap against the ranking sites and get every keyword gap, ranked by opportunity.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/><path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
               color: 'green',
-              title: 'Project Keyword Workspace',
-              desc: 'Search, filter, sort, save, and export keyword opportunities associated with a project.',
+              title: 'Hub & Spoke',
+              desc: 'Your gaps organized into topic groups in build order — pillar pages and their supporting spokes.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
               color: 'amber',
-              title: 'Topic Planning',
-              desc: 'Generate and review hub and spoke topic plans using project keywords and site context.',
+              title: 'Astro Launchpad',
+              desc: 'The whole-site prompt that produces your Master Blueprint: what to build, in what order, topic by topic.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 2v7h7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
-              color: 'amber',
-              title: 'Page Prompts',
-              desc: 'Analyze search intent and competitor pages, then generate a prompt for a page brief or AI site builder.',
+              color: 'violet',
+              title: 'Build Page',
+              desc: 'Give it a keyword and it studies the pages that rank for it. You check the intent, then get a build prompt for a tool or gap page.',
             },
             {
               icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-              color: 'violet',
-              title: 'Article Drafts',
-              desc: 'Generate an AI assisted article draft from a selected keyword or a keyword cluster.',
+              color: 'green',
+              title: 'Blog Writer',
+              desc: 'Pick a keyword gap and the writer drafts the article. The auditor scores it — you check the finished draft before you publish.',
+            },
+            {
+              icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+              color: 'amber',
+              title: 'Keyword Bank',
+              desc: 'Every gap queued with its priority and build status. Nothing falls through the cracks.',
             },
           ].map((feat, i) => (
             <div class={`glass-card feature-card reveal`} style={`animation-delay:${i * 0.1}s`}>
@@ -164,17 +203,16 @@ const registerUrl = dashboardUrl('/register');
         <div class="section-header reveal">
           <p class="section-label">How It Works</p>
           <h2 id="how-heading" class="section-title">
-            From project setup to<br/><span class="gradient-text">keyword opportunities</span>
+            Four steps. <span class="gradient-text">No black box.</span>
           </h2>
         </div>
 
         <div class="steps-grid">
           {[
-            { n: '01', color: '#F5A524', title: 'Create a project', desc: 'Enter your website and one or more target keywords.' },
-            { n: '02', color: '#A78BFA', title: 'Run a scan', desc: 'CrawlGap collects sitemap URLs and competitor URL data for the project.' },
-            { n: '03', color: '#F5A524', title: 'Review keywords', desc: 'Explore keyword phrases and their linked source pages in the project workspace.' },
-            { n: '04', color: '#A78BFA', title: 'Plan topics', desc: 'Use the topic planning tools to generate and review a hub and spoke structure.' },
-            { n: '05', color: '#F5A524', title: 'Create a draft or prompt', desc: 'Generate an article draft or a page prompt to continue your work.' },
+            { n: '01', color: '#F5A524', title: 'Search', desc: 'Enter your site and your topic. CrawlGap searches Google and finds the sites ranking for it.' },
+            { n: '02', color: '#A78BFA', title: 'Read sitemaps', desc: 'CrawlGap reads the sitemaps of the ranking sites — the lists of pages sites publish — mechanically, and compares them to find the gaps.' },
+            { n: '03', color: '#F5A524', title: 'Compare', desc: 'Your sitemap is compared with theirs. A gap is a topic they cover that your site does not cover yet.' },
+            { n: '04', color: '#A78BFA', title: 'Map', desc: 'You get a topical map around your home page topic, with the keywords and prompts in build order.' },
           ].map((step, i) => (
             <div class="step-card reveal" style={`animation-delay:${i * 0.12}s`}>
               <div class="step-number" style={`color:${step.color};border-color:${step.color}22;background:${step.color}11`}>{step.n}</div>
@@ -185,21 +223,111 @@ const registerUrl = dashboardUrl('/register');
           ))}
         </div>
 
+        <p class="reveal" style="text-align:center;color:var(--color-text-muted);font-size:0.9375rem;line-height:1.6;max-width:640px;margin:2rem auto 0;animation-delay:0.5s;">
+          CrawlGap reads sitemaps — the lists of pages sites publish — mechanically, and compares them
+          to find the gaps. <strong style="color:var(--color-text);">It does not read or copy a competitor's text.</strong>
+        </p>
+
+        <!-- Interactive sitemap comparison demo -->
+        <div class="how-visual reveal" id="playground" style="animation-delay:0.5s;">
+          <div class="sitemap-demo" data-sitemap-demo>
+            <div class="sitemap-demo-header">
+              <div>
+                <p class="sitemap-demo-eyebrow">Sitemap gap preview</p>
+                <h3 class="sitemap-demo-title">Compare sitemap topics before any page scraping starts.</h3>
+              </div>
+              <div class="sitemap-demo-status">
+                <span class="pulse-dot" aria-hidden="true"></span>
+                Sitemap only
+              </div>
+            </div>
+
+            <div class="sitemap-demo-tabs" role="tablist" aria-label="Competitor sitemap examples">
+              <button type="button" class="sitemap-tab active" role="tab" aria-selected="true" data-demo-source="smartdraw">smartdraw.com</button>
+              <button type="button" class="sitemap-tab" role="tab" aria-selected="false" data-demo-source="lucidchart">lucidchart.com</button>
+              <button type="button" class="sitemap-tab" role="tab" aria-selected="false" data-demo-source="edrawsoft">edrawsoft.com</button>
+            </div>
+
+            <div class="sitemap-demo-body">
+              <div class="sitemap-pane">
+                <div class="sitemap-pane-head">
+                  <span>Your sitemap</span>
+                  <strong data-demo-own-count>126 URLs</strong>
+                </div>
+                <ul class="sitemap-url-list" data-demo-list="own" aria-label="Your sitemap URLs"></ul>
+              </div>
+
+              <div class="sitemap-compare">
+                <div class="compare-ring">
+                  <span data-demo-overlap>38%</span>
+                  <small>topic overlap</small>
+                </div>
+                <div class="compare-meter" aria-hidden="true">
+                  <span data-demo-meter style="width:38%"></span>
+                </div>
+                <p class="compare-note">Different competitor sitemap, different gap list.</p>
+              </div>
+
+              <div class="sitemap-pane">
+                <div class="sitemap-pane-head">
+                  <span data-demo-competitor-label>Competitor sitemap</span>
+                  <strong data-demo-competitor-count>214 URLs</strong>
+                </div>
+                <ul class="sitemap-url-list" data-demo-list="competitor" aria-label="Competitor sitemap URLs"></ul>
+              </div>
+            </div>
+
+            <div class="keyword-gap-panel" aria-live="polite">
+              <div class="gap-panel-head">
+                <div>
+                  <span>Keyword gaps found</span>
+                  <strong data-demo-gap-count>18 opportunities</strong>
+                </div>
+                <span class="source-count" data-demo-source-count>3 sitemap sources</span>
+              </div>
+              <div class="gap-keywords" data-demo-gaps></div>
+              <div class="gap-sources" data-demo-sources></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
     <!-- ══════════════════════════════════════
-         KEYWORD EXAMPLE
+         METRICS / SOCIAL PROOF
+    ══════════════════════════════════════ -->
+    <section class="section metrics-section" aria-labelledby="metrics-heading">
+      <div class="container">
+        <h2 id="metrics-heading" class="visually-hidden">Platform metrics</h2>
+        <div class="metrics-grid">
+          {[
+            { value: '7', label: 'Tools in one product', color: 'var(--color-amber)' },
+            { value: '300', label: 'Keywords per map', color: 'var(--color-violet)' },
+            { value: '4', label: 'Steps from site to map', color: 'var(--color-green)' },
+            { value: '1', label: 'Build order per run', color: 'var(--color-amber)' },
+          ].map(m => (
+            <div class="metric-card reveal glass-card">
+              <div class="metric-value" style={`color:${m.color}`} set:html={m.value}></div>
+              <div class="metric-label">{m.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         KEYWORD TABLE PREVIEW
     ══════════════════════════════════════ -->
     <section class="section" aria-labelledby="preview-heading">
       <div class="container">
         <div class="section-header reveal">
-          <p class="section-label">Example</p>
+          <p class="section-label">Live Preview</p>
           <h2 id="preview-heading" class="section-title">
-            Review keyword opportunities,<br/><span class="gradient-text">with their source pages</span>
+            Your keyword table,<br/><span class="gradient-text">instantly actionable</span>
           </h2>
           <p class="section-desc">
-            The project table shows keyword phrases with linked source URLs and available keyword data. You can filter, save, and export results.
+            Every keyword is ranked by frequency across competitor posts, enriched with metadata,
+            and ready to export to your favorite SEO tools.
           </p>
         </div>
 
@@ -207,10 +335,11 @@ const registerUrl = dashboardUrl('/register');
           <div class="table-preview-header">
             <div class="table-preview-title">
               <span class="dot dot-green"></span>
-              Example project keyword results
+              competitor-blog.com — 247 URLs analyzed
             </div>
             <div class="table-actions">
               <button class="btn btn-ghost btn-sm" disabled>Export CSV</button>
+              <button class="btn btn-primary btn-sm" disabled>Save All</button>
             </div>
           </div>
           <div style="overflow-x:auto;">
@@ -218,25 +347,212 @@ const registerUrl = dashboardUrl('/register');
               <thead>
                 <tr>
                   <th style="text-align:left;width:40%;">Keyword Phrase</th>
-                  <th>Keyword type</th>
-                  <th>Source pages</th>
+                  <th>Frequency</th>
+                  <th>Content Type</th>
+                  <th>Readability</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {['content gap analysis', 'keyword clustering strategy', 'competitor SEO audit'].map(kw => (
+                {[
+                  { kw: 'content gap analysis', freq: 47, type: 'How-to Guide', read: 'Grade 10', color: '#F5A524' },
+                  { kw: 'keyword clustering strategy', freq: 38, type: 'Long-form Post', read: 'Grade 11', color: '#A78BFA' },
+                  { kw: 'competitor SEO audit', freq: 34, type: 'Tutorial', read: 'Grade 9', color: '#34D399' },
+                  { kw: 'topic modeling for SEO', freq: 29, type: 'Case Study', read: 'Grade 12', color: '#f59e0b' },
+                  { kw: 'internal linking structure', freq: 24, type: 'Best Practices', read: 'Grade 8', color: '#F5A524' },
+                ].map(row => (
                   <tr>
-                    <td><span class="kw-phrase">{kw}</span></td>
-                    <td><span class="type-badge">Keyword gap</span></td>
-                    <td style="text-align:center;color:var(--color-text-muted);">View linked URLs in project</td>
+                    <td>
+                      <span class="kw-phrase">{row.kw}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="freq-badge" style={`color:${row.color};background:${row.color}18;border:1px solid ${row.color}33`}>{row.freq}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="type-badge">{row.type}</span>
+                    </td>
+                    <td style="text-align:center;color:var(--color-text-muted);">{row.read}</td>
+                    <td style="text-align:center;">
+                      <button class="btn btn-ghost btn-sm" style="font-size:0.75rem;padding:0.375rem 0.875rem;" disabled>Save</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div class="table-footer">
-            <span>Illustrative sample</span>
-            <a href={registerUrl} class="btn btn-primary btn-sm">Open CrawlGap →</a>
+            <span>Showing 5 of 1,240 keywords</span>
+            <a href={registerUrl} class="btn btn-primary btn-sm">Unlock Full Report →</a>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         PRICING SECTION
+    ══════════════════════════════════════ -->
+    <section id="pricing" class="section pricing-section" aria-labelledby="pricing-heading">
+      <div class="pricing-bg" aria-hidden="true">
+        <div class="glow-orb glow-amber" style="width:500px;height:500px;bottom:-200px;left:-100px;"></div>
+      </div>
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">Pricing</p>
+          <h2 id="pricing-heading" class="section-title">
+            Simple, transparent<br/><span class="gradient-text">pricing for every team</span>
+          </h2>
+          <p class="section-desc">
+            Start free. Upgrade when you're ready to scale your content intelligence.
+          </p>
+        </div>
+
+        <div class="pricing-grid">
+          <!-- FREE -->
+          <div class="pricing-card reveal">
+            <div class="pricing-plan">Free</div>
+            <div class="pricing-price">
+              <span class="price-amount">$0</span>
+              <span class="price-period">/month</span>
+            </div>
+            <p class="pricing-tagline">Perfect for exploring</p>
+            <ul class="pricing-features" role="list">
+              {[
+                '1 competitor domain',
+                '500 URLs / month',
+                'Basic CSV export',
+                'Manual scans only',
+                'Shared proxy pool',
+                'Community support',
+              ].map(f => (
+                <li class="pricing-feature">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#F5A524" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#F5A524" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href={registerUrl} class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:auto;" id="pricing-free-cta">Get Started Free</a>
+          </div>
+
+          <!-- PRO (featured) -->
+          <div class="pricing-card featured reveal" style="animation-delay:0.1s;">
+            <div class="pricing-plan" style="color:var(--color-amber);">Pro</div>
+            <div class="pricing-price">
+              <span class="price-amount">$29</span>
+              <span class="price-period">/month</span>
+            </div>
+            <p class="pricing-tagline">For serious SEO professionals</p>
+            <ul class="pricing-features" role="list">
+              {[
+                '10 competitor domains',
+                '10,000 URLs / month',
+                'CSV + PDF export',
+                'Weekly auto-rescans',
+                'Dedicated proxy pool',
+                'Priority email support',
+                'Content brief generator',
+                'Keyword bank (unlimited)',
+              ].map(f => (
+                <li class="pricing-feature">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#F5A524" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#F5A524" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href={registerUrl} class="btn btn-primary" style="width:100%;justify-content:center;margin-top:auto;" id="pricing-pro-cta">Start Pro Trial</a>
+          </div>
+
+          <!-- BUSINESS -->
+          <div class="pricing-card reveal" style="animation-delay:0.2s;">
+            <div class="pricing-plan">Business</div>
+            <div class="pricing-price">
+              <span class="price-amount">$99</span>
+              <span class="price-period">/month</span>
+            </div>
+            <p class="pricing-tagline">For agencies & large teams</p>
+            <ul class="pricing-features" role="list">
+              {[
+                'Unlimited domains',
+                '100,000 URLs / month',
+                'CSV + PDF + API access',
+                'Daily auto-rescans',
+                'Premium residential proxies',
+                '24/7 dedicated support',
+                'White-label reports',
+                'Webhook integrations',
+                'Team member seats (5)',
+              ].map(f => (
+                <li class="pricing-feature">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#f59e0b" opacity="0.15"/><path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <a href={registerUrl} class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:auto;" id="pricing-business-cta">Contact Sales</a>
+          </div>
+        </div>
+
+        <!-- Money back note -->
+        <p class="pricing-note reveal">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 2.5v4l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          14-day free trial on all paid plans. No credit card required. Cancel anytime.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════
+         TESTIMONIALS
+    ══════════════════════════════════════ -->
+    <section class="section" aria-labelledby="testimonials-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">Testimonials</p>
+          <h2 id="testimonials-heading" class="section-title">
+            What SEO professionals<br/><span class="gradient-text">are saying</span>
+          </h2>
+        </div>
+        <div class="testimonials-grid">
+          {[
+            {
+              quote: "CrawlGap cut our content research time by 80%. We went from spending a full week on competitor analysis to getting actionable insights in under an hour.",
+              name: "Sarah Chen",
+              role: "Head of SEO",
+              company: "GrowthLab Agency",
+              avatar: "SC",
+              color: '#F5A524',
+            },
+            {
+              quote: "The keyword clustering alone is worth the subscription price. I found 200+ opportunities in a niche I thought was saturated. Game changer.",
+              name: "Marcus Rivera",
+              role: "Content Strategist",
+              company: "TechFlow Inc.",
+              avatar: "MR",
+              color: '#A78BFA',
+            },
+            {
+              quote: "Finally a tool that doesn't just give me a keyword list — it shows me exactly what my competitors are writing about and how I can do it better.",
+              name: "Priya Patel",
+              role: "Freelance SEO Consultant",
+              company: "@priyaseo_",
+              avatar: "PP",
+              color: '#34D399',
+            },
+          ].map(t => (
+            <div class="testimonial-card glass-card reveal">
+              <div class="stars" aria-label="5 stars">
+                {Array(5).fill(0).map(() => (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="#f59e0b" aria-hidden="true"><path d="M8 1l2.06 4.18L15 6.18l-3.5 3.41.83 4.82L8 12.18l-4.33 2.23.83-4.82L1 6.18l4.94-.72L8 1z"/></svg>
+                ))}
+              </div>
+              <blockquote class="testimonial-quote">"{t.quote}"</blockquote>
+              <div class="testimonial-author">
+                <div class="avatar" style={`background:${t.color}22;color:${t.color};`}>{t.avatar}</div>
+                <div>
+                  <div class="author-name">{t.name}</div>
+                  <div class="author-role">{t.role} · {t.company}</div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -249,27 +565,27 @@ const registerUrl = dashboardUrl('/register');
         <div class="section-header reveal">
           <p class="section-label">FAQ</p>
           <h2 id="faq-heading" class="section-title">
-            Frequently asked<br/><span class="gradient-text">questions</span>
+            Honest<br/><span class="gradient-text">answers</span>
           </h2>
         </div>
 
         <div class="faq-container reveal">
           {[
             {
-              q: 'What does a CrawlGap scan do?',
-              a: 'A scan collects sitemap and competitor URL data for a project and produces keyword opportunities linked to source pages. Results depend on the URLs and data the scan can access.',
+              q: 'Why not just use Semrush?',
+              a: 'Semrush works from a keyword database. CrawlGap works from a sitemap comparison — it reads the sitemaps of the sites that rank and compares them with yours. Different method, different output. It is not a Semrush replacement, and it does not claim the same data or coverage.',
             },
             {
-              q: 'Can CrawlGap write or plan content?',
-              a: 'CrawlGap includes tools to generate keyword ideas, hub and spoke topic plans, article drafts, and prompts for building pages. Review generated suggestions before using them.',
+              q: 'Is this copying competitors?',
+              a: 'No. CrawlGap compares the topics listed in sitemaps. It does not read or copy a competitor\'s text. Every prompt is built from the gap — the topic your site does not cover yet — not from a competitor\'s wording. You check every generated page before you publish it.',
             },
             {
-              q: 'Can I export keyword results?',
-              a: 'Yes. Project keywords can be exported as a CSV file.',
+              q: 'How fresh is the data?',
+              a: 'Every map and report is a dated snapshot. Google results change, so gaps can change. Re-run for a new snapshot.',
             },
             {
-              q: 'Does CrawlGap guarantee rankings or traffic?',
-              a: 'No. CrawlGap provides research and drafting tools; search rankings and traffic depend on many factors outside the product.',
+              q: 'What if my site is new or small?',
+              a: 'CrawlGap is built for EMD builders with new and thin sites. A long list of gaps is the build list, not a fault — and not a promise of a ranking.',
             },
           ].map((item, i) => (
             <div class="faq-item">
@@ -303,10 +619,11 @@ const registerUrl = dashboardUrl('/register');
           <div class="cta-content">
             <p class="section-label" style="margin-bottom:1rem;">Ready to start?</p>
             <h2 id="cta-heading" class="cta-title">
-              Explore your content<br/>opportunities with <span class="gradient-text">CrawlGap</span>
+              Start discovering keyword<br/>opportunities <span class="gradient-text">today, for free</span>
             </h2>
             <p class="cta-desc">
-              Create a project to compare sitemap URLs and explore the available research tools.
+              Get your topical map with every keyword's prompt, in build order.
+              No credit card required.
             </p>
             <div class="cta-actions">
               <a href={registerUrl} class="btn btn-primary btn-lg" id="bottom-cta-primary">
@@ -315,6 +632,7 @@ const registerUrl = dashboardUrl('/register');
                   <path d="M3.75 9h10.5M9 3.75 14.25 9 9 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </a>
+              <a href="/contact/" class="btn btn-ghost btn-lg" id="bottom-cta-contact">Talk to Sales</a>
             </div>
           </div>
         </div>
@@ -1230,6 +1548,299 @@ const registerUrl = dashboardUrl('/register');
   );
 
   document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+  // ── Sitemap gap demo ──
+  const sitemapDemo = document.querySelector('[data-sitemap-demo]');
+
+  if (sitemapDemo) {
+    const ownUrls = [
+      { path: '/blog/flowchart-maker/', topic: 'flowchart maker' },
+      { path: '/blog/process-map-template/', topic: 'process map template' },
+      { path: '/templates/decision-tree/', topic: 'decision tree template' },
+    ];
+
+    const sitemapDemoData = {
+      smartdraw: {
+        label: 'smartdraw.com',
+        ownTotal: 126,
+        competitorTotal: 214,
+        overlap: 38,
+        competitorUrls: [
+          { path: '/flowchart/flowchart-symbols.htm', topic: 'flowchart symbols' },
+          { path: '/workflow-diagram/workflow-diagram.htm', topic: 'workflow diagram examples' },
+          { path: '/org-chart/org-chart-software.htm', topic: 'org chart software' },
+        ],
+        gaps: ['flowchart symbols', 'process mapping software', 'workflow diagram examples', 'org chart software', 'network diagram tool', 'floor plan symbols'],
+        sources: [
+          { label: 'smartdraw.com/flowchart/', href: 'https://www.smartdraw.com/flowchart/' },
+          { label: 'smartdraw.com/workflow-diagram/', href: 'https://www.smartdraw.com/workflow-diagram/' },
+          { label: 'smartdraw.com/org-chart/', href: 'https://www.smartdraw.com/org-chart/' },
+        ],
+      },
+      lucidchart: {
+        label: 'lucidchart.com',
+        ownTotal: 126,
+        competitorTotal: 302,
+        overlap: 44,
+        competitorUrls: [
+          { path: '/pages/examples/swimlane-diagram', topic: 'swimlane diagram' },
+          { path: '/pages/uml-sequence-diagram', topic: 'uml sequence diagram' },
+          { path: '/pages/process-mapping', topic: 'business process mapping' },
+        ],
+        gaps: ['swimlane diagram', 'uml sequence diagram', 'business process mapping', 'data flow diagram', 'value stream mapping', 'process documentation'],
+        sources: [
+          { label: 'lucidchart.com/pages/process-mapping', href: 'https://www.lucidchart.com/pages/process-mapping' },
+          { label: 'lucidchart.com/pages/uml-sequence-diagram', href: 'https://www.lucidchart.com/pages/uml-sequence-diagram' },
+          { label: 'lucidchart.com/pages/examples', href: 'https://www.lucidchart.com/pages/examples' },
+        ],
+      },
+      edrawsoft: {
+        label: 'edrawsoft.com',
+        ownTotal: 126,
+        competitorTotal: 287,
+        overlap: 31,
+        competitorUrls: [
+          { path: '/templates/fishbone-diagram.html', topic: 'fishbone diagram' },
+          { path: '/symbols/electrical-symbols.html', topic: 'electrical diagram symbols' },
+          { path: '/mindmap/mind-map-template.html', topic: 'mind map templates' },
+        ],
+        gaps: ['fishbone diagram', 'gantt chart template', 'electrical diagram symbols', 'mind map templates', 'p&id symbols', 'circuit diagram maker'],
+        sources: [
+          { label: 'edrawsoft.com/templates/', href: 'https://www.edrawsoft.com/templates/' },
+          { label: 'edrawsoft.com/symbols/', href: 'https://www.edrawsoft.com/symbols/' },
+          { label: 'edrawsoft.com/mindmap/', href: 'https://www.edrawsoft.com/mindmap/' },
+        ],
+      },
+    };
+
+    const setText = (selector, value) => {
+      const node = sitemapDemo.querySelector(selector);
+      if (node) node.textContent = value;
+    };
+
+    const renderUrls = (listName, urls) => {
+      const list = sitemapDemo.querySelector(`[data-demo-list="${listName}"]`);
+      if (!list) return;
+
+      const nodes = urls.map((url) => {
+        const item = document.createElement('li');
+        const path = document.createElement('span');
+        const topic = document.createElement('span');
+
+        path.className = 'url-path';
+        path.textContent = url.path;
+        topic.className = 'url-topic';
+        topic.textContent = url.topic;
+
+        item.append(path, topic);
+        return item;
+      });
+
+      list.replaceChildren(...nodes);
+    };
+
+    const renderGaps = (gaps) => {
+      const gapWrap = sitemapDemo.querySelector('[data-demo-gaps]');
+      if (!gapWrap) return;
+
+      const chips = gaps.map((gap) => {
+        const chip = document.createElement('span');
+        chip.className = 'gap-chip';
+        chip.textContent = gap;
+        return chip;
+      });
+
+      gapWrap.replaceChildren(...chips);
+    };
+
+    const renderSources = (sources) => {
+      const sourceWrap = sitemapDemo.querySelector('[data-demo-sources]');
+      if (!sourceWrap) return;
+
+      const links = sources.map((source) => {
+        const link = document.createElement('a');
+        link.className = 'gap-source-link';
+        link.href = source.href;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.textContent = source.label;
+        return link;
+      });
+
+      sourceWrap.replaceChildren(...links);
+    };
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let demoRunToken = 0;
+
+    const setDemoTabs = (key) => {
+      sitemapDemo.querySelectorAll('.sitemap-tab').forEach((tab) => {
+        const active = tab.getAttribute('data-demo-source') === key;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+    };
+
+    const setDemoStatus = (text, state) => {
+      const statusEl = sitemapDemo.querySelector('.sitemap-demo-status');
+      if (!statusEl) return;
+      const txt = statusEl.lastChild;
+      if (txt) txt.textContent = ` ${text}`;
+      statusEl.classList.remove('running', 'done');
+      if (state) statusEl.classList.add(state);
+    };
+
+    const streamUrls = (listName, urls, token, delay) => new Promise((resolve) => {
+      const list = sitemapDemo.querySelector(`[data-demo-list="${listName}"]`);
+      if (!list) return resolve();
+      list.replaceChildren();
+      if (reduceMotion) {
+        urls.forEach((url) => list.appendChild(makeUrlNode(url)));
+        return resolve();
+      }
+      urls.forEach((url, i) => {
+        setTimeout(() => {
+          if (token !== demoRunToken) return resolve();
+          const node = makeUrlNode(url);
+          node.style.opacity = '0';
+          node.style.transform = 'translateY(6px)';
+          node.style.transition = 'opacity .3s ease, transform .3s ease';
+          list.appendChild(node);
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            node.style.opacity = '1';
+            node.style.transform = 'translateY(0)';
+          }));
+          if (i === urls.length - 1) setTimeout(resolve, 320);
+        }, delay + i * 160);
+      });
+    });
+
+    const makeUrlNode = (url) => {
+      const item = document.createElement('li');
+      const path = document.createElement('span');
+      const topic = document.createElement('span');
+      path.className = 'url-path';
+      path.textContent = url.path;
+      topic.className = 'url-topic';
+      topic.textContent = url.topic;
+      item.append(path, topic);
+      return item;
+    };
+
+    const tickCount = (selector, target, token, suffix) => new Promise((resolve) => {
+      if (reduceMotion) { setText(selector, `${target}${suffix}`); return resolve(); }
+      const t0 = performance.now();
+      const dur = 700;
+      const step = (t) => {
+        if (token !== demoRunToken) return resolve();
+        const k = Math.min(1, (t - t0) / dur);
+        setText(selector, `${Math.round(target * (1 - Math.pow(1 - k, 3)))}${suffix}`);
+        if (k < 1) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+
+    const countDonut = (target, token) => new Promise((resolve) => {
+      const meter = sitemapDemo.querySelector('[data-demo-meter]');
+      if (reduceMotion) {
+        setText('[data-demo-overlap]', `${target}%`);
+        if (meter) meter.style.width = `${target}%`;
+        return resolve();
+      }
+      const t0 = performance.now();
+      const dur = 900;
+      if (meter) { meter.style.transition = 'width .9s cubic-bezier(.4,0,.2,1)'; meter.style.width = '0%'; }
+      const step = (t) => {
+        if (token !== demoRunToken) return resolve();
+        const k = Math.min(1, (t - t0) / dur);
+        const eased = 1 - Math.pow(1 - k, 3);
+        setText('[data-demo-overlap]', `${Math.round(target * eased)}%`);
+        if (meter) meter.style.width = `${target * eased}%`;
+        if (k < 1) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+
+    const staggerGaps = (gaps, sources, token) => new Promise((resolve) => {
+      const gapWrap = sitemapDemo.querySelector('[data-demo-gaps]');
+      const sourceWrap = sitemapDemo.querySelector('[data-demo-sources]');
+      setText('[data-demo-gap-count]', `${gaps.length} opportunities`);
+      setText('[data-demo-source-count]', `${sources.length} sitemap sources`);
+      if (gapWrap) gapWrap.replaceChildren();
+      if (sourceWrap) sourceWrap.replaceChildren();
+      if (reduceMotion) { renderGaps(gaps); renderSources(sources); return resolve(); }
+      gaps.forEach((gap, i) => {
+        setTimeout(() => {
+          if (token !== demoRunToken) return;
+          const chip = document.createElement('span');
+          chip.className = 'gap-chip';
+          chip.textContent = gap;
+          chip.style.opacity = '0';
+          chip.style.transform = 'translateY(8px) scale(.96)';
+          chip.style.transition = 'opacity .35s ease, transform .35s cubic-bezier(.34,1.4,.64,1)';
+          gapWrap.appendChild(chip);
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            chip.style.opacity = '1';
+            chip.style.transform = 'translateY(0) scale(1)';
+          }));
+          if (i === gaps.length - 1) {
+            setTimeout(() => { if (token === demoRunToken) { renderSources(sources); resolve(); } }, 380);
+          }
+        }, i * 130);
+      });
+      if (!gaps.length) resolve();
+    });
+
+    const runDemo = async (key) => {
+      const data = sitemapDemoData[key] || sitemapDemoData.smartdraw;
+      const token = ++demoRunToken;
+      setDemoTabs(key);
+      setText('[data-demo-competitor-label]', `${data.label} sitemap`);
+
+      // Phase 1 — read sitemaps: counters tick, rows stream in
+      setDemoStatus('Reading sitemaps…', 'running');
+      setText('[data-demo-own-count]', '0 URLs');
+      setText('[data-demo-competitor-count]', '0 URLs');
+      await Promise.all([
+        tickCount('[data-demo-own-count]', data.ownTotal, token, ' URLs'),
+        tickCount('[data-demo-competitor-count]', data.competitorTotal, token, ' URLs'),
+        streamUrls('own', ownUrls, token, 100),
+        streamUrls('competitor', data.competitorUrls, token, 250),
+      ]);
+      if (token !== demoRunToken) return;
+
+      // Phase 2 — compare topics: donut counts up
+      setDemoStatus('Comparing topics…', 'running');
+      await countDonut(data.overlap, token);
+      if (token !== demoRunToken) return;
+
+      // Phase 3 — gaps found: chips cascade in
+      setDemoStatus(`Sample complete — ${data.gaps.length} keyword gaps found.`, 'done');
+      await staggerGaps(data.gaps, data.sources, token);
+    };
+
+    sitemapDemo.querySelectorAll('.sitemap-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const key = tab.getAttribute('data-demo-source') || 'smartdraw';
+        runDemo(key);
+      });
+    });
+
+    // Auto-run once when the demo scrolls into view
+    let demoAutoRan = false;
+    const demoObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && !demoAutoRan) {
+          demoAutoRan = true;
+          runDemo('smartdraw');
+          demoObserver.disconnect();
+        }
+      });
+    }, { threshold: 0.3 });
+    demoObserver.observe(sitemapDemo);
+  }
 
   // ── FAQ Accordion ──
   document.querySelectorAll('.faq-trigger').forEach(trigger => {
