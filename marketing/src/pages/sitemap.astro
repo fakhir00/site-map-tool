@@ -7,15 +7,21 @@ const staticPages = [
   { title: 'Home', href: '/' },
   { title: 'About Us', href: '/about/' },
   { title: 'Contact', href: '/contact/' },
+  { title: 'Blog', href: '/blog/' },
   { title: 'Terms of Service', href: '/terms/' },
   { title: 'Privacy Policy', href: '/privacy/' },
 ];
 
+const blogPosts = [
+  { title: 'The Complete Guide to Competitor SEO Analysis in 2026', href: '/blog/competitor-seo-analysis-guide/', date: '2026-05-20' },
+  { title: 'Keyword Clustering: How to Build a Content Strategy That Scales', href: '/blog/keyword-clustering-content-strategy/', date: '2026-05-10' },
+  { title: 'XML Sitemaps in 2026: What Google Actually Wants', href: '/blog/sitemap-seo-best-practices/', date: '2026-04-28' },
+];
 ---
 
 <BaseLayout
-  title="Sitemap — CrawlGap"
-  description="A human-readable sitemap of CrawlGap pages."
+  title="Sitemap — SiteMapSEO"
+  description="A human-readable sitemap of all pages and blog posts on SiteMapSEO."
 >
   <Header />
   <main class="page-main">
@@ -24,7 +30,7 @@ const staticPages = [
         <div class="sitemap-header">
           <p class="section-label">Navigation</p>
           <h1 class="page-title">Site Map</h1>
-          <p class="sitemap-desc">A complete list of all pages on CrawlGap.io.</p>
+          <p class="sitemap-desc">A complete list of all pages on SiteMapSEO.io.</p>
         </div>
 
         <div class="sitemap-grid">
@@ -43,6 +49,27 @@ const staticPages = [
               ))}
             </ul>
           </div>
+
+          <div class="sitemap-col">
+            <h2 class="sitemap-group-title">Blog Articles</h2>
+            <ul class="sitemap-list" role="list">
+              {blogPosts.map(post => (
+                <li>
+                  <a href={post.href} class="sitemap-link">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M6 12l4-4-4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>
+                      {post.title}
+                      <time datetime={post.date} class="sitemap-date">
+                        {new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })}
+                      </time>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </section>
@@ -56,7 +83,7 @@ const staticPages = [
   .sitemap-header { margin-bottom: 3rem; }
   .page-title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; letter-spacing: -0.03em; margin: 1rem 0 0.75rem; color: var(--color-text); }
   .sitemap-desc { font-size: 1rem; color: var(--color-text-muted); }
-  .sitemap-grid { display: grid; grid-template-columns: 1fr; gap: 3rem; }
+  .sitemap-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3rem; }
   @media (max-width: 640px) { .sitemap-grid { grid-template-columns: 1fr; } }
   .sitemap-group-title { font-size: 0.875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-teal); margin-bottom: 1.25rem; }
   .sitemap-list { list-style: none; display: flex; flex-direction: column; gap: 0.625rem; }

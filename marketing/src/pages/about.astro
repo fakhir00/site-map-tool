@@ -8,8 +8,8 @@ const registerUrl = dashboardUrl('/register');
 ---
 
 <BaseLayout
-  title="About Us — CrawlGap"
-  description="Learn what CrawlGap does: compare sitemap URLs, explore keyword opportunities, plan topics, and generate content drafts and prompts."
+  title="About Us — SiteMapSEO"
+  description="Learn about SiteMapSEO's mission to make competitor SEO intelligence accessible and automated for content creators and SEO professionals worldwide."
 >
   <Header />
   <main class="page-main">
@@ -20,12 +20,14 @@ const registerUrl = dashboardUrl('/register');
       </div>
       <div class="container">
         <div class="page-hero-content">
-          <p class="section-label">About CrawlGap</p>
+          <p class="section-label">Our Story</p>
           <h1 class="page-title">
-            Research and content<br/><span class="gradient-text">planning tools</span>
+            Built by SEOs,<br/><span class="gradient-text">for SEOs</span>
           </h1>
           <p class="page-subtitle">
-            CrawlGap helps you compare sitemap URLs, review keyword opportunities, plan topics, and create drafts or page prompts.
+            SiteMapSEO was born out of frustration. After spending weeks manually
+            crawling competitor blogs and copy-pasting keywords into spreadsheets,
+            we knew there had to be a better way.
           </p>
         </div>
       </div>
@@ -36,21 +38,26 @@ const registerUrl = dashboardUrl('/register');
       <div class="container">
         <div class="about-grid">
           <div class="about-text reveal">
-            <p class="section-label">What it does</p>
-            <h2 class="about-heading">A workspace for SEO research</h2>
+            <p class="section-label">Our Mission</p>
+            <h2 class="about-heading">Democratizing competitor SEO intelligence</h2>
             <p class="about-body">
-              Create a project with a site and target keywords, then run a scan to collect sitemap and competitor URL data.
+              Enterprise SEO teams have always had access to sophisticated competitor
+              analysis tools. We believe every content creator, indie blogger, and
+              small agency deserves the same intelligence — without the five-figure
+              annual price tag.
             </p>
             <p class="about-body">
-              Review the resulting keyword opportunities and use the keyword research, topic planning, article drafting, and page prompt tools as needed.
+              SiteMapSEO automates the entire pipeline: from sitemap discovery to
+              NLP-powered keyword extraction, giving you actionable data in hours
+              instead of weeks.
             </p>
           </div>
           <div class="about-values reveal">
             {[
-              { icon: '⌕', title: 'Sitemap comparison', desc: 'Review your site and competitor URLs collected for a project.' },
-              { icon: '⌘', title: 'Keyword workspace', desc: 'Filter, save, and export project keyword results.' },
-              { icon: '◎', title: 'Topic planning', desc: 'Generate and review hub and spoke topic structures.' },
-              { icon: '✎', title: 'Drafting tools', desc: 'Generate article drafts and page prompts from your research.' },
+              { icon: '🎯', title: 'Accuracy first', desc: 'We use production-grade NLP — RAKE, KeyBERT, and spaCy — not regex shortcuts.' },
+              { icon: '⚡', title: 'Speed matters', desc: 'Full 200-page blog analyzed in under 2 hours, including all politeness delays.' },
+              { icon: '🔒', title: 'Privacy by design', desc: 'Scraped content auto-deleted after 30 days. We never store personal data.' },
+              { icon: '🌍', title: 'Ethical scraping', desc: 'robots.txt respected. Crawl-delay honored. Always transparent about what we do.' },
             ].map(v => (
               <div class="value-card glass-card">
                 <span class="value-icon" aria-hidden="true">{v.icon}</span>
@@ -65,13 +72,37 @@ const registerUrl = dashboardUrl('/register');
       </div>
     </section>
 
+    <!-- Team -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header reveal">
+          <p class="section-label">The Team</p>
+          <h2 class="section-title">Meet the people<br/><span class="gradient-text">behind the product</span></h2>
+        </div>
+        <div class="team-grid">
+          {[
+            { name: 'Alex Morgan', role: 'Co-founder & CEO', bio: 'Former SEO lead at a Series B SaaS. Built and scaled content programs to 500K monthly organic visits.', initials: 'AM', color: '#00e5c9' },
+            { name: 'Jordan Lee', role: 'Co-founder & CTO', bio: 'ex-Google engineer. 8 years of NLP and large-scale web crawling experience at production scale.', initials: 'JL', color: '#6366f1' },
+            { name: 'Sam Torres', role: 'Head of Product', bio: 'Previously at Ahrefs. Obsessed with turning complex data into simple, actionable workflows for marketers.', initials: 'ST', color: '#ec4899' },
+          ].map(member => (
+            <div class="team-card glass-card reveal">
+              <div class="team-avatar" style={`background:${member.color}18;color:${member.color};`}>{member.initials}</div>
+              <h3 class="team-name">{member.name}</h3>
+              <p class="team-role">{member.role}</p>
+              <p class="team-bio">{member.bio}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
     <!-- CTA -->
     <section class="section">
       <div class="container" style="text-align:center;">
         <div class="reveal">
           <h2 class="section-title">Ready to get started?</h2>
           <p class="section-desc" style="margin-bottom:2rem;">
-            Open CrawlGap to explore the tools.
+            Join 2,000+ SEO professionals already using SiteMapSEO.
           </p>
           <a href={registerUrl} class="btn btn-primary btn-lg" id="about-cta">Start for Free →</a>
         </div>

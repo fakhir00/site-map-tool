@@ -156,7 +156,7 @@ export function Waitlist() {
                 </h1>
                 <p className="mt-2 text-sm text-muted leading-relaxed">
                   Your payment proof has been verified by the administrator. Your account is ready and you can now sign in
-                  to access all CrawlGap features.
+                  to access all GapCrawl features.
                 </p>
               </div>
 

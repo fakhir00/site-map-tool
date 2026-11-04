@@ -1,0 +1,281 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+
+// Sample blog posts data
+const posts = [
+  {
+    slug: 'competitor-seo-analysis-guide',
+    title: 'The Complete Guide to Competitor SEO Analysis in 2026',
+    description: 'Learn how to systematically analyze your competitors\' SEO strategies, find content gaps, and identify keyword opportunities that drive real traffic.',
+    image: '/hero-illustration.png',
+    date: '2026-05-20',
+    author: 'Alex Morgan',
+    category: 'SEO Strategy',
+    readTime: '12 min read',
+  },
+  {
+    slug: 'keyword-clustering-content-strategy',
+    title: 'Keyword Clustering: How to Build a Content Strategy That Scales',
+    description: 'Stop targeting keywords one by one. Learn how keyword clustering and topic modeling help you build topical authority and rank for entire subject areas.',
+    image: '/hero-illustration.png',
+    date: '2026-05-10',
+    author: 'Jordan Lee',
+    category: 'Content Strategy',
+    readTime: '9 min read',
+  },
+  {
+    slug: 'sitemap-seo-best-practices',
+    title: 'XML Sitemaps in 2026: What Google Actually Wants',
+    description: 'A deep dive into sitemap structure, priority values, frequency settings, and how to leverage sitemaps as a competitive intelligence source.',
+    image: '/hero-illustration.png',
+    date: '2026-04-28',
+    author: 'Sam Torres',
+    category: 'Technical SEO',
+    readTime: '7 min read',
+  },
+];
+
+const pageSize = 12;
+const totalPosts = posts.length;
+---
+
+<BaseLayout
+  title="SEO Blog — SiteMapSEO"
+  description="In-depth articles on SEO strategy, competitor analysis, keyword research, content gaps, and technical SEO from the SiteMapSEO team."
+>
+  <script type="application/ld+json" slot="head" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "name": "SiteMapSEO Blog",
+    "url": "https://sitemapseo.io/blog/",
+    "description": "Expert articles on SEO strategy, competitor analysis, and keyword research.",
+  })} />
+
+  <Header />
+  <main class="page-main">
+    <!-- Hero -->
+    <section class="blog-hero">
+      <div class="blog-hero-bg" aria-hidden="true">
+        <div class="glow-orb glow-indigo" style="width:400px;height:400px;top:-100px;right:0;"></div>
+      </div>
+      <div class="container">
+        <p class="section-label">The Blog</p>
+        <h1 class="blog-hero-title">SEO Intelligence,<br/><span class="gradient-text">explained</span></h1>
+        <p class="blog-hero-sub">
+          Strategy, tactics, and deep dives from the SiteMapSEO team — helping you build smarter content programs.
+        </p>
+      </div>
+    </section>
+
+    <!-- Posts Grid -->
+    <section class="section">
+      <div class="container">
+        <p class="results-meta">Showing {totalPosts} articles</p>
+        <div class="posts-grid">
+          {posts.map((post, i) => (
+            <article class="post-card glass-card reveal" style={`animation-delay:${i * 0.1}s`} aria-labelledby={`post-title-${i}`}>
+              <a href={`/blog/${post.slug}/`} class="post-image-link" aria-label={post.title} tabindex="-1">
+                <img
+                  src={post.image}
+                  alt=""
+                  width="680"
+                  height="360"
+                  loading="lazy"
+                  class="post-img"
+                />
+              </a>
+              <div class="post-body">
+                <div class="post-meta">
+                  <span class="post-category badge badge-teal">{post.category}</span>
+                  <span class="post-read-time">{post.readTime}</span>
+                </div>
+                <h2 class="post-title" id={`post-title-${i}`}>
+                  <a href={`/blog/${post.slug}/`}>{post.title}</a>
+                </h2>
+                <p class="post-desc">{post.description}</p>
+                <div class="post-footer">
+                  <div class="post-author">
+                    <div class="author-avatar" aria-hidden="true">{post.author.split(' ').map(n => n[0]).join('')}</div>
+                    <div>
+                      <div class="author-name">{post.author}</div>
+                      <time class="post-date" datetime={post.date}>
+                        {new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </time>
+                    </div>
+                  </div>
+                  <a href={`/blog/${post.slug}/`} class="btn btn-ghost btn-sm post-cta">
+                    Read →
+                  </a>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <!-- Pagination (placeholder for when posts > pageSize) -->
+        {totalPosts > pageSize && (
+          <nav class="pagination" aria-label="Blog pagination">
+            <button class="btn btn-ghost btn-sm" disabled>← Previous</button>
+            <span class="page-info">Page 1 of {Math.ceil(totalPosts / pageSize)}</span>
+            <button class="btn btn-ghost btn-sm">Next →</button>
+          </nav>
+        )}
+      </div>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .page-main { padding-top: 72px; }
+
+  .blog-hero {
+    position: relative;
+    padding: clamp(4rem, 8vw, 7rem) 0 clamp(3rem, 5vw, 4rem);
+    border-bottom: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+
+  .blog-hero-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+
+  .blog-hero .container { position: relative; z-index: 1; }
+
+  .blog-hero-title {
+    font-size: clamp(2.25rem, 5vw, 3.5rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 1rem 0 1.25rem;
+    color: var(--color-text);
+  }
+
+  .blog-hero-sub {
+    font-size: 1.125rem;
+    color: var(--color-text-muted);
+    max-width: 560px;
+    line-height: 1.7;
+  }
+
+  .results-meta {
+    font-size: 0.875rem;
+    color: var(--color-text-faint);
+    margin-bottom: 2rem;
+  }
+
+  .posts-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+
+  @media (max-width: 960px) { .posts-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .posts-grid { grid-template-columns: 1fr; } }
+
+  .post-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .post-image-link { display: block; overflow: hidden; }
+
+  .post-img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    transition: transform 0.4s var(--ease-smooth);
+  }
+
+  .post-card:hover .post-img { transform: scale(1.04); }
+
+  .post-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.75rem;
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .post-read-time { font-size: 0.8125rem; color: var(--color-text-faint); }
+
+  .post-title {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--color-text);
+  }
+
+  .post-title a { transition: color 0.2s; }
+  .post-title a:hover { color: var(--color-teal); }
+
+  .post-desc {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    line-height: 1.65;
+    flex: 1;
+  }
+
+  .post-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .post-author {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .author-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--color-indigo-glow);
+    color: var(--color-indigo);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .author-name { font-size: 0.8125rem; font-weight: 600; color: var(--color-text); }
+  .post-date { font-size: 0.75rem; color: var(--color-text-faint); display: block; }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .page-info { font-size: 0.9rem; color: var(--color-text-muted); }
+</style>
+
+<script>
+  const revealObserver = new IntersectionObserver(
+    entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('revealed'); revealObserver.unobserve(e.target); } }),
+    { threshold: 0.1 }
+  );
+  document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+</script>

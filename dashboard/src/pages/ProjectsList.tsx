@@ -185,7 +185,7 @@ export function ProjectsList() {
                 : `${projects.length} project${projects.length === 1 ? '' : 's'} on the board. Ready for the next one?`}
           </p>
         </div>
-        <Button className="shrink-0" onClick={() => navigate('/gold-hunter')} size="lg" variant="glow">
+        <Button className="shrink-0" onClick={() => setShowNewModal(true)} size="lg" variant="glow">
           <Plus className="h-5 w-5" />
           New project
         </Button>
@@ -275,7 +275,7 @@ export function ProjectsList() {
               : 'Create your first project to map a site’s topical authority — pick a website, add your keyword, and we’ll find the gaps your competitors are covering.'}
           </p>
           {!search && (
-            <Button className="mt-8" onClick={() => navigate('/gold-hunter')} size="lg" variant="glow">
+            <Button className="mt-8" onClick={() => setShowNewModal(true)} size="lg" variant="glow">
               <Plus className="h-5 w-5" />
               Create your first project
             </Button>

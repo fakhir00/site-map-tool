@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /superadmin
 
-Sitemap: https://crawlgap.io/sitemap-index.xml
+Sitemap: https://sitemapseo.io/sitemap-index.xml

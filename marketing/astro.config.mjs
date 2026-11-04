@@ -5,7 +5,7 @@ import sitemap from '@astrojs/sitemap';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://crawlgap.io',
+  site: 'https://sitemapseo.io',
   trailingSlash: 'always',
   vite: {
     plugins: [tailwindcss()]
