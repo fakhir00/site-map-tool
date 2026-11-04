@@ -101,7 +101,7 @@ function HowItWorks() {
     {
       icon: Radar,
       title: 'We study the winners',
-      body: 'Your keyword goes through the top-ranking pages, so the prompt knows what Google already rewards.',
+      body: 'CrawlGap reviews competitor pages for your keyword and uses that research to shape the prompt.',
     },
     {
       icon: PencilLine,

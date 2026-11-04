@@ -210,7 +210,7 @@ export function DashboardLayout() {
             <div className="mb-6 hidden items-center justify-between lg:flex">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-mono text-[11px] font-medium uppercase tracking-widest text-muted">{sectionLabel}</p>
+                  {sectionLabel !== 'Project' && <p className="font-mono text-[11px] font-medium uppercase tracking-widest text-muted">{sectionLabel}</p>}
                   {DEMO_BACKEND_ENABLED && <Badge variant="amber">Demo mode</Badge>}
                 </div>
                 <h1 className="font-display text-2xl font-bold tracking-tight">{sectionLabel === 'Projects' ? 'CrawlGap workspace' : sectionLabel}</h1>

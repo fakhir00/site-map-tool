@@ -353,7 +353,7 @@ export function SuperAdmin() {
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-display font-bold tracking-tight text-ink">GapCrawl Master Admin</span>
+                <span className="font-display font-bold tracking-tight text-ink">CrawlGap Master Admin</span>
                 <span className="rounded-full bg-warm-red/20 border border-warm-red/40 px-2 py-0.5 text-[10px] font-mono font-semibold text-warm-red">
                   SUPERADMIN
                 </span>

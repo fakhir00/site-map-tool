@@ -15,7 +15,7 @@ export function getStaticPaths() {
         description: 'Learn how to systematically analyze your competitors\' SEO strategies, find content gaps, and identify keyword opportunities that drive real traffic.',
         image: '/hero-illustration.png',
         date: '2026-05-20',
-        author: 'Alex Morgan',
+        author: 'CrawlGap',
         category: 'SEO Strategy',
         readTime: '12 min read',
         content: `
@@ -34,7 +34,7 @@ Start by checking:
 - \`/sitemap_index.xml\`
 - \`/robots.txt\` (look for the Sitemap: directive)
 
-Tools like SiteMapSEO automate this entirely, handling gzipped formats, nested indexes, and robots.txt parsing in seconds.
+CrawlGap scans sitemap URLs for a project and compares URL topics. What it can collect depends on the site's available sitemap data.
 
 ## Step 2: Filter for Blog Content
 
@@ -67,7 +67,7 @@ Competitor SEO analysis at scale requires automation. Manual analysis of even 50
         description: 'Stop targeting keywords one by one. Learn how keyword clustering and topic modeling help you build topical authority.',
         image: '/hero-illustration.png',
         date: '2026-05-10',
-        author: 'Jordan Lee',
+        author: 'CrawlGap',
         category: 'Content Strategy',
         readTime: '9 min read',
         content: `
@@ -92,7 +92,7 @@ A pillar page covers a broad topic comprehensively. Supporting cluster posts div
 
 ## Tools for Keyword Clustering
 
-- **SiteMapSEO**: Automatically clusters competitor keywords
+- **CrawlGap**: Generates hub and spoke topic plans from project research
 - **Sentence-Transformers**: Open-source embeddings for DIY clustering
 - **KeyBERT**: Context-aware keyword extraction from articles
 
@@ -109,7 +109,7 @@ Keyword clustering transforms a random list of keywords into a structured conten
         description: 'A deep dive into sitemap structure, priority values, frequency settings, and how to leverage sitemaps for competitive intelligence.',
         image: '/hero-illustration.png',
         date: '2026-04-28',
-        author: 'Sam Torres',
+        author: 'CrawlGap',
         category: 'Technical SEO',
         readTime: '7 min read',
         content: `
@@ -139,7 +139,7 @@ You get an X-ray of their strategy without them knowing.
 
 ## Conclusion
 
-Optimize your own sitemap for clean crawlability, but also mine your competitors' sitemaps as a free intelligence source. Tools like SiteMapSEO turn this manual process into a fully automated workflow.
+Keep your sitemap accurate for search engines. CrawlGap can also compare sitemap URLs across a project to help you review topic coverage.
         `,
       },
     },
@@ -156,13 +156,13 @@ const articleSchema = {
   "@type": "Article",
   "headline": title,
   "description": description,
-  "image": `https://sitemapseo.io${image}`,
+  "image": `https://crawlgap.io${image}`,
   "datePublished": date,
   "author": { "@type": "Person", "name": author },
   "publisher": {
     "@type": "Organization",
-    "name": "SiteMapSEO",
-    "logo": { "@type": "ImageObject", "url": "https://sitemapseo.io/logo.svg" },
+    "name": "CrawlGap",
+    "logo": { "@type": "ImageObject", "url": "https://crawlgap.io/logo.svg" },
   },
 };
 
@@ -170,14 +170,14 @@ const breadcrumb = {
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://sitemapseo.io/" },
-    { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://sitemapseo.io/blog/" },
-    { "@type": "ListItem", "position": 3, "name": title, "item": `https://sitemapseo.io/blog/${slug}/` },
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://crawlgap.io/" },
+    { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://crawlgap.io/blog/" },
+    { "@type": "ListItem", "position": 3, "name": title, "item": `https://crawlgap.io/blog/${slug}/` },
   ],
 };
 ---
 
-<BaseLayout title={title} description={description} canonicalURL={`https://sitemapseo.io/blog/${slug}/`} ogImage={image}>
+<BaseLayout title={title} description={description} canonicalURL={`https://crawlgap.io/blog/${slug}/`} ogImage={image}>
   <script type="application/ld+json" slot="head" set:html={JSON.stringify(articleSchema)} />
   <script type="application/ld+json" slot="head" set:html={JSON.stringify(breadcrumb)} />
 
@@ -255,8 +255,8 @@ const breadcrumb = {
         <!-- Sidebar -->
         <aside class="article-sidebar">
           <div class="sidebar-card glass-card">
-            <h3>Try SiteMapSEO Free</h3>
-            <p>Automate everything in this article — sitemap discovery, keyword extraction, and content gap analysis.</p>
+            <h3>Explore CrawlGap</h3>
+            <p>Compare sitemap URLs, review keyword opportunities, and use the content planning tools.</p>
             <a href={registerUrl} class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem;" id="article-cta">Get Started →</a>
           </div>
 
