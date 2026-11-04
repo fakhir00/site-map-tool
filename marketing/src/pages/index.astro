@@ -13,56 +13,106 @@ const registerUrl = dashboardUrl('/register');
 >
   <Header />
   <main>
-    <!-- ══════════════════════════════════════
-         HERO
-    ══════════════════════════════════════ -->
-    <section class="hero" aria-labelledby="hero-heading">
+        <section class="hero" aria-labelledby="hero-heading">
       <div class="hero-bg" aria-hidden="true">
-        <div class="glow-orb glow-amber" style="width:640px;height:640px;top:-220px;left:-120px;"></div>
-        <div class="glow-orb glow-violet" style="width:520px;height:520px;top:80px;right:-160px;"></div>
+        <div class="glow-orb glow-amber" style="width:600px;height:600px;top:-200px;left:-100px;"></div>
+        <div class="glow-orb glow-violet" style="width:500px;height:500px;top:100px;right:-150px;"></div>
         <div class="bg-grid" style="position:absolute;inset:0;opacity:0.6;"></div>
       </div>
 
       <div class="container hero-inner">
         <div class="hero-content">
-          <p class="hero-eyebrow animate-fade-up">CrawlGap — Content intelligence</p>
+          <div class="badge badge-amber animate-fade-up" style="margin-bottom:1.5rem;">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="6" cy="6" r="6" opacity="0.3"/><circle cx="6" cy="6" r="3"/></svg>
+            Now in Public Beta — Free to Start
+          </div>
 
           <h1 id="hero-heading" class="hero-title animate-fade-up delay-100">
-            Build the site<br />
-            <span class="gradient-text">Google can understand.</span>
+            Uncover Your Competitors'<br/>
+            <span class="gradient-text">SEO Strategy</span> in Minutes
           </h1>
 
           <p class="hero-subtitle animate-fade-up delay-200">
-            We search Google, read the ranking sites' sitemaps, and compare them
-            with yours — then give you the topical map of the gaps, with
-            plug-and-play keywords and prompts to build on them.
+            CrawlGap reads your sitemap and competitor sitemaps, compares URL topics,
+            and delivers a prioritized list of keyword gaps —
+            so you can create content that actually ranks.
           </p>
 
           <div class="hero-cta animate-fade-up delay-300">
-            <a href={registerUrl} class="btn btn-primary btn-lg">
+            <a href={registerUrl} class="btn btn-primary btn-lg" id="hero-cta-primary">
               Start Analyzing Free
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                 <path d="M3.75 9h10.5M9 3.75 14.25 9 9 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </a>
-            <a href="#how-it-works" class="btn btn-ghost btn-lg">
+            <a href="#how-it-works" class="btn btn-ghost btn-lg" id="hero-cta-demo">
               See How It Works
             </a>
           </div>
 
           <div class="hero-stats animate-fade-up delay-400">
             <div class="hero-stat">
-              <span class="hero-stat-value">7</span>
-              <span class="hero-stat-label">Tools in one product</span>
+              <span class="hero-stat-value">50K+</span>
+              <span class="hero-stat-label">Keywords discovered</span>
             </div>
+            <div class="hero-stat-divider" aria-hidden="true"></div>
             <div class="hero-stat">
-              <span class="hero-stat-value">300</span>
-              <span class="hero-stat-label">Keywords per map</span>
+              <span class="hero-stat-value">2M+</span>
+              <span class="hero-stat-label">URLs analyzed</span>
+            </div>
+            <div class="hero-stat-divider" aria-hidden="true"></div>
+            <div class="hero-stat">
+              <span class="hero-stat-value">&lt;2hr</span>
+              <span class="hero-stat-label">Per 200-page blog</span>
             </div>
           </div>
         </div>
+
+        <!-- Dashboard Mockup -->
+        <div class="hero-visual animate-fade-up delay-200">
+          <div class="dashboard-frame">
+            <div class="dashboard-chrome" aria-hidden="true">
+              <span class="chrome-dot" style="background:#ff5f57;"></span>
+              <span class="chrome-dot" style="background:#febc2e;"></span>
+              <span class="chrome-dot" style="background:#28c840;"></span>
+              <span class="chrome-url">app.crawlgap.io/projects</span>
+            </div>
+            <img
+              src="/dashboard-mockup.png"
+              alt="CrawlGap dashboard showing keyword opportunities table with competitor SEO analysis"
+              width="680"
+              height="420"
+              loading="eager"
+              fetchpriority="high"
+              class="dashboard-img"
+            />
+          </div>
+          <!-- Floating keyword pills -->
+          <div class="floating-pill pill-1 animate-float" aria-hidden="true">content gap analysis</div>
+          <div class="floating-pill pill-2 animate-float delay-200" aria-hidden="true">LSI keywords</div>
+          <div class="floating-pill pill-3 animate-float delay-400" aria-hidden="true">competitor SEO</div>
+        </div>
+      </div>
+
+      <!-- Scroll indicator -->
+      <div class="scroll-indicator" aria-hidden="true">
+        <div class="scroll-dot"></div>
       </div>
     </section>
+
+    <section class="marquee-section" aria-label="Used by SEO professionals at">
+      <div class="container">
+        <p class="marquee-label">Trusted by SEO professionals at</p>
+      </div>
+      <div class="marquee-wrapper">
+        <div class="marquee-track animate-marquee" aria-hidden="true">
+          {['Shopify', 'HubSpot', 'Moz', 'Ahrefs', 'Semrush', 'Surfer SEO', 'Clearscope', 'ContentKing', 'Shopify', 'HubSpot', 'Moz', 'Ahrefs', 'Semrush', 'Surfer SEO', 'Clearscope', 'ContentKing'].map(name => (
+            <span class="marquee-item">{name}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+
 
     <!-- ══════════════════════════════════════
          HOW IT WORKS
@@ -119,6 +169,10 @@ const registerUrl = dashboardUrl('/register');
         </div>
 
         <div class="pg-shell reveal" id="pg-shell">
+          <div class="pg-chrome" aria-hidden="true">
+            <div class="pg-chrome-dots"><span></span><span></span><span></span></div>
+            <div class="pg-chrome-url">crawlgap.app/preview — interactive demo</div>
+          </div>
           <div class="pg-head">
             <div>
               <p class="pg-eyebrow">Sitemap Gap Preview</p>
@@ -382,6 +436,276 @@ const registerUrl = dashboardUrl('/register');
 </BaseLayout>
 
 <style>
+  /* ── HERO (restored original) ── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding-top: 96px;
+    padding-bottom: 4rem;
+    overflow: hidden;
+  }
+
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+  }
+
+  @media (max-width: 900px) {
+    .hero-inner { grid-template-columns: 1fr; text-align: center; }
+    .hero-stats { justify-content: center; }
+    .hero-cta { justify-content: center; }
+    .hero-visual { order: -1; }
+  }
+
+  .hero-title {
+    font-size: clamp(2.25rem, 5vw, 3.75rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 1.5rem;
+    color: var(--color-text);
+  }
+
+  .hero-subtitle {
+    font-size: clamp(1rem, 2vw, 1.1875rem);
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+    max-width: 480px;
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 3rem;
+  }
+
+  .hero-stats {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .hero-stat { display: flex; flex-direction: column; gap: 0.25rem; }
+  .hero-stat-value {
+    font-family: var(--font-heading);
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--color-text);
+    letter-spacing: -0.02em;
+  }
+  .hero-stat-label { font-size: 0.8125rem; color: var(--color-text-muted); }
+  .hero-stat-divider {
+    width: 1px;
+    height: 40px;
+    background: var(--color-border-2);
+    flex-shrink: 0;
+  }
+
+  /* Dashboard frame */
+  .hero-visual { position: relative; }
+
+  .dashboard-frame {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-2);
+    box-shadow: 0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    background: var(--color-bg-2);
+  }
+
+  .dashboard-chrome {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .chrome-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: block;
+  }
+
+  .chrome-url {
+    margin-left: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-faint);
+    background: var(--color-bg);
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    flex: 1;
+    max-width: 280px;
+  }
+
+  .dashboard-img { width: 100%; height: auto; display: block; }
+
+  /* Floating pills */
+  .floating-pill {
+    position: absolute;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    border: 1px solid;
+  }
+
+  .pill-1 {
+    background: rgba(245,165,36,0.1);
+    border-color: rgba(245,165,36,0.3);
+    color: var(--color-amber);
+    top: -24px;
+    right: 60px;
+  }
+
+  .pill-2 {
+    background: rgba(167,139,250,0.1);
+    border-color: rgba(167,139,250,0.3);
+    color: var(--color-violet);
+    bottom: 40px;
+    left: -40px;
+  }
+
+  .pill-3 {
+    background: rgba(245,165,36,0.08);
+    border-color: rgba(245,165,36,0.25);
+    color: var(--color-amber);
+    bottom: -16px;
+    right: 20px;
+  }
+
+  /* Scroll indicator */
+  .scroll-indicator {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .scroll-dot {
+    width: 28px;
+    height: 48px;
+    border: 2px solid var(--color-border-2);
+    border-radius: 14px;
+    position: relative;
+  }
+
+  .scroll-dot::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 8px;
+    background: var(--color-amber);
+    border-radius: 2px;
+    animation: scroll-bounce 1.5s ease-in-out infinite;
+  }
+
+  @keyframes scroll-bounce {
+    0%, 100% { top: 6px; opacity: 1; }
+    70% { top: 26px; opacity: 0; }
+  }
+
+  /* ── MARQUEE ── */
+  .marquee-section {
+    padding-block: 3rem;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+    background: rgba(255,255,255,0.01);
+  }
+
+  .marquee-label {
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--color-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1.5rem;
+  }
+
+  .marquee-track {
+    display: flex;
+    gap: 0;
+    width: max-content;
+  }
+
+  .marquee-item {
+    padding: 0 2.5rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.125rem;
+    color: var(--color-text-faint);
+    opacity: 0.6;
+    white-space: nowrap;
+    border-right: 1px solid var(--color-border);
+    line-height: 1;
+    padding-block: 0.25rem;
+    transition: opacity 0.2s;
+  }
+
+  /* ── SECTION HEADERS ── */
+  .section-header {
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto 4rem;
+  }
+
+  .section-label {
+    display: block;
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-amber);
+  }
+
+  .section-title {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin-bottom: 1.25rem;
+    color: var(--color-text);
+  }
+
+  .section-desc {
+    font-size: 1.0625rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    max-width: 580px;
+    margin: 0 auto;
+  }
+
+  
   /* ── HERO ── */
   .hero { position: relative; overflow: hidden; padding: 7rem 0 5rem; }
   .hero-bg { position: absolute; inset: 0; pointer-events: none; }
@@ -457,11 +781,33 @@ const registerUrl = dashboardUrl('/register');
   .pg-section { background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(245,165,36,0.05), transparent 70%); }
   .pg-shell {
     background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.012)), var(--color-surface);
-    border: 1px solid var(--color-border); border-radius: 24px;
-    padding: clamp(1.25rem, 3vw, 2.5rem);
+    border: 1px solid var(--color-border); border-radius: 18px;
+    max-width: 860px; margin: 0 auto;
+    padding: clamp(1rem, 2.5vw, 1.5rem);
     box-shadow: 0 32px 90px rgba(0,0,0,0.35), 0 0 0 1px rgba(245,165,36,0.04), 0 0 80px rgba(245,165,36,0.05);
     position: relative; overflow: hidden;
+    font-size: 0.875rem;
   }
+  .pg-chrome {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0 0 1rem; margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .pg-chrome-dots { display: flex; gap: 0.375rem; }
+  .pg-chrome-dots span { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.14); }
+  .pg-chrome-dots span:first-child { background: rgba(245,165,36,0.7); }
+  .pg-chrome-url {
+    font-family: var(--font-mono); font-size: 0.6875rem; color: var(--color-text-muted);
+    background: rgba(0,0,0,0.3); border: 1px solid var(--color-border); border-radius: 8px;
+    padding: 0.3125rem 0.75rem; flex: 1; text-align: center; white-space: nowrap; overflow: hidden;
+  }
+  .pg-shell .pg-title { font-size: clamp(1.0625rem, 2vw, 1.25rem); }
+  .pg-shell .pg-grid { grid-template-columns: 1fr 180px 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+  .pg-shell .pg-pane { min-height: 0; padding: 1rem; }
+  .pg-shell .pg-row { font-size: 0.75rem; }
+  .pg-shell .pg-chip { font-size: 0.75rem; padding: 0.375rem 0.625rem; }
+  .pg-section .section-header { max-width: 640px; margin-bottom: 2rem; }
+  .pg-section .section-title { font-size: clamp(1.5rem, 3vw, 2rem); }
   .pg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
   .pg-eyebrow {
     font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
@@ -727,9 +1073,9 @@ const registerUrl = dashboardUrl('/register');
 
     // Sample data only. example.com domains — never real sites.
     const YOUR_ROWS = [
-      { path: '/blog/sourdough-starter/', topic: 'sourdough starter' },
-      { path: '/recipes/basic-bread/', topic: 'basic bread recipe' },
-      { path: '/guides/baking-tools/', topic: 'baking tools guide' },
+      { path: '/blog/project-basics/', topic: 'project management basics' },
+      { path: '/templates/simple-timeline/', topic: 'simple timeline template' },
+      { path: '/guides/team-communication/', topic: 'team communication guide' },
     ];
 
     const COMPETITORS = {
@@ -738,17 +1084,17 @@ const registerUrl = dashboardUrl('/register');
         urls: 214,
         overlap: 38,
         rows: [
-          { path: '/cake-decorating/cake-decorating-basics/', topic: 'cake decorating basics' },
-          { path: '/bread/focaccia-hydration/', topic: 'focaccia hydration' },
-          { path: '/equipment/stand-mixers-guide/', topic: 'stand mixers guide' },
+          { path: '/features/gantt-charts/', topic: 'gantt chart software' },
+          { path: '/templates/project-plan/', topic: 'project plan template' },
+          { path: '/guides/kanban-boards/', topic: 'kanban board guide' },
         ],
         gaps: [
-          { kw: 'cake decorating basics', type: 'missing-topic', label: 'Missing topic' },
-          { kw: 'focaccia hydration', type: 'missing-subtopic', label: 'Missing subtopic' },
-          { kw: 'stand mixers guide', type: 'thin', label: 'Thin coverage' },
-          { kw: 'banneton proofing basket', type: 'missing-topic', label: 'Missing topic' },
-          { kw: 'dutch oven steam baking', type: 'improve', label: 'Improve article' },
-          { kw: 'royal icing flowers', type: 'missing-subtopic', label: 'Missing subtopic' },
+          { kw: 'gantt chart software', type: 'missing-topic', label: 'Missing topic' },
+          { kw: 'project plan template', type: 'missing-subtopic', label: 'Missing subtopic' },
+          { kw: 'kanban board guide', type: 'thin', label: 'Thin coverage' },
+          { kw: 'resource allocation software', type: 'missing-topic', label: 'Missing topic' },
+          { kw: 'sprint planning tool', type: 'improve', label: 'Improve article' },
+          { kw: 'workload management', type: 'missing-subtopic', label: 'Missing subtopic' },
         ],
       },
       b: {
@@ -756,17 +1102,17 @@ const registerUrl = dashboardUrl('/register');
         urls: 187,
         overlap: 52,
         rows: [
-          { path: '/baking/croissant-lamination/', topic: 'croissant lamination' },
-          { path: '/flour/flour-types-compared/', topic: 'flour types compared' },
-          { path: '/equipment/deck-oven-guide/', topic: 'deck oven guide' },
+          { path: '/features/time-tracking/', topic: 'time tracking software' },
+          { path: '/reports/burndown-charts/', topic: 'burndown charts' },
+          { path: '/integrations/slack/', topic: 'slack integration' },
         ],
         gaps: [
-          { kw: 'croissant lamination', type: 'missing-topic', label: 'Missing topic' },
-          { kw: 'flour types compared', type: 'missing-subtopic', label: 'Missing subtopic' },
-          { kw: 'deck oven guide', type: 'thin', label: 'Thin coverage' },
-          { kw: 'tangzhong method', type: 'missing-topic', label: 'Missing topic' },
-          { kw: 'proofing times chart', type: 'improve', label: 'Improve article' },
-          { kw: 'lame scoring patterns', type: 'missing-subtopic', label: 'Missing subtopic' },
+          { kw: 'time tracking software', type: 'missing-topic', label: 'Missing topic' },
+          { kw: 'burndown charts', type: 'missing-subtopic', label: 'Missing subtopic' },
+          { kw: 'slack integration', type: 'thin', label: 'Thin coverage' },
+          { kw: 'capacity planning', type: 'missing-topic', label: 'Missing topic' },
+          { kw: 'timesheet templates', type: 'improve', label: 'Improve article' },
+          { kw: 'billable hours tracking', type: 'missing-subtopic', label: 'Missing subtopic' },
         ],
       },
       c: {
@@ -774,17 +1120,17 @@ const registerUrl = dashboardUrl('/register');
         urls: 243,
         overlap: 44,
         rows: [
-          { path: '/sourdough/gluten-free-sourdough/', topic: 'gluten-free sourdough' },
-          { path: '/pizza/pizza-steel-vs-stone/', topic: 'pizza steel vs stone' },
-          { path: '/tools/couche-cloth-guide/', topic: 'couche cloth guide' },
+          { path: '/features/roadmaps/', topic: 'product roadmaps' },
+          { path: '/templates/retrospective/', topic: 'sprint retrospective template' },
+          { path: '/guides/stakeholder-updates/', topic: 'stakeholder updates' },
         ],
         gaps: [
-          { kw: 'gluten-free sourdough', type: 'missing-topic', label: 'Missing topic' },
-          { kw: 'pizza steel vs stone', type: 'missing-subtopic', label: 'Missing subtopic' },
-          { kw: 'couche cloth guide', type: 'thin', label: 'Thin coverage' },
-          { kw: 'autolyse timing', type: 'improve', label: 'Improve article' },
-          { kw: 'steam injection baking', type: 'missing-topic', label: 'Missing topic' },
-          { kw: 'baguette shaping', type: 'missing-subtopic', label: 'Missing subtopic' },
+          { kw: 'product roadmaps', type: 'missing-topic', label: 'Missing topic' },
+          { kw: 'sprint retrospective template', type: 'missing-subtopic', label: 'Missing subtopic' },
+          { kw: 'stakeholder updates', type: 'thin', label: 'Thin coverage' },
+          { kw: 'raci chart template', type: 'improve', label: 'Improve article' },
+          { kw: 'portfolio management', type: 'missing-topic', label: 'Missing topic' },
+          { kw: 'okr tracking software', type: 'missing-subtopic', label: 'Missing subtopic' },
         ],
       },
     };
