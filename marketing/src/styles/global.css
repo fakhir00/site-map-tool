@@ -37,7 +37,7 @@
 
   /* Spacing */
   --container-max: 1200px;
-  --section-padding: clamp(4rem, 8vw, 8rem);
+  --section-padding: clamp(2.5rem, 5vw, 4.5rem);
 
   /* Transitions */
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
@@ -697,7 +697,7 @@ body::before {
    ============================================================ */
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
-  .section { padding-block: clamp(3rem, 6vw, 5rem); }
+  .section { padding-block: clamp(2rem, 5vw, 3rem); }
 }
 
 @media (min-width: 769px) {
