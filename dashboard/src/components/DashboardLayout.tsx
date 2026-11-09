@@ -78,9 +78,7 @@ export function DashboardLayout() {
         }`}
       >
         <a className="flex h-16 shrink-0 items-center gap-3 border-b border-line px-5 transition-colors hover:bg-raised/60" href={websiteUrl}>
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-glow-amber text-on-accent shadow-[0_0_20px_rgba(245,165,36,0.35)]">
-            <Map className="h-5 w-5" />
-          </div>
+          <img src="/crawlgap-logo-icon.png" alt="" className="h-9 w-auto shrink-0" />
           <div>
             <p className="font-display text-sm font-bold tracking-tight">CrawlGap</p>
             <p className="text-xs text-muted">Content intelligence</p>
@@ -190,9 +188,7 @@ export function DashboardLayout() {
       <div className="flex min-w-0 flex-1 flex-col lg:h-screen lg:h-dvh lg:overflow-hidden">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-abyss/80 px-5 backdrop-blur-md lg:hidden">
           <a className="flex items-center gap-3" href={websiteUrl}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-glow-amber text-on-accent shadow-[0_0_16px_rgba(245,165,36,0.3)]">
-              <Map className="h-4 w-4" />
-            </div>
+            <img src="/crawlgap-logo-icon.png" alt="" className="h-8 w-auto shrink-0" />
             <span className="font-display text-sm font-bold tracking-tight">CrawlGap</span>
           </a>
           <button
